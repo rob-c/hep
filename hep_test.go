@@ -11,10 +11,9 @@ import (
 )
 
 func TestGofmt(t *testing.T) {
-	cmd := exec.Command("go", "tool", "golang.org/x/tools/cmd/goimports", "-d", ".")
+	cmd := exec.Command("go", "tool", "golang.org/x/tools/cmd/goimports", "-d", "-e", ".")
 	buf := new(bytes.Buffer)
 	cmd.Stdout = buf
-	cmd.Stderr = buf
 
 	err := cmd.Run()
 	if err != nil {

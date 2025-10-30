@@ -17,7 +17,6 @@ steps:
       - . /opt/root/setup-groot.sh
       - root.exe --version
       - export PATH=/root/go/bin:$PATH
-      - go mod tidy
       - GOARCH=amd64 go install -v $GOTAGS ./...
       - go run ./ci/run-tests.go $GOTAGS $GORACE $GOCOVERAGE
       - go vet $GOTAGS ./...
