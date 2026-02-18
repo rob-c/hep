@@ -1,6 +1,6 @@
 module go-hep.org/x/hep
 
-go 1.25
+go 1.25.0
 
 require (
 	codeberg.org/astrogo/fitsio v0.4.0
@@ -13,21 +13,21 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	github.com/klauspost/compress v1.18.1
-	github.com/pierrec/lz4/v4 v4.1.22
+	github.com/klauspost/compress v1.18.4
+	github.com/pierrec/lz4/v4 v4.1.25
 	github.com/pierrec/xxHash v0.1.5
 	github.com/pkg/diff v0.0.0-20241224192749-4e6772a4315c
 	github.com/ulikunitz/xz v0.5.15
 	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2
-	golang.org/x/crypto v0.43.0
-	golang.org/x/image v0.32.0
-	golang.org/x/sync v0.17.0
-	golang.org/x/text v0.30.0
-	golang.org/x/tools v0.38.0
-	gonum.org/v1/gonum v0.16.0
+	golang.org/x/crypto v0.48.0
+	golang.org/x/image v0.36.0
+	golang.org/x/sync v0.19.0
+	golang.org/x/text v0.34.0
+	golang.org/x/tools v0.42.0
+	gonum.org/v1/gonum v0.17.0
 	gonum.org/v1/plot v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/ql v1.4.28
+	modernc.org/ql v1.4.31
 )
 
 require (
@@ -39,7 +39,7 @@ require (
 	github.com/campoy/embedmd v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
-	github.com/google/flatbuffers v25.2.10+incompatible // indirect
+	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
@@ -51,13 +51,13 @@ require (
 	github.com/posener/complete v1.2.3 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/teambition/rrule-go v1.8.2 // indirect
-	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251008203120-078029d740a8 // indirect
+	golang.org/x/mod v0.33.0 // indirect
+	golang.org/x/net v0.50.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260213145524-e0ab670178e1 // indirect
 	modernc.org/b v1.1.0 // indirect
-	modernc.org/db v1.0.28 // indirect
-	modernc.org/file v1.0.18 // indirect
+	modernc.org/db v1.0.29 // indirect
+	modernc.org/file v1.0.19 // indirect
 	modernc.org/fileutil v1.3.40 // indirect
 	modernc.org/golex v1.1.0 // indirect
 	modernc.org/internal v1.1.9 // indirect
