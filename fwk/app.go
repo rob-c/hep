@@ -237,7 +237,7 @@ func (app *appmgr) DeclProp(c Component, name string, ptr any) error {
 		app.props[cname] = make(map[string]any)
 	}
 	switch reflect.TypeOf(ptr).Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		// ok
 	default:
 		return fmt.Errorf(
@@ -842,7 +842,7 @@ func (app *appmgr) printDataFlow() error {
 
 func init() {
 	Register(
-		reflect.TypeOf(appmgr{}),
+		reflect.TypeFor[appmgr](),
 		func(t, name string, mgr App) (Component, error) {
 			app := NewApp().(*appmgr)
 			app.name = name

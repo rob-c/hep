@@ -107,7 +107,7 @@ func (bld *streamerBuilder) genStdVectorOf(typ reflect.Type, name string, offset
 		etype = rmeta.Uint64
 	case reflect.Float32:
 		switch typ {
-		case reflect.TypeOf(root.Float16(0)):
+		case reflect.TypeFor[root.Float16]():
 			ename = "vector<Float16_t>"
 			etype = rmeta.Float16
 		default:
@@ -116,7 +116,7 @@ func (bld *streamerBuilder) genStdVectorOf(typ reflect.Type, name string, offset
 		}
 	case reflect.Float64:
 		switch typ {
-		case reflect.TypeOf(root.Double32(0)):
+		case reflect.TypeFor[root.Double32]():
 			ename = "vector<Double32_t>"
 			etype = rmeta.Double32
 		default:
@@ -246,7 +246,7 @@ func (bld *streamerBuilder) genArrayOf(n int, typ reflect.Type, name string, off
 
 	case reflect.Float32:
 		switch typ {
-		case reflect.TypeOf(root.Float16(0)):
+		case reflect.TypeFor[root.Float16]():
 			esize *= 4
 			ename = "Float16_t"
 			etype = rmeta.Float16
@@ -258,7 +258,7 @@ func (bld *streamerBuilder) genArrayOf(n int, typ reflect.Type, name string, off
 
 	case reflect.Float64:
 		switch typ {
-		case reflect.TypeOf(root.Double32(0)):
+		case reflect.TypeFor[root.Double32]():
 			esize *= 8
 			ename = "Double32_t"
 			etype = rmeta.Double32
@@ -372,7 +372,7 @@ func (bld *streamerBuilder) genVarLenArrayOf(typ reflect.Type, class, count, nam
 	case reflect.Float32:
 		esize = 4
 		switch typ {
-		case reflect.TypeOf(root.Float16(0)):
+		case reflect.TypeFor[root.Float16]():
 			ename = "Float16_t"
 			etype = rmeta.Float16
 		default:
@@ -382,7 +382,7 @@ func (bld *streamerBuilder) genVarLenArrayOf(typ reflect.Type, class, count, nam
 	case reflect.Float64:
 		esize = 8
 		switch typ {
-		case reflect.TypeOf(root.Double32(0)):
+		case reflect.TypeFor[root.Double32]():
 			ename = "Double32_t"
 			etype = rmeta.Double32
 		default:
@@ -522,7 +522,7 @@ func (bld *streamerBuilder) genField(typ reflect.Type, field reflect.StructField
 		}
 	case reflect.Float32:
 		switch field.Type {
-		case reflect.TypeOf(root.Float16(0)):
+		case reflect.TypeFor[root.Float16]():
 			return &StreamerBasicType{
 				StreamerElement{
 					named:  *rbase.NewNamed(nameOf(field), ""),
@@ -545,7 +545,7 @@ func (bld *streamerBuilder) genField(typ reflect.Type, field reflect.StructField
 		}
 	case reflect.Float64:
 		switch field.Type {
-		case reflect.TypeOf(root.Double32(0)):
+		case reflect.TypeFor[root.Double32]():
 			return &StreamerBasicType{
 				StreamerElement{
 					named:  *rbase.NewNamed(nameOf(field), ""),
@@ -606,7 +606,7 @@ func (bld *streamerBuilder) genField(typ reflect.Type, field reflect.StructField
 		}
 		return bld.genStdVectorOf(et, nameOf(field), offsetOf(field))
 
-	case reflect.Ptr:
+	case reflect.Pointer:
 		et := field.Type.Elem()
 		return bld.genPtr(et, nameOf(field), offsetOf(field))
 
@@ -732,7 +732,7 @@ func isTObject(typ reflect.Type) bool {
 func typenameOf(typ reflect.Type) string {
 	if isTObject(typ) {
 		switch typ.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			name := reflect.New(typ.Elem()).Interface().(root.Object).Class()
 			return name + "*"
 		default:
@@ -792,21 +792,21 @@ func typenameOf(typ reflect.Type) string {
 		return "uint64_t"
 	case reflect.Float32:
 		switch typ {
-		case reflect.TypeOf(root.Float16(0)):
+		case reflect.TypeFor[root.Float16]():
 			return "Float16_t"
 		default:
 			return "float"
 		}
 	case reflect.Float64:
 		switch typ {
-		case reflect.TypeOf(root.Double32(0)):
+		case reflect.TypeFor[root.Double32]():
 			return "Double32_t"
 		default:
 			return "double"
 		}
 	case reflect.String:
 		return "string"
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return typenameOf(typ.Elem()) + "*"
 
 	default:
@@ -826,7 +826,7 @@ const (
 )
 
 var (
-	rootObjectIface = reflect.TypeOf((*root.Object)(nil)).Elem()
+	rootObjectIface = reflect.TypeFor[root.Object]()
 )
 
 var (

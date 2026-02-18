@@ -67,7 +67,6 @@ func TestParallelError(t *testing.T) {
 	)
 	r := parallel.NewRun(6)
 	for i := range totalDo {
-		i := i
 		if i >= errDo {
 			r.Do(func() error {
 				return intError(i)

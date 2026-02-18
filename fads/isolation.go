@@ -42,24 +42,24 @@ type Isolation struct {
 func (tsk *Isolation) Configure(ctx fwk.Context) error {
 	var err error
 
-	err = tsk.DeclInPort(tsk.candidates, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.candidates, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclInPort(tsk.isolations, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.isolations, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
 	if tsk.rhos != "" {
-		err = tsk.DeclInPort(tsk.rhos, reflect.TypeOf([]Candidate{}))
+		err = tsk.DeclInPort(tsk.rhos, reflect.TypeFor[[]Candidate]())
 		if err != nil {
 			return err
 		}
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -229,5 +229,5 @@ func newIsolation(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(Isolation{}), newIsolation)
+	fwk.Register(reflect.TypeFor[Isolation](), newIsolation)
 }

@@ -84,8 +84,7 @@ func (o *%[1]s) MarshalBinary() (data []byte, err error) {
 	)
 
 	typ := t.Underlying().(*types.Struct)
-	for i := range typ.NumFields() {
-		ft := typ.Field(i)
+	for ft := range typ.Fields() {
 		g.genMarshalType(ft.Type(), "o."+ft.Name())
 	}
 
@@ -236,8 +235,7 @@ func (g *Generator) genMarshalType(t types.Type, n string) {
 			g.printf("}\n")
 		default:
 			// un-named
-			for i := range ut.NumFields() {
-				elem := ut.Field(i)
+			for elem := range ut.Fields() {
 				g.genMarshalType(elem.Type(), n+"."+elem.Name())
 			}
 		}
@@ -297,8 +295,7 @@ func (o *%[1]s) UnmarshalBinary(data []byte) (err error) {
 	)
 
 	typ := t.Underlying().(*types.Struct)
-	for i := range typ.NumFields() {
-		ft := typ.Field(i)
+	for ft := range typ.Fields() {
 		g.genUnmarshalType(ft.Type(), "o."+ft.Name())
 	}
 
@@ -413,8 +410,7 @@ func (g *Generator) genUnmarshalType(t types.Type, n string) {
 			g.printf("}\n")
 		default:
 			// un-named.
-			for i := range ut.NumFields() {
-				elem := ut.Field(i)
+			for elem := range ut.Fields() {
 				g.genUnmarshalType(elem.Type(), n+"."+elem.Name())
 			}
 		}

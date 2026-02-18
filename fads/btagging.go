@@ -59,17 +59,17 @@ type BTagging struct {
 func (tsk *BTagging) Configure(ctx fwk.Context) error {
 	var err error
 
-	err = tsk.DeclInPort(tsk.partons, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.partons, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclInPort(tsk.jets, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.jets, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -248,5 +248,5 @@ func newBTagging(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(BTagging{}), newBTagging)
+	fwk.Register(reflect.TypeFor[BTagging](), newBTagging)
 }

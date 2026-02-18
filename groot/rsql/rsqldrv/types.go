@@ -213,19 +213,19 @@ func colDescrFrom(name string, etyp reflect.Type, kind reflect.Kind, hasCount bo
 		panic(fmt.Errorf("rsqldrv: type %T not supported", reflect.New(etyp).Elem().Interface()))
 	case reflect.Int8:
 		if unsigned {
-			etyp = reflect.TypeOf(uint8(0))
+			etyp = reflect.TypeFor[uint8]()
 		}
 	case reflect.Int16:
 		if unsigned {
-			etyp = reflect.TypeOf(uint16(0))
+			etyp = reflect.TypeFor[uint16]()
 		}
 	case reflect.Int32:
 		if unsigned {
-			etyp = reflect.TypeOf(uint32(0))
+			etyp = reflect.TypeFor[uint32]()
 		}
 	case reflect.Int64:
 		if unsigned {
-			etyp = reflect.TypeOf(uint64(0))
+			etyp = reflect.TypeFor[uint64]()
 		}
 	}
 

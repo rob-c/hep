@@ -166,7 +166,7 @@ options:
 			"Ports": []fwk.Port{
 				{
 					Name: "/fads/McEvent",
-					Type: reflect.TypeOf(hepmc.Event{}),
+					Type: reflect.TypeFor[hepmc.Event](),
 				},
 			},
 			"Streamer": &fads.HepMcStreamer{
@@ -806,23 +806,23 @@ options:
 			"Ports": []fwk.Port{
 				{
 					Name: "/fads/McEvent",
-					Type: reflect.TypeOf(hepmc.Event{}),
+					Type: reflect.TypeFor[hepmc.Event](),
 				},
 				{
 					Name: "/fads/uobj-finder/jets",
-					Type: reflect.TypeOf([]fads.Candidate{}),
+					Type: reflect.TypeFor[[]fads.Candidate](),
 				},
 				{
 					Name: "/fads/uobj-finder/electrons",
-					Type: reflect.TypeOf([]fads.Candidate{}),
+					Type: reflect.TypeFor[[]fads.Candidate](),
 				},
 				{
 					Name: "/fads/uobj-finder/photons",
-					Type: reflect.TypeOf([]fads.Candidate{}),
+					Type: reflect.TypeFor[[]fads.Candidate](),
 				},
 				{
 					Name: "/fads/uobj-finder/muons",
-					Type: reflect.TypeOf([]fads.Candidate{}),
+					Type: reflect.TypeFor[[]fads.Candidate](),
 				},
 			},
 			"Streamer": &rio.OutputStreamer{

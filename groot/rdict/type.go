@@ -338,9 +338,9 @@ func typeFrom(ctx rbytes.StreamerInfoContext, typename string, enum rmeta.Enum, 
 	case rmeta.Float64:
 		rt = gotypes[reflect.Float64]
 	case rmeta.Float16:
-		rt = reflect.TypeOf((*root.Float16)(nil)).Elem()
+		rt = reflect.TypeFor[root.Float16]()
 	case rmeta.Double32:
-		rt = reflect.TypeOf((*root.Double32)(nil)).Elem()
+		rt = reflect.TypeFor[root.Double32]()
 	case rmeta.TString, rmeta.STLstring:
 		rt = gotypes[reflect.String]
 
@@ -358,10 +358,10 @@ func typeFrom(ctx rbytes.StreamerInfoContext, typename string, enum rmeta.Enum, 
 		}
 
 	case rmeta.TObject:
-		rt = reflect.TypeOf((*rbase.Object)(nil)).Elem()
+		rt = reflect.TypeFor[rbase.Object]()
 
 	case rmeta.TNamed:
-		rt = reflect.TypeOf((*rbase.Named)(nil)).Elem()
+		rt = reflect.TypeFor[rbase.Named]()
 
 	case rmeta.OffsetL + rmeta.Bool:
 		// dim handled by typeFromDescr.
@@ -398,10 +398,10 @@ func typeFrom(ctx rbytes.StreamerInfoContext, typename string, enum rmeta.Enum, 
 		rt = gotypes[reflect.Float64]
 	case rmeta.OffsetL + rmeta.Float16:
 		// dim handled by typeFromDescr.
-		rt = reflect.TypeOf((*root.Float16)(nil)).Elem()
+		rt = reflect.TypeFor[root.Float16]()
 	case rmeta.OffsetL + rmeta.Double32:
 		// dim handled by typeFromDescr.
-		rt = reflect.TypeOf((*root.Double32)(nil)).Elem()
+		rt = reflect.TypeFor[root.Double32]()
 	case rmeta.OffsetL + rmeta.TString,
 		rmeta.OffsetL + rmeta.CharStar,
 		rmeta.OffsetL + rmeta.STLstring:
@@ -431,9 +431,9 @@ func typeFrom(ctx rbytes.StreamerInfoContext, typename string, enum rmeta.Enum, 
 	case rmeta.OffsetP + rmeta.Float64:
 		rt = reflect.SliceOf(gotypes[reflect.Float64])
 	case rmeta.OffsetP + rmeta.Float16:
-		rt = reflect.SliceOf(reflect.TypeOf((*root.Float16)(nil)).Elem())
+		rt = reflect.SliceOf(reflect.TypeFor[root.Float16]())
 	case rmeta.OffsetP + rmeta.Double32:
-		rt = reflect.SliceOf(reflect.TypeOf((*root.Double32)(nil)).Elem())
+		rt = reflect.SliceOf(reflect.TypeFor[root.Double32]())
 	case rmeta.OffsetP + rmeta.STLstring,
 		rmeta.OffsetP + rmeta.CharStar:
 		rt = reflect.SliceOf(gotypes[reflect.String])
@@ -576,20 +576,20 @@ func ndimsFromType(rt reflect.Type) string {
 
 var (
 	gotypes = map[reflect.Kind]reflect.Type{
-		reflect.Bool:    reflect.TypeOf(false),
-		reflect.Uint8:   reflect.TypeOf(uint8(0)),
-		reflect.Uint16:  reflect.TypeOf(uint16(0)),
-		reflect.Uint32:  reflect.TypeOf(uint32(0)),
-		reflect.Uint64:  reflect.TypeOf(uint64(0)),
-		reflect.Int8:    reflect.TypeOf(int8(0)),
-		reflect.Int16:   reflect.TypeOf(int16(0)),
-		reflect.Int32:   reflect.TypeOf(int32(0)),
-		reflect.Int64:   reflect.TypeOf(int64(0)),
-		reflect.Uint:    reflect.TypeOf(uint(0)),
-		reflect.Int:     reflect.TypeOf(int(0)),
-		reflect.Float32: reflect.TypeOf(float32(0)),
-		reflect.Float64: reflect.TypeOf(float64(0)),
-		reflect.String:  reflect.TypeOf(""),
+		reflect.Bool:    reflect.TypeFor[bool](),
+		reflect.Uint8:   reflect.TypeFor[uint8](),
+		reflect.Uint16:  reflect.TypeFor[uint16](),
+		reflect.Uint32:  reflect.TypeFor[uint32](),
+		reflect.Uint64:  reflect.TypeFor[uint64](),
+		reflect.Int8:    reflect.TypeFor[int8](),
+		reflect.Int16:   reflect.TypeFor[int16](),
+		reflect.Int32:   reflect.TypeFor[int32](),
+		reflect.Int64:   reflect.TypeFor[int64](),
+		reflect.Uint:    reflect.TypeFor[uint](),
+		reflect.Int:     reflect.TypeFor[int](),
+		reflect.Float32: reflect.TypeFor[float32](),
+		reflect.Float64: reflect.TypeFor[float64](),
+		reflect.String:  reflect.TypeFor[string](),
 	}
 )
 

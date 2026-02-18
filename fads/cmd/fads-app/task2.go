@@ -54,7 +54,7 @@ func (tsk *task2) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(task2{}),
+	fwk.Register(reflect.TypeFor[task2](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 			tsk := &task2{
@@ -69,12 +69,12 @@ func init() {
 				return nil, err
 			}
 
-			err = tsk.DeclInPort("floats1", reflect.TypeOf(float64(1.0)))
+			err = tsk.DeclInPort("floats1", reflect.TypeFor[float64]())
 			if err != nil {
 				return nil, err
 			}
 
-			err = tsk.DeclOutPort("massaged_floats1", reflect.TypeOf(float64(1.0)))
+			err = tsk.DeclOutPort("massaged_floats1", reflect.TypeFor[float64]())
 			if err != nil {
 				return nil, err
 			}

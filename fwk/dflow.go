@@ -382,5 +382,5 @@ func newDataFlowSvc(typ, name string, mgr App) (Component, error) {
 }
 
 func init() {
-	Register(reflect.TypeOf(dflowsvc{}), newDataFlowSvc)
+	Register(reflect.TypeFor[dflowsvc](), newDataFlowSvc)
 }

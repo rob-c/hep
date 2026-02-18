@@ -25,12 +25,12 @@ func (tsk *UniqueObjectFinder) Configure(ctx fwk.Context) error {
 	var err error
 
 	for _, pair := range tsk.colls {
-		err = tsk.DeclInPort(pair.In, reflect.TypeOf([]Candidate{}))
+		err = tsk.DeclInPort(pair.In, reflect.TypeFor[[]Candidate]())
 		if err != nil {
 			return err
 		}
 
-		err = tsk.DeclOutPort(pair.Out, reflect.TypeOf([]Candidate{}))
+		err = tsk.DeclOutPort(pair.Out, reflect.TypeFor[[]Candidate]())
 		if err != nil {
 			return err
 		}
@@ -130,5 +130,5 @@ func newUniqueObjectFinder(typ, name string, mgr fwk.App) (fwk.Component, error)
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(UniqueObjectFinder{}), newUniqueObjectFinder)
+	fwk.Register(reflect.TypeFor[UniqueObjectFinder](), newUniqueObjectFinder)
 }

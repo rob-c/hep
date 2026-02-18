@@ -63,7 +63,7 @@ func newWStreamer(i int, si *StreamerInfo, kind rbytes.StreamKind, wops []wstrea
 
 func (ww *wstreamerElem) Bind(recv any) error {
 	rv := reflect.ValueOf(recv)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("rdict: invalid kind (got=%T, want=pointer)", recv)
 	}
 	ww.recv = recv

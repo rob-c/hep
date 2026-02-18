@@ -58,12 +58,10 @@ func BenchmarkH1DFillFlatGo(b *testing.B) {
 	q := make(chan struct{}, 1000)
 	for i := 0; i < b.N; i++ {
 		q <- struct{}{}
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			h1.Fill(rnd()*100., 1.)
 			<-q
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -71,11 +69,9 @@ func BenchmarkH1DFillFlatGo(b *testing.B) {
 func st_process_evts(n int, hists []*H1D, process func(hists []*H1D)) {
 	var wg sync.WaitGroup
 	for range n {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			process(hists)
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 }

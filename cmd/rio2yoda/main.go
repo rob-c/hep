@@ -142,7 +142,7 @@ func nameFromType(rt reflect.Type) string {
 	star := ""
 	if rt.Name() == "" {
 		pt := rt
-		if pt.Kind() == reflect.Ptr {
+		if pt.Kind() == reflect.Pointer {
 			star = "*"
 			rt = pt.Elem()
 		}
@@ -170,10 +170,10 @@ func typeFrom(name string) reflect.Type {
 }
 
 var hbookTypes = []reflect.Type{
-	reflect.TypeOf((*hbook.H1D)(nil)),
-	reflect.TypeOf((*hbook.H2D)(nil)),
-	reflect.TypeOf((*hbook.P1D)(nil)),
-	reflect.TypeOf((*hbook.S2D)(nil)),
+	reflect.TypeFor[*hbook.H1D](),
+	reflect.TypeFor[*hbook.H2D](),
+	reflect.TypeFor[*hbook.P1D](),
+	reflect.TypeFor[*hbook.S2D](),
 }
 
 type yodaMarshaler interface {

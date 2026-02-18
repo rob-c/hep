@@ -62,5 +62,5 @@ func newsvc1(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(svc1{}), newsvc1)
+	fwk.Register(reflect.TypeFor[svc1](), newsvc1)
 }

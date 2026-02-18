@@ -42,27 +42,27 @@ func (tsk *Propagator) Configure(ctx fwk.Context) error {
 		return fmt.Errorf("%s: too small 1/2-length value (%v)", tsk.Name(), tsk.halflen)
 	}
 
-	err = tsk.DeclInPort(tsk.input, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.input, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.hadrons, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.hadrons, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.eles, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.eles, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.muons, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.muons, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -325,7 +325,7 @@ func (tsk *Propagator) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(Propagator{}),
+	fwk.Register(reflect.TypeFor[Propagator](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 			tsk := &Propagator{

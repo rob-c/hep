@@ -379,9 +379,9 @@ func Example_createEventNtupleNoSplit() {
 
 	// register streamers
 	for _, typ := range []reflect.Type{
-		reflect.TypeOf(P4{}),
-		reflect.TypeOf(Particle{}),
-		reflect.TypeOf(Event{}),
+		reflect.TypeFor[P4](),
+		reflect.TypeFor[Particle](),
+		reflect.TypeFor[Event](),
 	} {
 
 		rdict.StreamerInfos.Add(rdict.StreamerOf(
@@ -520,9 +520,9 @@ func Example_createEventNtupleFullSplit() {
 
 	// register streamers
 	for _, typ := range []reflect.Type{
-		reflect.TypeOf(P4{}),
-		reflect.TypeOf(Particle{}),
-		reflect.TypeOf(Event{}),
+		reflect.TypeFor[P4](),
+		reflect.TypeFor[Particle](),
+		reflect.TypeFor[Event](),
 	} {
 
 		rdict.StreamerInfos.Add(rdict.StreamerOf(

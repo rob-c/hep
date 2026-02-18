@@ -30,7 +30,7 @@ func WriteVarsFromStruct(ptr any, opts ...WriteOption) []WriteVar {
 	}
 
 	rv := reflect.ValueOf(ptr)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		panic(fmt.Errorf("rtree: expect a pointer value, got %T", ptr))
 	}
 

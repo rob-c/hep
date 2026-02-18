@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	blockHeaderSize = uint32(reflect.TypeOf((*blockHeader)(nil)).Elem().Size())
-	blockDataSize   = uint32(reflect.TypeOf((*blockData)(nil)).Elem().Size())
+	blockHeaderSize = uint32(reflect.TypeFor[blockHeader]().Size())
+	blockDataSize   = uint32(reflect.TypeFor[blockData]().Size())
 )
 
 // Block is the interface implemented by an object that can be

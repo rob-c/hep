@@ -24,7 +24,7 @@ func newEncoder(w *rbytes.WBuffer, si *StreamerInfo, kind rbytes.StreamKind, ops
 
 func (enc *encoder) EncodeROOT(ptr any) error {
 	rv := reflect.ValueOf(ptr)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("rdict: invalid kind (got=%T, want=pointer)", ptr)
 	}
 
@@ -71,7 +71,7 @@ func newWStreamerInfo(si *StreamerInfo, kind rbytes.StreamKind, wops []wstreamer
 
 func (ww *wstreamerInfo) Bind(recv any) error {
 	rv := reflect.ValueOf(recv)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("rdict: invalid kind (got=%T, want=pointer)", recv)
 	}
 	ww.recv = recv

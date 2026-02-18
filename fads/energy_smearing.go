@@ -30,12 +30,12 @@ type EnergySmearing struct {
 func (tsk *EnergySmearing) Configure(ctx fwk.Context) error {
 	var err error
 
-	err = tsk.DeclInPort(tsk.input, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.input, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (tsk *EnergySmearing) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(EnergySmearing{}),
+	fwk.Register(reflect.TypeFor[EnergySmearing](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 			tsk := &EnergySmearing{

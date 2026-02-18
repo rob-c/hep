@@ -244,7 +244,7 @@ func TestPortsCycles(t *testing.T) {
 
 func getsumsq(n int64) int64 {
 	sum := int64(0)
-	for i := int64(0); i < n; i++ {
+	for i := range n {
 		sum += i * i
 	}
 	return sum
@@ -286,7 +286,7 @@ func TestInputStream(t *testing.T) {
 					"Ports": []fwk.Port{
 						{
 							Name: "t1-ints1",
-							Type: reflect.TypeOf(int64(1)),
+							Type: reflect.TypeFor[int64](),
 						},
 					},
 					"Streamer": &fwktest.InputStream{
@@ -339,7 +339,7 @@ func TestOutputStream(t *testing.T) {
 					"Ports": []fwk.Port{
 						{
 							Name: "t1-ints1-massaged",
-							Type: reflect.TypeOf(int64(1)),
+							Type: reflect.TypeFor[int64](),
 						},
 					},
 					"Streamer": &fwktest.OutputStream{
@@ -375,7 +375,7 @@ func TestOutputStream(t *testing.T) {
 					"Ports": []fwk.Port{
 						{
 							Name: "t1-ints1",
-							Type: reflect.TypeOf(int64(1)),
+							Type: reflect.TypeFor[int64](),
 						},
 					},
 					"Streamer": &fwktest.InputStream{

@@ -106,7 +106,7 @@ func (rec *Record) Connect(name string, ptr any) error {
 
 	default:
 		rt := reflect.TypeOf(ptr)
-		if rt.Kind() != reflect.Ptr {
+		if rt.Kind() != reflect.Pointer {
 			return fmt.Errorf("sio: Connect needs a pointer to a block of data")
 		}
 		var vers uint32

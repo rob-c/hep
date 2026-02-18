@@ -25,7 +25,7 @@ func newDecoder(r *rbytes.RBuffer, si *StreamerInfo, kind rbytes.StreamKind, ops
 
 func (dec *decoder) DecodeROOT(ptr any) error {
 	rv := reflect.ValueOf(ptr)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("rdict: invalid kind (got=%T, want=pointer)", ptr)
 	}
 
@@ -79,7 +79,7 @@ func newRStreamerInfo(si *StreamerInfo, kind rbytes.StreamKind, rops []rstreamer
 
 func (rr *rstreamerInfo) Bind(recv any) error {
 	rv := reflect.ValueOf(recv)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("rdict: invalid kind (got=%T, want=pointer)", recv)
 	}
 	rr.recv = recv

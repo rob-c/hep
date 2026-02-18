@@ -65,8 +65,7 @@ func (leaf *LeafO) Kind() reflect.Kind {
 
 // Type returns the leaf's type.
 func (leaf *LeafO) Type() reflect.Type {
-	var v bool
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[bool]()
 }
 
 func (leaf *LeafO) TypeName() string {
@@ -256,11 +255,9 @@ func (leaf *LeafB) Kind() reflect.Kind {
 // Type returns the leaf's type.
 func (leaf *LeafB) Type() reflect.Type {
 	if leaf.IsUnsigned() {
-		var v uint8
-		return reflect.TypeOf(v)
+		return reflect.TypeFor[uint8]()
 	}
-	var v int8
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[int8]()
 }
 
 // ivalue returns the first leaf value as int
@@ -475,11 +472,9 @@ func (leaf *LeafS) Kind() reflect.Kind {
 // Type returns the leaf's type.
 func (leaf *LeafS) Type() reflect.Type {
 	if leaf.IsUnsigned() {
-		var v uint16
-		return reflect.TypeOf(v)
+		return reflect.TypeFor[uint16]()
 	}
-	var v int16
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[int16]()
 }
 
 // ivalue returns the first leaf value as int
@@ -694,11 +689,9 @@ func (leaf *LeafI) Kind() reflect.Kind {
 // Type returns the leaf's type.
 func (leaf *LeafI) Type() reflect.Type {
 	if leaf.IsUnsigned() {
-		var v uint32
-		return reflect.TypeOf(v)
+		return reflect.TypeFor[uint32]()
 	}
-	var v int32
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[int32]()
 }
 
 // ivalue returns the first leaf value as int
@@ -913,11 +906,9 @@ func (leaf *LeafL) Kind() reflect.Kind {
 // Type returns the leaf's type.
 func (leaf *LeafL) Type() reflect.Type {
 	if leaf.IsUnsigned() {
-		var v uint64
-		return reflect.TypeOf(v)
+		return reflect.TypeFor[uint64]()
 	}
-	var v int64
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[int64]()
 }
 
 // ivalue returns the first leaf value as int
@@ -1132,11 +1123,9 @@ func (leaf *LeafG) Kind() reflect.Kind {
 // Type returns the leaf's type.
 func (leaf *LeafG) Type() reflect.Type {
 	if leaf.IsUnsigned() {
-		var v uint64
-		return reflect.TypeOf(v)
+		return reflect.TypeFor[uint64]()
 	}
-	var v int64
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[int64]()
 }
 
 // ivalue returns the first leaf value as int
@@ -1347,8 +1336,7 @@ func (leaf *LeafF) Kind() reflect.Kind {
 
 // Type returns the leaf's type.
 func (leaf *LeafF) Type() reflect.Type {
-	var v float32
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[float32]()
 }
 
 func (leaf *LeafF) TypeName() string {
@@ -1537,8 +1525,7 @@ func (leaf *LeafD) Kind() reflect.Kind {
 
 // Type returns the leaf's type.
 func (leaf *LeafD) Type() reflect.Type {
-	var v float64
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[float64]()
 }
 
 func (leaf *LeafD) TypeName() string {
@@ -1729,8 +1716,7 @@ func (leaf *LeafF16) Kind() reflect.Kind {
 
 // Type returns the leaf's type.
 func (leaf *LeafF16) Type() reflect.Type {
-	var v root.Float16
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[root.Float16]()
 }
 
 func (leaf *LeafF16) TypeName() string {
@@ -1930,8 +1916,7 @@ func (leaf *LeafD32) Kind() reflect.Kind {
 
 // Type returns the leaf's type.
 func (leaf *LeafD32) Type() reflect.Type {
-	var v root.Double32
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[root.Double32]()
 }
 
 func (leaf *LeafD32) TypeName() string {
@@ -2129,8 +2114,7 @@ func (leaf *LeafC) Kind() reflect.Kind {
 
 // Type returns the leaf's type.
 func (leaf *LeafC) Type() reflect.Type {
-	var v string
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[string]()
 }
 
 func (leaf *LeafC) TypeName() string {

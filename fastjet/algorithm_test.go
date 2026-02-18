@@ -246,7 +246,6 @@ func TestInclusiveJetAlgorithms(t *testing.T) {
 			ptmin: 0,
 		},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -311,7 +310,6 @@ func TestExclusiveJetAlgorithms(t *testing.T) {
 			dcut: 2.0,
 		},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -370,7 +368,7 @@ func loadParticles(name string) ([]fastjet.Jet, error) {
 	for scan.Scan() {
 		txt := scan.Text()
 		toks := make([]string, 0, 4)
-		for _, tok := range strings.Split(txt, " ") {
+		for tok := range strings.SplitSeq(txt, " ") {
 			if tok != "" {
 				toks = append(toks, tok)
 			}

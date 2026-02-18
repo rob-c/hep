@@ -135,5 +135,5 @@ func (tsk *inputStream) Process(ctx Context) error {
 }
 
 func init() {
-	Register(reflect.TypeOf(InputStream{}), newInputStream)
+	Register(reflect.TypeFor[InputStream](), newInputStream)
 }

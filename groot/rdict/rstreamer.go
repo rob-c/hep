@@ -66,7 +66,7 @@ func newRStreamerElem(i int, si *StreamerInfo, kind rbytes.StreamKind, rops []rs
 
 func (rr *rstreamerElem) Bind(recv any) error {
 	rv := reflect.ValueOf(recv)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("rdict: invalid kind (got=%T, want=pointer)", recv)
 	}
 	rr.recv = recv

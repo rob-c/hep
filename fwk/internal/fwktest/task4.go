@@ -24,12 +24,12 @@ func (tsk *task4) Configure(ctx fwk.Context) error {
 	msg := ctx.Msg()
 	msg.Infof("configure...\n")
 
-	err = tsk.DeclInPort(tsk.input, reflect.TypeOf(float64(1)))
+	err = tsk.DeclInPort(tsk.input, reflect.TypeFor[float64]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf(float64(1)))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[float64]())
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (tsk *task4) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(task4{}),
+	fwk.Register(reflect.TypeFor[task4](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 			tsk := &task4{

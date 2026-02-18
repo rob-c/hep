@@ -120,5 +120,5 @@ func newOutputStream(typ, name string, mgr App) (Component, error) {
 }
 
 func init() {
-	Register(reflect.TypeOf(OutputStream{}), newOutputStream)
+	Register(reflect.TypeFor[OutputStream](), newOutputStream)
 }

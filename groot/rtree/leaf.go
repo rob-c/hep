@@ -561,12 +561,12 @@ func gotypeToROOTTypeCode(rt reflect.Type) string {
 	case reflect.Uint64:
 		return "l"
 	case reflect.Float32:
-		if rt == reflect.TypeOf(root.Float16(0)) {
+		if rt == reflect.TypeFor[root.Float16]() {
 			return "f"
 		}
 		return "F"
 	case reflect.Float64:
-		if rt == reflect.TypeOf(root.Double32(0)) {
+		if rt == reflect.TypeFor[root.Double32]() {
 			return "d"
 		}
 		return "D"
@@ -774,7 +774,7 @@ func newLeafFromWVar(w *wtree, b Branch, v WriteVar, lvl int, cfg wopt) (Leaf, e
 
 	case reflect.Float32:
 		switch rt {
-		case reflect.TypeOf(float32(0)), reflect.TypeOf([]float32(nil)):
+		case reflect.TypeFor[float32](), reflect.TypeFor[[]float32]():
 			leaf = newLeafF(b, v.Name, shape, signed, count)
 			err := leaf.setAddress(v.Value)
 			if err != nil {
@@ -782,7 +782,7 @@ func newLeafFromWVar(w *wtree, b Branch, v WriteVar, lvl int, cfg wopt) (Leaf, e
 			}
 			addLeaf(leaf)
 
-		case reflect.TypeOf(root.Float16(0)), reflect.TypeOf([]root.Float16(nil)):
+		case reflect.TypeFor[root.Float16](), reflect.TypeFor[[]root.Float16]():
 			leaf = newLeafF16(b, v.Name, shape, signed, count, nil)
 			err := leaf.setAddress(v.Value)
 			if err != nil {
@@ -795,7 +795,7 @@ func newLeafFromWVar(w *wtree, b Branch, v WriteVar, lvl int, cfg wopt) (Leaf, e
 		}
 	case reflect.Float64:
 		switch rt {
-		case reflect.TypeOf(float64(0)), reflect.TypeOf([]float64(nil)):
+		case reflect.TypeFor[float64](), reflect.TypeFor[[]float64]():
 			leaf = newLeafD(b, v.Name, shape, signed, count)
 			err := leaf.setAddress(v.Value)
 			if err != nil {
@@ -803,7 +803,7 @@ func newLeafFromWVar(w *wtree, b Branch, v WriteVar, lvl int, cfg wopt) (Leaf, e
 			}
 			addLeaf(leaf)
 
-		case reflect.TypeOf(root.Double32(0)), reflect.TypeOf([]root.Double32(nil)):
+		case reflect.TypeFor[root.Double32](), reflect.TypeFor[[]root.Double32]():
 			leaf = newLeafD32(b, v.Name, shape, signed, count, nil)
 			err := leaf.setAddress(v.Value)
 			if err != nil {

@@ -23,31 +23,31 @@ func TestIsTObject(t *testing.T) {
 		want bool
 	}{
 		{
-			typ:  reflect.TypeOf(rbase.Object{}),
+			typ:  reflect.TypeFor[rbase.Object](),
 			want: false,
 		},
 		{
-			typ:  reflect.TypeOf(&rbase.Object{}),
+			typ:  reflect.TypeFor[*rbase.Object](),
 			want: true,
 		},
 		{
-			typ:  reflect.TypeOf((*rbase.ObjString)(nil)),
+			typ:  reflect.TypeFor[*rbase.ObjString](),
 			want: true,
 		},
 		{
-			typ:  reflect.TypeOf(int(0)),
+			typ:  reflect.TypeFor[int](),
 			want: false,
 		},
 		{
-			typ:  reflect.TypeOf((*rcont.List)(nil)),
+			typ:  reflect.TypeFor[*rcont.List](),
 			want: true,
 		},
 		{
-			typ:  reflect.TypeOf(tobject{}),
+			typ:  reflect.TypeFor[tobject](),
 			want: true,
 		},
 		{
-			typ:  reflect.TypeOf(&tobject{}),
+			typ:  reflect.TypeFor[*tobject](),
 			want: true,
 		},
 	} {
@@ -133,122 +133,122 @@ func TestTypenameOf(t *testing.T) {
 	}{
 		{
 			name: "bool",
-			typ:  reflect.TypeOf(false),
+			typ:  reflect.TypeFor[bool](),
 			want: "bool",
 		},
 		{
 			name: "*bool",
-			typ:  reflect.TypeOf((*bool)(nil)),
+			typ:  reflect.TypeFor[*bool](),
 			want: "bool*",
 		},
 		{
 			name: "int8",
-			typ:  reflect.TypeOf(int8(0)),
+			typ:  reflect.TypeFor[int8](),
 			want: "int8_t",
 		},
 		{
 			name: "int16",
-			typ:  reflect.TypeOf(int16(0)),
+			typ:  reflect.TypeFor[int16](),
 			want: "int16_t",
 		},
 		{
 			name: "int32",
-			typ:  reflect.TypeOf(int32(0)),
+			typ:  reflect.TypeFor[int32](),
 			want: "int32_t",
 		},
 		{
 			name: "int64",
-			typ:  reflect.TypeOf(int64(0)),
+			typ:  reflect.TypeFor[int64](),
 			want: "int64_t",
 		},
 		{
 			name: "uint8",
-			typ:  reflect.TypeOf(uint8(0)),
+			typ:  reflect.TypeFor[uint8](),
 			want: "uint8_t",
 		},
 		{
 			name: "uint16",
-			typ:  reflect.TypeOf(uint16(0)),
+			typ:  reflect.TypeFor[uint16](),
 			want: "uint16_t",
 		},
 		{
 			name: "uint32",
-			typ:  reflect.TypeOf(uint32(0)),
+			typ:  reflect.TypeFor[uint32](),
 			want: "uint32_t",
 		},
 		{
 			name: "uint64",
-			typ:  reflect.TypeOf(uint64(0)),
+			typ:  reflect.TypeFor[uint64](),
 			want: "uint64_t",
 		},
 		{
 			name: "float32",
-			typ:  reflect.TypeOf(float32(0)),
+			typ:  reflect.TypeFor[float32](),
 			want: "float",
 		},
 		{
 			name: "float64",
-			typ:  reflect.TypeOf(float64(0)),
+			typ:  reflect.TypeFor[float64](),
 			want: "double",
 		},
 		{
 			name: "Float16_t",
-			typ:  reflect.TypeOf(root.Float16(0)),
+			typ:  reflect.TypeFor[root.Float16](),
 			want: "Float16_t",
 		},
 		{
 			name: "Double32_t",
-			typ:  reflect.TypeOf(root.Double32(0)),
+			typ:  reflect.TypeFor[root.Double32](),
 			want: "Double32_t",
 		},
 		{
 			name: "string",
-			typ:  reflect.TypeOf(""),
+			typ:  reflect.TypeFor[string](),
 			want: "string",
 		},
 		{
 			name: "[2]float32",
-			typ:  reflect.TypeOf([2]float32{}),
+			typ:  reflect.TypeFor[[2]float32](),
 			want: "float[2]",
 		},
 		{
 			name: "[2]string",
-			typ:  reflect.TypeOf([2]string{}),
+			typ:  reflect.TypeFor[[2]string](),
 			want: "string[2]",
 		},
 		{
 			name: "[2][3]string",
-			typ:  reflect.TypeOf([2][3]string{}),
+			typ:  reflect.TypeFor[[2][3]string](),
 			want: "string[2][3]",
 		},
 		{
 			name: "vector<string>",
-			typ:  reflect.TypeOf([]string{}),
+			typ:  reflect.TypeFor[[]string](),
 			want: "vector<string>",
 		},
 		{
 			name: "vector<int32_t>",
-			typ:  reflect.TypeOf([]int32{}),
+			typ:  reflect.TypeFor[[]int32](),
 			want: "vector<int32_t>",
 		},
 		{
 			name: "vector<vector<int32_t> >",
-			typ:  reflect.TypeOf([][]int32{}),
+			typ:  reflect.TypeFor[[][]int32](),
 			want: "vector<vector<int32_t> >",
 		},
 		{
 			name: "vector<vector<vector<int32_t> > >",
-			typ:  reflect.TypeOf([][][]int32{}),
+			typ:  reflect.TypeFor[[][][]int32](),
 			want: "vector<vector<vector<int32_t> > >",
 		},
 		{
 			name: "vector<Float16_t>",
-			typ:  reflect.TypeOf([]root.Float16{}),
+			typ:  reflect.TypeFor[[]root.Float16](),
 			want: "vector<Float16_t>",
 		},
 		{
 			name: "vector<Double32_t>",
-			typ:  reflect.TypeOf([]root.Double32{}),
+			typ:  reflect.TypeFor[[]root.Double32](),
 			want: "vector<Double32_t>",
 		},
 		{
@@ -266,52 +266,52 @@ func TestTypenameOf(t *testing.T) {
 		},
 		{
 			name: "TObjString*",
-			typ:  reflect.TypeOf((*rbase.ObjString)(nil)),
+			typ:  reflect.TypeFor[*rbase.ObjString](),
 			want: "TObjString*",
 		},
 		{
 			name: "TObjString",
-			typ:  reflect.TypeOf((*rbase.ObjString)(nil)).Elem(),
+			typ:  reflect.TypeFor[rbase.ObjString](),
 			want: "TObjString",
 		},
 		{
 			name: "vector<TObjString>",
-			typ:  reflect.TypeOf([]rbase.ObjString{}),
+			typ:  reflect.TypeFor[[]rbase.ObjString](),
 			want: "vector<TObjString>",
 		},
 		{
 			name: "vector<TObjString*>",
-			typ:  reflect.TypeOf([]*rbase.ObjString{}),
+			typ:  reflect.TypeFor[[]*rbase.ObjString](),
 			want: "vector<TObjString*>",
 		},
 		{
 			name: "struct0*",
-			typ:  reflect.TypeOf((*struct0)(nil)),
+			typ:  reflect.TypeFor[*struct0](),
 			want: "struct0*",
 		},
 		{
 			name: "struct0",
-			typ:  reflect.TypeOf((*struct0)(nil)).Elem(),
+			typ:  reflect.TypeFor[struct0](),
 			want: "struct0",
 		},
 		{
 			name: "vector<struct0>",
-			typ:  reflect.TypeOf([]struct0{}),
+			typ:  reflect.TypeFor[[]struct0](),
 			want: "vector<struct0>",
 		},
 		{
 			name: "vector<struct0*>",
-			typ:  reflect.TypeOf([]*struct0{}),
+			typ:  reflect.TypeFor[[]*struct0](),
 			want: "vector<struct0*>",
 		},
 		{
 			name: "tobject",
-			typ:  reflect.TypeOf(tobject{}),
+			typ:  reflect.TypeFor[tobject](),
 			want: "tobject",
 		},
 		{
 			name: "*tobject",
-			typ:  reflect.TypeOf(&tobject{}),
+			typ:  reflect.TypeFor[*tobject](),
 			want: "tobject*",
 		},
 	} {
@@ -345,7 +345,7 @@ func TestStreamerOf(t *testing.T) {
 		panics string
 	}{
 		{
-			typ: reflect.TypeOf(&rbase.ObjString{}),
+			typ: reflect.TypeFor[*rbase.ObjString](),
 			want: func() rbytes.StreamerInfo {
 				si, ok := StreamerInfos.Get("TObjString", -1)
 				if !ok {
@@ -355,7 +355,7 @@ func TestStreamerOf(t *testing.T) {
 			}(),
 		},
 		{
-			typ: reflect.TypeOf((*struct0)(nil)).Elem(),
+			typ: reflect.TypeFor[struct0](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct0", "struct0"),
 				clsver: 1,
@@ -383,7 +383,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct1)(nil)).Elem(),
+			typ: reflect.TypeFor[struct1](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct1", "struct1"),
 				clsver: 1,
@@ -502,7 +502,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct2)(nil)).Elem(),
+			typ: reflect.TypeFor[struct2](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct2", "struct2"),
 				clsver: 1,
@@ -519,7 +519,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct3)(nil)).Elem(),
+			typ: reflect.TypeFor[struct3](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct3", "struct3"),
 				clsver: 1,
@@ -689,7 +689,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct4)(nil)).Elem(),
+			typ: reflect.TypeFor[struct4](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct4", "struct4"),
 				clsver: 1,
@@ -811,7 +811,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct5)(nil)).Elem(),
+			typ: reflect.TypeFor[struct5](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct5", "struct5"),
 				clsver: 1,
@@ -954,7 +954,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct6)(nil)).Elem(),
+			typ: reflect.TypeFor[struct6](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct6", "struct6"),
 				clsver: 1,
@@ -1069,7 +1069,7 @@ func TestStreamerOf(t *testing.T) {
 			},
 		},
 		{
-			typ: reflect.TypeOf((*struct7)(nil)).Elem(),
+			typ: reflect.TypeFor[struct7](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("struct7", "struct7"),
 				clsver: 1,
@@ -1120,7 +1120,7 @@ func TestStreamerOf(t *testing.T) {
 		},
 		{
 			// FIXME(sbinet): add support for maps.
-			typ: reflect.TypeOf(panicFIXMEStruct0{}),
+			typ: reflect.TypeFor[panicFIXMEStruct0](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicFIXMEStruct0", "panicFIXMEStruct0"),
 				clsver: 1,
@@ -1129,7 +1129,7 @@ func TestStreamerOf(t *testing.T) {
 		},
 		{
 			// FIXME(sbinet): add support for interfaces?
-			typ: reflect.TypeOf(panicFIXMEStruct1{}),
+			typ: reflect.TypeFor[panicFIXMEStruct1](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicFIXMEStruct1", "panicFIXMEStruct1"),
 				clsver: 1,
@@ -1138,7 +1138,7 @@ func TestStreamerOf(t *testing.T) {
 		},
 		{
 			// FIXME(sbinet): add support for complex-64
-			typ: reflect.TypeOf(panicFIXMEStruct2{}),
+			typ: reflect.TypeFor[panicFIXMEStruct2](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicFIXMEStruct2", "panicFIXMEStruct2"),
 				clsver: 1,
@@ -1147,7 +1147,7 @@ func TestStreamerOf(t *testing.T) {
 		},
 		{
 			// FIXME(sbinet): add support for complex-128
-			typ: reflect.TypeOf(panicFIXMEStruct3{}),
+			typ: reflect.TypeFor[panicFIXMEStruct3](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicFIXMEStruct3", "panicFIXMEStruct3"),
 				clsver: 1,
@@ -1155,7 +1155,7 @@ func TestStreamerOf(t *testing.T) {
 			panics: `rdict: invalid struct field (name=C128, type=complex128, kind=complex128)`,
 		},
 		{
-			typ: reflect.TypeOf(panicStruct0{}),
+			typ: reflect.TypeFor[panicStruct0](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicStruct0", "panicStruct0"),
 				clsver: 1,
@@ -1163,7 +1163,7 @@ func TestStreamerOf(t *testing.T) {
 			panics: `rdict: invalid struct field (name=Chan, type=chan int32, kind=chan)`,
 		},
 		{
-			typ: reflect.TypeOf(panicStruct1{}),
+			typ: reflect.TypeFor[panicStruct1](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicStruct1", "panicStruct1"),
 				clsver: 1,
@@ -1171,7 +1171,7 @@ func TestStreamerOf(t *testing.T) {
 			panics: `rdict: invalid struct field (name=Int, type=int, kind=int)`,
 		},
 		{
-			typ: reflect.TypeOf(panicStruct2{}),
+			typ: reflect.TypeFor[panicStruct2](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicStruct2", "panicStruct2"),
 				clsver: 1,
@@ -1179,7 +1179,7 @@ func TestStreamerOf(t *testing.T) {
 			panics: `rdict: invalid struct field (name=Uint, type=uint, kind=uint)`,
 		},
 		{
-			typ: reflect.TypeOf(panicStruct3{}),
+			typ: reflect.TypeFor[panicStruct3](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicStruct3", "panicStruct3"),
 				clsver: 1,
@@ -1187,7 +1187,7 @@ func TestStreamerOf(t *testing.T) {
 			panics: `rdict: invalid struct field (name=Uintptr, type=uintptr, kind=uintptr)`,
 		},
 		{
-			typ: reflect.TypeOf(panicStruct4{}),
+			typ: reflect.TypeFor[panicStruct4](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicStruct4", "panicStruct4"),
 				clsver: 1,
@@ -1195,7 +1195,7 @@ func TestStreamerOf(t *testing.T) {
 			panics: `rdict: invalid struct field (name=Unsafe, type=unsafe.Pointer, kind=unsafe.Pointer)`,
 		},
 		{
-			typ: reflect.TypeOf(panicStruct5{}),
+			typ: reflect.TypeFor[panicStruct5](),
 			want: &StreamerInfo{
 				named:  *rbase.NewNamed("panicStruct5", "panicStruct5"),
 				clsver: 1,

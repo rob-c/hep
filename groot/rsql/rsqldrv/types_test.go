@@ -334,250 +334,250 @@ func TestColFromDesc(t *testing.T) {
 		// int8
 		{
 			name:     "int8",
-			etyp:     reflect.TypeOf(int8(0)),
+			etyp:     reflect.TypeFor[int8](),
 			kind:     reflect.Int8,
 			count:    false,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "int8", Len: -1, Nullable: false, Type: reflect.TypeOf(int8(0))},
+			want: colDescr{Name: "int8", Len: -1, Nullable: false, Type: reflect.TypeFor[int8]()},
 		},
 		{
 			name:     "[2]int8",
-			etyp:     reflect.TypeOf(int8(0)),
+			etyp:     reflect.TypeFor[int8](),
 			kind:     reflect.Int8,
 			count:    false,
 			size:     2,
 			unsigned: false,
 
-			want: colDescr{Name: "[2]int8", Len: 2, Nullable: false, Type: reflect.TypeOf(int8(0))},
+			want: colDescr{Name: "[2]int8", Len: 2, Nullable: false, Type: reflect.TypeFor[int8]()},
 		},
 		{
 			name:     "[]int8",
-			etyp:     reflect.TypeOf(int8(0)),
+			etyp:     reflect.TypeFor[int8](),
 			kind:     reflect.Int8,
 			count:    true,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "[]int8", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(int8(0))},
+			want: colDescr{Name: "[]int8", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[int8]()},
 		},
 		// uint8
 		{
 			name:     "uint8",
-			etyp:     reflect.TypeOf(int8(0)),
+			etyp:     reflect.TypeFor[int8](),
 			kind:     reflect.Int8,
 			count:    false,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "uint8", Len: -1, Nullable: false, Type: reflect.TypeOf(uint8(0))},
+			want: colDescr{Name: "uint8", Len: -1, Nullable: false, Type: reflect.TypeFor[uint8]()},
 		},
 		{
 			name:     "[2]uint8",
-			etyp:     reflect.TypeOf(int8(0)),
+			etyp:     reflect.TypeFor[int8](),
 			kind:     reflect.Int8,
 			count:    false,
 			size:     2,
 			unsigned: true,
 
-			want: colDescr{Name: "[2]uint8", Len: 2, Nullable: false, Type: reflect.TypeOf(uint8(0))},
+			want: colDescr{Name: "[2]uint8", Len: 2, Nullable: false, Type: reflect.TypeFor[uint8]()},
 		},
 		{
 			name:     "[]uint8",
-			etyp:     reflect.TypeOf(int8(0)),
+			etyp:     reflect.TypeFor[int8](),
 			kind:     reflect.Int8,
 			count:    true,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "[]uint8", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(uint8(0))},
+			want: colDescr{Name: "[]uint8", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[uint8]()},
 		},
 		// int16
 		{
 			name:     "int16",
-			etyp:     reflect.TypeOf(int16(0)),
+			etyp:     reflect.TypeFor[int16](),
 			kind:     reflect.Int16,
 			count:    false,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "int16", Len: -1, Nullable: false, Type: reflect.TypeOf(int16(0))},
+			want: colDescr{Name: "int16", Len: -1, Nullable: false, Type: reflect.TypeFor[int16]()},
 		},
 		{
 			name:     "[2]int16",
-			etyp:     reflect.TypeOf(int16(0)),
+			etyp:     reflect.TypeFor[int16](),
 			kind:     reflect.Int16,
 			count:    false,
 			size:     2,
 			unsigned: false,
 
-			want: colDescr{Name: "[2]int16", Len: 2, Nullable: false, Type: reflect.TypeOf(int16(0))},
+			want: colDescr{Name: "[2]int16", Len: 2, Nullable: false, Type: reflect.TypeFor[int16]()},
 		},
 		{
 			name:     "[]int16",
-			etyp:     reflect.TypeOf(int16(0)),
+			etyp:     reflect.TypeFor[int16](),
 			kind:     reflect.Int16,
 			count:    true,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "[]int16", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(int16(0))},
+			want: colDescr{Name: "[]int16", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[int16]()},
 		},
 		// uint16
 		{
 			name:     "uint16",
-			etyp:     reflect.TypeOf(int16(0)),
+			etyp:     reflect.TypeFor[int16](),
 			kind:     reflect.Int16,
 			count:    false,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "uint16", Len: -1, Nullable: false, Type: reflect.TypeOf(uint16(0))},
+			want: colDescr{Name: "uint16", Len: -1, Nullable: false, Type: reflect.TypeFor[uint16]()},
 		},
 		{
 			name:     "[2]uint16",
-			etyp:     reflect.TypeOf(int16(0)),
+			etyp:     reflect.TypeFor[int16](),
 			kind:     reflect.Int16,
 			count:    false,
 			size:     2,
 			unsigned: true,
 
-			want: colDescr{Name: "[2]uint16", Len: 2, Nullable: false, Type: reflect.TypeOf(uint16(0))},
+			want: colDescr{Name: "[2]uint16", Len: 2, Nullable: false, Type: reflect.TypeFor[uint16]()},
 		},
 		{
 			name:     "[]uint16",
-			etyp:     reflect.TypeOf(int16(0)),
+			etyp:     reflect.TypeFor[int16](),
 			kind:     reflect.Int16,
 			count:    true,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "[]uint16", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(uint16(0))},
+			want: colDescr{Name: "[]uint16", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[uint16]()},
 		},
 		// int32
 		{
 			name:     "int32",
-			etyp:     reflect.TypeOf(int32(0)),
+			etyp:     reflect.TypeFor[int32](),
 			kind:     reflect.Int32,
 			count:    false,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "int32", Len: -1, Nullable: false, Type: reflect.TypeOf(int32(0))},
+			want: colDescr{Name: "int32", Len: -1, Nullable: false, Type: reflect.TypeFor[int32]()},
 		},
 		{
 			name:     "[2]int32",
-			etyp:     reflect.TypeOf(int32(0)),
+			etyp:     reflect.TypeFor[int32](),
 			kind:     reflect.Int32,
 			count:    false,
 			size:     2,
 			unsigned: false,
 
-			want: colDescr{Name: "[2]int32", Len: 2, Nullable: false, Type: reflect.TypeOf(int32(0))},
+			want: colDescr{Name: "[2]int32", Len: 2, Nullable: false, Type: reflect.TypeFor[int32]()},
 		},
 		{
 			name:     "[]int32",
-			etyp:     reflect.TypeOf(int32(0)),
+			etyp:     reflect.TypeFor[int32](),
 			kind:     reflect.Int32,
 			count:    true,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "[]int32", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(int32(0))},
+			want: colDescr{Name: "[]int32", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[int32]()},
 		},
 		// uint32
 		{
 			name:     "uint32",
-			etyp:     reflect.TypeOf(int32(0)),
+			etyp:     reflect.TypeFor[int32](),
 			kind:     reflect.Int32,
 			count:    false,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "uint32", Len: -1, Nullable: false, Type: reflect.TypeOf(uint32(0))},
+			want: colDescr{Name: "uint32", Len: -1, Nullable: false, Type: reflect.TypeFor[uint32]()},
 		},
 		{
 			name:     "[2]uint32",
-			etyp:     reflect.TypeOf(int32(0)),
+			etyp:     reflect.TypeFor[int32](),
 			kind:     reflect.Int32,
 			count:    false,
 			size:     2,
 			unsigned: true,
 
-			want: colDescr{Name: "[2]uint32", Len: 2, Nullable: false, Type: reflect.TypeOf(uint32(0))},
+			want: colDescr{Name: "[2]uint32", Len: 2, Nullable: false, Type: reflect.TypeFor[uint32]()},
 		},
 		{
 			name:     "[]uint32",
-			etyp:     reflect.TypeOf(int32(0)),
+			etyp:     reflect.TypeFor[int32](),
 			kind:     reflect.Int32,
 			count:    true,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "[]uint32", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(uint32(0))},
+			want: colDescr{Name: "[]uint32", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[uint32]()},
 		},
 		// int64
 		{
 			name:     "int64",
-			etyp:     reflect.TypeOf(int64(0)),
+			etyp:     reflect.TypeFor[int64](),
 			kind:     reflect.Int64,
 			count:    false,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "int64", Len: -1, Nullable: false, Type: reflect.TypeOf(int64(0))},
+			want: colDescr{Name: "int64", Len: -1, Nullable: false, Type: reflect.TypeFor[int64]()},
 		},
 		{
 			name:     "[2]int64",
-			etyp:     reflect.TypeOf(int64(0)),
+			etyp:     reflect.TypeFor[int64](),
 			kind:     reflect.Int64,
 			count:    false,
 			size:     2,
 			unsigned: false,
 
-			want: colDescr{Name: "[2]int64", Len: 2, Nullable: false, Type: reflect.TypeOf(int64(0))},
+			want: colDescr{Name: "[2]int64", Len: 2, Nullable: false, Type: reflect.TypeFor[int64]()},
 		},
 		{
 			name:     "[]int64",
-			etyp:     reflect.TypeOf(int64(0)),
+			etyp:     reflect.TypeFor[int64](),
 			kind:     reflect.Int64,
 			count:    true,
 			size:     0,
 			unsigned: false,
 
-			want: colDescr{Name: "[]int64", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(int64(0))},
+			want: colDescr{Name: "[]int64", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[int64]()},
 		},
 		// uint64
 		{
 			name:     "uint64",
-			etyp:     reflect.TypeOf(int64(0)),
+			etyp:     reflect.TypeFor[int64](),
 			kind:     reflect.Int64,
 			count:    false,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "uint64", Len: -1, Nullable: false, Type: reflect.TypeOf(uint64(0))},
+			want: colDescr{Name: "uint64", Len: -1, Nullable: false, Type: reflect.TypeFor[uint64]()},
 		},
 		{
 			name:     "[2]uint64",
-			etyp:     reflect.TypeOf(int64(0)),
+			etyp:     reflect.TypeFor[int64](),
 			kind:     reflect.Int64,
 			count:    false,
 			size:     2,
 			unsigned: true,
 
-			want: colDescr{Name: "[2]uint64", Len: 2, Nullable: false, Type: reflect.TypeOf(uint64(0))},
+			want: colDescr{Name: "[2]uint64", Len: 2, Nullable: false, Type: reflect.TypeFor[uint64]()},
 		},
 		{
 			name:     "[]uint64",
-			etyp:     reflect.TypeOf(int64(0)),
+			etyp:     reflect.TypeFor[int64](),
 			kind:     reflect.Int64,
 			count:    true,
 			size:     0,
 			unsigned: true,
 
-			want: colDescr{Name: "[]uint64", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeOf(uint64(0))},
+			want: colDescr{Name: "[]uint64", Len: math.MaxInt64, Nullable: true, Type: reflect.TypeFor[uint64]()},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

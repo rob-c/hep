@@ -169,7 +169,7 @@ func addBlockEntry(line []byte, blk *Block) error {
 	}
 	line = bytes.TrimSpace(line)
 	tokens := make([][]byte, 0, 3)
-	for _, tok := range bytes.Split(line, []byte(" ")) {
+	for tok := range bytes.SplitSeq(line, []byte(" ")) {
 		if len(tok) <= 0 || bytes.Equal(tok, []byte("")) {
 			continue
 		}
@@ -266,7 +266,7 @@ func addDecayEntry(line []byte, part *Particle) error {
 	}
 	line = bytes.TrimSpace(line)
 	tokens := make([][]byte, 0, 3)
-	for _, tok := range bytes.Split(line, []byte(" ")) {
+	for tok := range bytes.SplitSeq(line, []byte(" ")) {
 		if len(tok) <= 0 || bytes.Equal(tok, []byte("")) {
 			continue
 		}

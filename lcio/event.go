@@ -301,7 +301,7 @@ func (evt *Event) Add(name string, ptr any) {
 	if evt.colls == nil {
 		evt.colls = make(map[string]any)
 	}
-	if rv := reflect.ValueOf(ptr); rv.Type().Kind() != reflect.Ptr {
+	if rv := reflect.ValueOf(ptr); rv.Type().Kind() != reflect.Pointer {
 		panic("lcio: expects a pointer to a value")
 	}
 	evt.colls[name] = ptr

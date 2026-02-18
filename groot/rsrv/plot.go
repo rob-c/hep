@@ -391,56 +391,56 @@ func newFloats(leaf rtree.Leaf) (floats, error) {
 }
 
 func newArrB(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*bool)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[bool]())
 	return reflect.New(typ)
 }
 
 func newArrU8(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*uint8)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[uint8]())
 	return reflect.New(typ)
 }
 
 func newArrU16(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*uint16)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[uint16]())
 	return reflect.New(typ)
 }
 
 func newArrU32(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*uint32)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[uint32]())
 	return reflect.New(typ)
 }
 
 func newArrU64(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*uint64)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[uint64]())
 	return reflect.New(typ)
 }
 
 func newArrI8(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*int8)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[int8]())
 	return reflect.New(typ)
 }
 
 func newArrI16(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*int16)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[int16]())
 	return reflect.New(typ)
 }
 
 func newArrI32(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*int32)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[int32]())
 	return reflect.New(typ)
 }
 
 func newArrI64(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*int64)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[int64]())
 	return reflect.New(typ)
 }
 
 func newArrF32(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*float32)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[float32]())
 	return reflect.New(typ)
 }
 
 func newArrF64(n int) reflect.Value {
-	typ := reflect.ArrayOf(n, reflect.TypeOf((*float64)(nil)).Elem())
+	typ := reflect.ArrayOf(n, reflect.TypeFor[float64]())
 	return reflect.New(typ)
 }

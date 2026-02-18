@@ -355,7 +355,7 @@ func (h *{{.Name}}) AsH1D() *hbook.H1D {
 		h.dist1D(nx + 1), // overflow
 	}
 
-	for i := 0; i < nx; i++ {
+	for i := range nx {
 		bin := &hh.Binning.Bins[i]
 		xmin := h.XBinLowEdge(i + 1)
 		xmax := h.XBinWidth(i+1) + xmin
@@ -468,8 +468,8 @@ func New{{.Name}}From(h *hbook.H2D) *{{.Name}} {
 
 	ibin := func(ix, iy int) int { return iy*nxbins + ix }
 
-	for ix := 0; ix < h.Binning.Nx; ix++ {
-		for iy := 0; iy < h.Binning.Ny; iy++ {
+	for ix := range h.Binning.Nx {
+		for iy := range h.Binning.Ny {
 			i := ibin(ix, iy)
 			bin := bins[i]
 			if ix == 0 {
@@ -719,8 +719,8 @@ func (h *{{.Name}}) AsH2D() *hbook.H2D {
 	hh.Binning.Dist.Y.Stats.SumWX2 = float64(h.SumWY2())
 	hh.Binning.Dist.Stats.SumWXY = h.SumWXY()
 
-	for ix := 0; ix < nx; ix++ {
-		for iy := 0; iy < ny; iy++ {
+	for ix := range nx {
+		for iy := range ny {
 			var (
 				i    = iy*nx + ix
 				xmin = h.XBinLowEdge(ix + 1)

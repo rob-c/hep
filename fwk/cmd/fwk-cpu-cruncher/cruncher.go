@@ -30,7 +30,7 @@ func (tsk *CPUCruncher) Configure(ctx fwk.Context) error {
 		if input == "" {
 			continue
 		}
-		err = tsk.DeclInPort(input, reflect.TypeOf(int64(0)))
+		err = tsk.DeclInPort(input, reflect.TypeFor[int64]())
 		if err != nil {
 			return err
 		}
@@ -40,7 +40,7 @@ func (tsk *CPUCruncher) Configure(ctx fwk.Context) error {
 		if output == "" {
 			continue
 		}
-		err = tsk.DeclOutPort(output, reflect.TypeOf(int64(0)))
+		err = tsk.DeclOutPort(output, reflect.TypeFor[int64]())
 		if err != nil {
 			return err
 		}
@@ -139,5 +139,5 @@ func newCPUCruncher(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(CPUCruncher{}), newCPUCruncher)
+	fwk.Register(reflect.TypeFor[CPUCruncher](), newCPUCruncher)
 }

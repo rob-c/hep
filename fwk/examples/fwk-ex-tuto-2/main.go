@@ -87,7 +87,7 @@ options:
 			"Ports": []fwk.Port{
 				{
 					Name: "t1-ints1",               // location where to publish our data
-					Type: reflect.TypeOf(int64(0)), // type of that data
+					Type: reflect.TypeFor[int64](), // type of that data
 				},
 			},
 			"Streamer": &fwktest.InputStream{

@@ -275,7 +275,7 @@ func (jp jsonPath) cnv() vg.Path {
 
 type jsonPathComp struct {
 	Type   int         `json:"type"`
-	Pos    jsonPoint   `json:"pos,omitempty"`
+	Pos    jsonPoint   `json:"pos"`
 	Radius vg.Length   `json:"radius,omitempty"`
 	Start  float64     `json:"start,omitempty"`
 	Angle  float64     `json:"angle,omitempty"`

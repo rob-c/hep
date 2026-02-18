@@ -26,7 +26,7 @@ func NewColumns(tree rtree.Tree) []Column {
 		switch rv.Kind() {
 		case reflect.Chan, reflect.Interface,
 			reflect.Struct, reflect.Slice, reflect.Map,
-			reflect.Ptr, reflect.UnsafePointer:
+			reflect.Pointer, reflect.UnsafePointer:
 			continue
 		}
 		cols = append(cols, Column{
@@ -77,7 +77,7 @@ func NewColumn(tree rtree.Tree, rvar rtree.ReadVar) (Column, error) {
 	switch rv.Kind() {
 	case reflect.Chan, reflect.Interface,
 		reflect.Struct, reflect.Slice, reflect.Map,
-		reflect.Ptr, reflect.UnsafePointer:
+		reflect.Pointer, reflect.UnsafePointer:
 		return col, fmt.Errorf("rnpy: invalid branch or leaf type %T", rv.Interface())
 	}
 

@@ -298,13 +298,13 @@ func newDriverRows(ctx context.Context, conn *driverConn, stmt *sqlparser.Select
 	rows.types = make([]colDescr, len(rows.cols))
 	for i, name := range rows.cols {
 		if name == "" {
-			rows.types[i].Type = reflect.TypeOf(new(any)).Elem()
+			rows.types[i].Type = reflect.TypeFor[any]()
 			continue
 		}
 		rows.types[i].Name = name
 		branch := tree.Branch(name)
 		if branch == nil {
-			rows.types[i].Type = reflect.TypeOf(new(any)).Elem()
+			rows.types[i].Type = reflect.TypeFor[any]()
 			continue
 		}
 		rows.types[i] = colDescrFromLeaf(branch.Leaves()[0]) // FIXME(sbinet): multi-leaves' branches
@@ -432,19 +432,19 @@ func (rows *driverRows) extractDepsFromSelect(tree rtree.Tree, stmt *sqlparser.S
 		switch etyp.Kind() {
 		case reflect.Int8:
 			if leaf.IsUnsigned() {
-				etyp = reflect.TypeOf(uint8(0))
+				etyp = reflect.TypeFor[uint8]()
 			}
 		case reflect.Int16:
 			if leaf.IsUnsigned() {
-				etyp = reflect.TypeOf(uint16(0))
+				etyp = reflect.TypeFor[uint16]()
 			}
 		case reflect.Int32:
 			if leaf.IsUnsigned() {
-				etyp = reflect.TypeOf(uint32(0))
+				etyp = reflect.TypeFor[uint32]()
 			}
 		case reflect.Int64:
 			if leaf.IsUnsigned() {
-				etyp = reflect.TypeOf(uint64(0))
+				etyp = reflect.TypeFor[uint64]()
 			}
 		}
 		switch {

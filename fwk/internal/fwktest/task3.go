@@ -21,7 +21,7 @@ func (tsk *task3) Configure(ctx fwk.Context) error {
 	msg := ctx.Msg()
 	msg.Infof("configure...\n")
 
-	err = tsk.DeclOutPort(tsk.parts, reflect.TypeOf([]int{}))
+	err = tsk.DeclOutPort(tsk.parts, reflect.TypeFor[[]int]())
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (tsk *task3) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(task3{}),
+	fwk.Register(reflect.TypeFor[task3](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 			tsk := &task3{

@@ -451,7 +451,7 @@ func newhsvc(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(hsvc{}), newhsvc)
+	fwk.Register(reflect.TypeFor[hsvc](), newhsvc)
 }
 
 var _ fwk.HistSvc = (*hsvc)(nil)

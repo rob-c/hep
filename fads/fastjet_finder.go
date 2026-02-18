@@ -57,17 +57,17 @@ type FastJetFinder struct {
 func (tsk *FastJetFinder) Configure(ctx fwk.Context) error {
 	var err error
 
-	err = tsk.DeclInPort(tsk.input, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.input, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.rho, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.rho, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -365,5 +365,5 @@ func newFastJetFinder(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(FastJetFinder{}), newFastJetFinder)
+	fwk.Register(reflect.TypeFor[FastJetFinder](), newFastJetFinder)
 }

@@ -88,7 +88,7 @@ options:
 			"Ports": []fwk.Port{
 				{
 					Name: "t1-ints1-massaged",      // location where to publish our data
-					Type: reflect.TypeOf(int64(0)), // type of that data
+					Type: reflect.TypeFor[int64](), // type of that data
 				},
 			},
 			"Streamer": &rio.InputStreamer{
@@ -105,7 +105,7 @@ options:
 			"Ports": []fwk.Port{
 				{
 					Name: "t1-ints1-massaged-new",  // location of data to write out
-					Type: reflect.TypeOf(int64(0)), // type of that data
+					Type: reflect.TypeFor[int64](), // type of that data
 				},
 			},
 			"Streamer": &rio.OutputStreamer{

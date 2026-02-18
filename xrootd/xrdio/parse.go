@@ -76,9 +76,9 @@ func parseUA(s string) (user, addr string, err error) {
 }
 
 func parseUser(s string) string {
-	idx := strings.Index(s, ":")
-	if idx == -1 {
+	before, _, ok := strings.Cut(s, ":")
+	if !ok {
 		return s
 	}
-	return s[:idx]
+	return before
 }

@@ -137,7 +137,7 @@ type PlotOptions struct {
 	Width  vg.Length `json:"width"`
 	Height vg.Length `json:"height"`
 
-	Line      LineStyle   `json:"line,omitempty"`
+	Line      LineStyle   `json:"line"`
 	FillColor color.Color `json:"fill_color,omitempty"`
 }
 
@@ -219,7 +219,7 @@ type jsonPlotOptions struct {
 	Width  vg.Length `json:"width"`
 	Height vg.Length `json:"height"`
 
-	Line      jsonLineStyle `json:"line,omitempty"`
+	Line      jsonLineStyle `json:"line"`
 	FillColor hexcolor.Hex  `json:"fill_color,omitempty"`
 }
 

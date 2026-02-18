@@ -53,7 +53,7 @@ func (tsk *task3) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(task3{}),
+	fwk.Register(reflect.TypeFor[task3](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 			tsk := &task3{
@@ -65,7 +65,7 @@ func init() {
 				return nil, err
 			}
 
-			err = tsk.DeclOutPort(tsk.parts, reflect.TypeOf([]fads.Candidate{}))
+			err = tsk.DeclOutPort(tsk.parts, reflect.TypeFor[[]fads.Candidate]())
 			if err != nil {
 				return nil, err
 			}

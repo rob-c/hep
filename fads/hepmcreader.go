@@ -36,7 +36,7 @@ func (s *HepMcStreamer) Connect(ports []fwk.Port) error {
 	s.dec = hepmc.NewDecoder(bufio.NewReader(s.r))
 
 	port := ports[0]
-	if port.Type != reflect.TypeOf(hepmc.Event{}) {
+	if port.Type != reflect.TypeFor[hepmc.Event]() {
 		err = fmt.Errorf("fads: invalid port. expected type=hepmc.Event. got=%v", port.Type)
 		return err
 	}
@@ -76,22 +76,22 @@ type HepMcReader struct {
 func (tsk *HepMcReader) Configure(ctx fwk.Context) error {
 	var err error
 
-	err = tsk.DeclInPort(tsk.mcevt, reflect.TypeOf(hepmc.Event{}))
+	err = tsk.DeclInPort(tsk.mcevt, reflect.TypeFor[hepmc.Event]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.allparts, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.allparts, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.stableparts, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.stableparts, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.partons, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.partons, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func (tsk *HepMcReader) Process(ctx fwk.Context) error {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(HepMcReader{}),
+	fwk.Register(reflect.TypeFor[HepMcReader](),
 		func(typ, name string, mgr fwk.App) (fwk.Component, error) {
 			var err error
 

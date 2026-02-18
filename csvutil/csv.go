@@ -21,13 +21,6 @@ import (
 	"strings"
 )
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func formatValue(val any, quotes bool, recBuilder *strings.Builder) error {
 	rv := reflect.Indirect(reflect.ValueOf(val))
 	rt := rv.Type()
@@ -362,7 +355,7 @@ func (rows *Rows) scanStruct(rv reflect.Value) error {
 
 func (rows *Rows) skip(n int64) error {
 	var err error
-	for i := int64(0); i < n; i++ {
+	for range n {
 		_, err = rows.tbl.Reader.Read()
 		if err != nil {
 			return err

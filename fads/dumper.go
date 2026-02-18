@@ -18,7 +18,7 @@ type dumper struct {
 }
 
 func (tsk *dumper) Configure(ctx fwk.Context) error {
-	err := tsk.DeclInPort(tsk.input, reflect.TypeOf([]Candidate{}))
+	err := tsk.DeclInPort(tsk.input, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -62,5 +62,5 @@ func newDumper(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(dumper{}), newDumper)
+	fwk.Register(reflect.TypeFor[dumper](), newDumper)
 }

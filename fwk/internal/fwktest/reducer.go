@@ -23,7 +23,7 @@ type reducer struct {
 }
 
 func (tsk *reducer) Configure(ctx fwk.Context) error {
-	err := tsk.DeclInPort(tsk.input, reflect.TypeOf(int64(0)))
+	err := tsk.DeclInPort(tsk.input, reflect.TypeFor[int64]())
 	if err != nil {
 		return err
 	}
@@ -103,5 +103,5 @@ func newreducer(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(reducer{}), newreducer)
+	fwk.Register(reflect.TypeFor[reducer](), newreducer)
 }

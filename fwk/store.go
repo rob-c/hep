@@ -92,7 +92,7 @@ func (ds *datastore) close() {
 }
 
 func init() {
-	Register(reflect.TypeOf(datastore{}),
+	Register(reflect.TypeFor[datastore](),
 		func(typ, name string, mgr App) (Component, error) {
 			return &datastore{
 				SvcBase: NewSvc(typ, name, mgr),

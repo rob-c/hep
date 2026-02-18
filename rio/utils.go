@@ -30,7 +30,7 @@ func nameFromType(rt reflect.Type) string {
 	star := ""
 	if rt.Name() == "" {
 		pt := rt
-		if pt.Kind() == reflect.Ptr {
+		if pt.Kind() == reflect.Pointer {
 			star = "*"
 			rt = pt.Elem()
 		}

@@ -176,32 +176,32 @@ type Calorimeter struct {
 func (tsk *Calorimeter) Configure(ctx fwk.Context) error {
 	var err error
 
-	err = tsk.DeclInPort(tsk.particles, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.particles, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclInPort(tsk.tracks, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.tracks, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.towers, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.towers, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.photons, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.photons, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.eflowtracks, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.eflowtracks, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.eflowtowers, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.eflowtowers, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -574,5 +574,5 @@ func newCalorimeter(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(Calorimeter{}), newCalorimeter)
+	fwk.Register(reflect.TypeFor[Calorimeter](), newCalorimeter)
 }

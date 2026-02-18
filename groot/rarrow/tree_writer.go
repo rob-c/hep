@@ -189,7 +189,7 @@ func (ctx *contextWriter) writeVarFrom(field arrow.Field) rtree.WriteVar {
 		}
 
 	case *arrow.FixedSizeBinaryType:
-		rt := reflect.ArrayOf(dt.ByteWidth, reflect.TypeOf(byte(0)))
+		rt := reflect.ArrayOf(dt.ByteWidth, reflect.TypeFor[byte]())
 		return rtree.WriteVar{
 			Name:  field.Name,
 			Value: reflect.New(rt).Interface(),

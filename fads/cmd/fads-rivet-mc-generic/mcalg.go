@@ -60,7 +60,7 @@ type McGeneric struct {
 }
 
 func (tsk *McGeneric) Configure(ctx fwk.Context) error {
-	err := tsk.DeclInPort(tsk.mcevt, reflect.TypeOf(hepmc.Event{}))
+	err := tsk.DeclInPort(tsk.mcevt, reflect.TypeFor[hepmc.Event]())
 	if err != nil {
 		return err
 	}
@@ -331,7 +331,7 @@ func newMcGeneric(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(McGeneric{}), newMcGeneric)
+	fwk.Register(reflect.TypeFor[McGeneric](), newMcGeneric)
 }
 
 const twoPi = 2 * math.Pi

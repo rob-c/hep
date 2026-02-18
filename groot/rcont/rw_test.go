@@ -295,7 +295,6 @@ func testWriteWBuffer(t *testing.T, name, file string, want any) {
 }
 func TestReadRBuffer(t *testing.T) {
 	for _, test := range rwBufferCases {
-		test := test
 		file := test.file
 		if file == "" {
 			file = "../testdata/" + strings.ToLower(test.name) + ".dat"

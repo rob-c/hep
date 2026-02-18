@@ -215,7 +215,7 @@ func (cmd *diffCmd) diffTree(key string, ref, chk rtree.Tree) error {
 
 	allgood := true
 	n := chk.Entries()
-	for i := int64(0); i < n; i++ {
+	for i := range n {
 		ref := <-refc
 		chk := <-chkc
 		if ref.err != nil {

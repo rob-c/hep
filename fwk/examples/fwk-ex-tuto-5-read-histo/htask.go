@@ -98,5 +98,5 @@ func newtesthsvc(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(testhsvc{}), newtesthsvc)
+	fwk.Register(reflect.TypeFor[testhsvc](), newtesthsvc)
 }

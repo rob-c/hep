@@ -27,7 +27,7 @@ func Scan(tree rtree.Tree, query string, f any) error {
 	if rt.Kind() != reflect.Func {
 		return fmt.Errorf("groot/rsql: expected a func, got %T", f)
 	}
-	if rt.NumOut() != 1 || rt.Out(0) != reflect.TypeOf((*error)(nil)).Elem() {
+	if rt.NumOut() != 1 || rt.Out(0) != reflect.TypeFor[error]() {
 		return fmt.Errorf("groot/rsql: expected a func returning an error. got %T", f)
 	}
 	vargs := make([]reflect.Value, rt.NumIn())

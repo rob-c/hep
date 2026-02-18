@@ -61,7 +61,7 @@ type jsNode struct {
 		Opened   bool `json:"opened,omitempty"`
 		Disabled bool `json:"disabled,omitempty"`
 		Selected bool `json:"selected,omitempty"`
-	} `json:"state,omitempty"`
+	} `json:"state"`
 	Children []jsNode `json:"children,omitempty"`
 	LiAttr   jsAttr   `json:"li_attr,omitempty"`
 	Attr     jsAttr   `json:"a_attr,omitempty"`

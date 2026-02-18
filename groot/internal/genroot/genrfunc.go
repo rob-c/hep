@@ -163,14 +163,14 @@ func genRFuncName(sig *types.Signature) string {
 	}
 
 	params := sig.Params()
-	for i := range params.Len() {
-		o.WriteString(code(params.At(i).Type()))
+	for v := range params.Variables() {
+		o.WriteString(code(v.Type()))
 	}
 	res := sig.Results()
 	if res.Len() > 0 {
 		o.WriteString("To")
-		for i := range res.Len() {
-			o.WriteString(code(res.At(i).Type()))
+		for v := range res.Variables() {
+			o.WriteString(code(v.Type()))
 		}
 	}
 	return o.String()

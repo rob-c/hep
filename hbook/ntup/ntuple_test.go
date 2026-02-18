@@ -523,11 +523,11 @@ func TestCreate(t *testing.T) {
 	}{
 		{
 			n: "var1",
-			t: reflect.TypeOf(int64(0)),
+			t: reflect.TypeFor[int64](),
 		},
 		{
 			n: "var2",
-			t: reflect.TypeOf(float64(0)),
+			t: reflect.TypeFor[float64](),
 		},
 	}
 	if len(nt.Cols()) != len(descr) {
@@ -580,19 +580,19 @@ func TestCreateFromStruct(t *testing.T) {
 	}{
 		{
 			n: "I",
-			t: reflect.TypeOf(int64(0)),
+			t: reflect.TypeFor[int64](),
 		},
 		{
 			n: "F",
-			t: reflect.TypeOf(float64(0)),
+			t: reflect.TypeFor[float64](),
 		},
 		{
 			n: "ff",
-			t: reflect.TypeOf(float64(0)),
+			t: reflect.TypeFor[float64](),
 		},
 		{
 			n: "str",
-			t: reflect.TypeOf(""),
+			t: reflect.TypeFor[string](),
 		},
 	}
 	if len(nt.Cols()) != len(descr) {

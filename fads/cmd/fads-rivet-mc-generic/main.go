@@ -120,7 +120,7 @@ options:
 			"Ports": []fwk.Port{
 				{
 					Name: "/fads/McEvent",
-					Type: reflect.TypeOf(hepmc.Event{}),
+					Type: reflect.TypeFor[hepmc.Event](),
 				},
 			},
 			"Streamer": &fads.HepMcStreamer{

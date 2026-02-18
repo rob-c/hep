@@ -26,7 +26,7 @@ import (
 
 var (
 	ptrSize = 4 << (^uintptr(0) >> 63)
-	intSize = int(reflect.TypeOf(int(0)).Size())
+	intSize = int(reflect.TypeFor[int]().Size())
 )
 
 type StreamerInfo struct {

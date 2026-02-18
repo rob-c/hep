@@ -292,7 +292,7 @@ func (hs *HStack) hplot(c draw.Canvas, p *plot.Plot, h *H1D, yoffs []float64, hs
 			TextStyle: sty,
 		}
 
-		for i := uint32(0); i < 32; i++ {
+		for i := range uint32(32) {
 			switch h.Infos.Style & (1 << i) {
 			case HInfoEntries:
 				legend.Add("Entries", hist.Entries())

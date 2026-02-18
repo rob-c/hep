@@ -27,12 +27,12 @@ type Efficiency struct {
 
 func (tsk *Efficiency) Configure(ctx fwk.Context) error {
 	var err error
-	err = tsk.DeclInPort(tsk.input, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclInPort(tsk.input, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
 
-	err = tsk.DeclOutPort(tsk.output, reflect.TypeOf([]Candidate{}))
+	err = tsk.DeclOutPort(tsk.output, reflect.TypeFor[[]Candidate]())
 	if err != nil {
 		return err
 	}
@@ -126,5 +126,5 @@ func newEfficiency(typ, name string, mgr fwk.App) (fwk.Component, error) {
 }
 
 func init() {
-	fwk.Register(reflect.TypeOf(Efficiency{}), newEfficiency)
+	fwk.Register(reflect.TypeFor[Efficiency](), newEfficiency)
 }

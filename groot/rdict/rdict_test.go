@@ -526,35 +526,35 @@ func TestNdimsFromType(t *testing.T) {
 		want string
 	}{
 		{
-			typ:  reflect.TypeOf([]bool{}),
+			typ:  reflect.TypeFor[[]bool](),
 			want: "",
 		},
 		{
-			typ:  reflect.TypeOf([0]bool{}),
+			typ:  reflect.TypeFor[[0]bool](),
 			want: "[0]",
 		},
 		{
-			typ:  reflect.TypeOf([1]bool{}),
+			typ:  reflect.TypeFor[[1]bool](),
 			want: "[1]",
 		},
 		{
-			typ:  reflect.TypeOf([1][2]bool{}),
+			typ:  reflect.TypeFor[[1][2]bool](),
 			want: "[1][2]",
 		},
 		{
-			typ:  reflect.TypeOf([1][2][3]bool{}),
+			typ:  reflect.TypeFor[[1][2][3]bool](),
 			want: "[1][2][3]",
 		},
 		{
-			typ:  reflect.TypeOf([1][2][3][4]bool{}),
+			typ:  reflect.TypeFor[[1][2][3][4]bool](),
 			want: "[1][2][3][4]",
 		},
 		{
-			typ:  reflect.TypeOf([1][2][3][4][5]bool{}),
+			typ:  reflect.TypeFor[[1][2][3][4][5]bool](),
 			want: "[1][2][3][4][5]",
 		},
 		{
-			typ:  reflect.TypeOf([1][2][3][4][5][6]bool{}),
+			typ:  reflect.TypeFor[[1][2][3][4][5][6]bool](),
 			want: "[1][2][3][4][5][6]",
 		},
 	} {

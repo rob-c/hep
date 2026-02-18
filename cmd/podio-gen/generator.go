@@ -123,7 +123,7 @@ func newGenerator(w io.Writer, pkg, fname, rules string) (*generator, error) {
 		return nil, fmt.Errorf("could not unmarshal YAML file %q: %w", fname, err)
 	}
 
-	for _, rule := range strings.Split(rules, ",") {
+	for rule := range strings.SplitSeq(rules, ",") {
 		toks := strings.Split(rule, "->")
 		if len(toks) != 2 {
 			continue

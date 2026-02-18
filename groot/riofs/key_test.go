@@ -122,7 +122,7 @@ func TestKeyObjectType(t *testing.T) {
 		{
 			name: "TObjString",
 			key:  Key{class: "TObjString"},
-			typ:  reflect.TypeOf((*rbase.ObjString)(nil)),
+			typ:  reflect.TypeFor[*rbase.ObjString](),
 		},
 		{
 			name: "invalid",
@@ -132,7 +132,7 @@ func TestKeyObjectType(t *testing.T) {
 		{
 			name: "TH1D",
 			key:  Key{class: "TH1D"},
-			typ:  reflect.TypeOf((*rhist.H1D)(nil)),
+			typ:  reflect.TypeFor[*rhist.H1D](),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

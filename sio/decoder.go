@@ -70,7 +70,7 @@ func bread(r Reader, data any) error {
 	//defer fmt.Printf("### [%v] [done]\n", rv.Type())
 
 	switch rv.Type().Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		rv = rv.Elem()
 	}
 	switch rv.Type().Kind() {

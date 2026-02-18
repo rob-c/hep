@@ -44,8 +44,8 @@ var (
 	// hdrSize = int(reflect.TypeOf(rioHeader{}).Size())
 	// blkSize = int(reflect.TypeOf(rioBlock{}).Size())
 
-	recSize = int(reflect.TypeOf(rioRecord{}).Size())
-	ftrSize = int(reflect.TypeOf(rioFooter{}).Size())
+	recSize = int(reflect.TypeFor[rioRecord]().Size())
+	ftrSize = int(reflect.TypeFor[rioFooter]().Size())
 )
 
 // Marshaler is the interface implemented by an object that can

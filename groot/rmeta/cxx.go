@@ -13,23 +13,23 @@ import (
 )
 
 var GoType2ROOTEnum = map[reflect.Type]Enum{
-	reflect.TypeOf(int8(0)):  Char,
-	reflect.TypeOf(int16(0)): Short,
-	reflect.TypeOf(int32(0)): Int,
-	reflect.TypeOf(int64(0)): Long,
+	reflect.TypeFor[int8]():  Char,
+	reflect.TypeFor[int16](): Short,
+	reflect.TypeFor[int32](): Int,
+	reflect.TypeFor[int64](): Long,
 	//	reflect.TypeOf(int64(0)): Long64,
-	reflect.TypeOf(float32(0)): Float,
-	reflect.TypeOf(float64(0)): Double,
-	reflect.TypeOf(uint8(0)):   UChar,
+	reflect.TypeFor[float32](): Float,
+	reflect.TypeFor[float64](): Double,
+	reflect.TypeFor[uint8]():   UChar,
 	//	reflect.TypeOf(uint8(0)): CharStar,
-	reflect.TypeOf(uint16(0)): UShort,
-	reflect.TypeOf(uint32(0)): UInt,
-	reflect.TypeOf(uint64(0)): ULong,
+	reflect.TypeFor[uint16](): UShort,
+	reflect.TypeFor[uint32](): UInt,
+	reflect.TypeFor[uint64](): ULong,
 	//	reflect.TypeOf(uint64(0)): ULong64,
-	reflect.TypeOf(false):            Bool,
-	reflect.TypeOf(root.Float16(0)):  Float16,
-	reflect.TypeOf(root.Double32(0)): Double32,
-	reflect.TypeOf(""):               TString,
+	reflect.TypeFor[bool]():          Bool,
+	reflect.TypeFor[root.Float16]():  Float16,
+	reflect.TypeFor[root.Double32](): Double32,
+	reflect.TypeFor[string]():        TString,
 }
 
 var GoType2Cxx = map[string]string{
@@ -50,7 +50,7 @@ var GoType2Cxx = map[string]string{
 }
 
 var CxxBuiltins = map[string]reflect.Type{
-	"bool": reflect.TypeOf(false),
+	"bool": reflect.TypeFor[bool](),
 
 	/*
 		"uint":   reflect.TypeOf(uint(0)),
@@ -70,73 +70,73 @@ var CxxBuiltins = map[string]reflect.Type{
 	*/
 
 	// stdint
-	"int8_t":   reflect.TypeOf(int8(0)),
-	"int16_t":  reflect.TypeOf(int16(0)),
-	"int32_t":  reflect.TypeOf(int32(0)),
-	"int64_t":  reflect.TypeOf(int64(0)),
-	"uint8_t":  reflect.TypeOf(uint8(0)),
-	"uint16_t": reflect.TypeOf(uint16(0)),
-	"uint32_t": reflect.TypeOf(uint32(0)),
-	"uint64_t": reflect.TypeOf(uint64(0)),
+	"int8_t":   reflect.TypeFor[int8](),
+	"int16_t":  reflect.TypeFor[int16](),
+	"int32_t":  reflect.TypeFor[int32](),
+	"int64_t":  reflect.TypeFor[int64](),
+	"uint8_t":  reflect.TypeFor[uint8](),
+	"uint16_t": reflect.TypeFor[uint16](),
+	"uint32_t": reflect.TypeFor[uint32](),
+	"uint64_t": reflect.TypeFor[uint64](),
 
 	// C/C++ builtins
 
-	"unsigned":       reflect.TypeOf(uint32(0)),
-	"unsigned char":  reflect.TypeOf(uint8(0)),
-	"unsigned short": reflect.TypeOf(uint16(0)),
-	"unsigned int":   reflect.TypeOf(uint32(0)),
-	"unsigned long":  reflect.TypeOf(uint64(0)),
+	"unsigned":       reflect.TypeFor[uint32](),
+	"unsigned char":  reflect.TypeFor[uint8](),
+	"unsigned short": reflect.TypeFor[uint16](),
+	"unsigned int":   reflect.TypeFor[uint32](),
+	"unsigned long":  reflect.TypeFor[uint64](),
 
 	//"int":   reflect.TypeOf(int(0)),
-	"char":  reflect.TypeOf(int8(0)),
-	"short": reflect.TypeOf(int16(0)),
-	"int":   reflect.TypeOf(int32(0)),
-	"long":  reflect.TypeOf(int64(0)),
+	"char":  reflect.TypeFor[int8](),
+	"short": reflect.TypeFor[int16](),
+	"int":   reflect.TypeFor[int32](),
+	"long":  reflect.TypeFor[int64](),
 
-	"float":  reflect.TypeOf(float32(0)),
-	"double": reflect.TypeOf(float64(0)),
+	"float":  reflect.TypeFor[float32](),
+	"double": reflect.TypeFor[float64](),
 
-	"string": reflect.TypeOf(""),
+	"string": reflect.TypeFor[string](),
 
 	// ROOT builtins
-	"Bool_t": reflect.TypeOf(true),
+	"Bool_t": reflect.TypeFor[bool](),
 
-	"Byte_t": reflect.TypeOf(uint8(0)),
+	"Byte_t": reflect.TypeFor[uint8](),
 
-	"Char_t":    reflect.TypeOf(int8(0)),
-	"UChar_t":   reflect.TypeOf(uint8(0)),
-	"Short_t":   reflect.TypeOf(int16(0)),
-	"UShort_t":  reflect.TypeOf(uint16(0)),
-	"Int_t":     reflect.TypeOf(int32(0)),
-	"UInt_t":    reflect.TypeOf(uint32(0)),
-	"Seek_t":    reflect.TypeOf(int64(0)),  // FIXME(sbinet): not portable
-	"Long_t":    reflect.TypeOf(int64(0)),  // FIXME(sbinet): not portable
-	"ULong_t":   reflect.TypeOf(uint64(0)), // FIXME(sbinet): not portable
-	"Long64_t":  reflect.TypeOf(int64(0)),
-	"ULong64_t": reflect.TypeOf(uint64(0)),
+	"Char_t":    reflect.TypeFor[int8](),
+	"UChar_t":   reflect.TypeFor[uint8](),
+	"Short_t":   reflect.TypeFor[int16](),
+	"UShort_t":  reflect.TypeFor[uint16](),
+	"Int_t":     reflect.TypeFor[int32](),
+	"UInt_t":    reflect.TypeFor[uint32](),
+	"Seek_t":    reflect.TypeFor[int64](),  // FIXME(sbinet): not portable
+	"Long_t":    reflect.TypeFor[int64](),  // FIXME(sbinet): not portable
+	"ULong_t":   reflect.TypeFor[uint64](), // FIXME(sbinet): not portable
+	"Long64_t":  reflect.TypeFor[int64](),
+	"ULong64_t": reflect.TypeFor[uint64](),
 
-	"Float_t":    reflect.TypeOf(float32(0)),
-	"Float16_t":  reflect.TypeOf(root.Float16(0)),
-	"Double_t":   reflect.TypeOf(float64(0)),
-	"Double32_t": reflect.TypeOf(root.Double32(0)),
+	"Float_t":    reflect.TypeFor[float32](),
+	"Float16_t":  reflect.TypeFor[root.Float16](),
+	"Double_t":   reflect.TypeFor[float64](),
+	"Double32_t": reflect.TypeFor[root.Double32](),
 
-	"Version_t": reflect.TypeOf(int16(0)),
-	"Option_t":  reflect.TypeOf(""),
-	"Ssiz_t":    reflect.TypeOf(int(0)),
-	"Real_t":    reflect.TypeOf(float32(0)),
+	"Version_t": reflect.TypeFor[int16](),
+	"Option_t":  reflect.TypeFor[string](),
+	"Ssiz_t":    reflect.TypeFor[int](),
+	"Real_t":    reflect.TypeFor[float32](),
 
-	"Axis_t": reflect.TypeOf(float64(0)),
-	"Stat_t": reflect.TypeOf(float64(0)),
+	"Axis_t": reflect.TypeFor[float64](),
+	"Stat_t": reflect.TypeFor[float64](),
 
-	"Font_t":   reflect.TypeOf(int16(0)),
-	"Style_t":  reflect.TypeOf(int16(0)),
-	"Marker_t": reflect.TypeOf(int16(0)),
-	"Width_t":  reflect.TypeOf(int16(0)),
-	"Color_t":  reflect.TypeOf(int16(0)),
-	"SCoord_t": reflect.TypeOf(int16(0)),
-	"Coord_t":  reflect.TypeOf(float64(0)),
-	"Angle_t":  reflect.TypeOf(float32(0)),
-	"Size_t":   reflect.TypeOf(float32(0)),
+	"Font_t":   reflect.TypeFor[int16](),
+	"Style_t":  reflect.TypeFor[int16](),
+	"Marker_t": reflect.TypeFor[int16](),
+	"Width_t":  reflect.TypeFor[int16](),
+	"Color_t":  reflect.TypeFor[int16](),
+	"SCoord_t": reflect.TypeFor[int16](),
+	"Coord_t":  reflect.TypeFor[float64](),
+	"Angle_t":  reflect.TypeFor[float32](),
+	"Size_t":   reflect.TypeFor[float32](),
 }
 
 func STLNameFrom(name string, vtype ESTLType, ctype Enum) string {

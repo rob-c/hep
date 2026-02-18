@@ -109,17 +109,17 @@ func splitHeader(raw []byte) (reflect.Type, error) {
 
 	switch string(raw[:i]) {
 	case "HISTO1D", "HISTO1D_V2":
-		rt = reflect.TypeOf((*hbook.H1D)(nil)).Elem()
+		rt = reflect.TypeFor[hbook.H1D]()
 	case "HISTO2D", "HISTO2D_V2":
-		rt = reflect.TypeOf((*hbook.H2D)(nil)).Elem()
+		rt = reflect.TypeFor[hbook.H2D]()
 	case "PROFILE1D", "PROFILE1D_V2":
-		rt = reflect.TypeOf((*hbook.P1D)(nil)).Elem()
+		rt = reflect.TypeFor[hbook.P1D]()
 	case "PROFILE2D", "PROFILE2D_V2":
 		return nil, errIgnore
 	case "SCATTER1D", "SCATTER1D_V2":
 		return nil, errIgnore
 	case "SCATTER2D", "SCATTER2D_V2":
-		rt = reflect.TypeOf((*hbook.S2D)(nil)).Elem()
+		rt = reflect.TypeFor[hbook.S2D]()
 	case "SCATTER3D", "SCATTER3D_V2":
 		return nil, errIgnore
 	case "COUNTER", "COUNTER_V2":

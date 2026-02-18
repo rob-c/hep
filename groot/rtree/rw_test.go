@@ -1763,8 +1763,8 @@ evt[8]: run=18, evt=8, p3(18, 28, 38)
 evt[9]: run=19, evt=9, p3(19, 29, 39)
 `,
 			sinfos: []rbytes.StreamerInfo{
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct1P3{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct1{})),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct1P3]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct1]()),
 			},
 		},
 		{
@@ -1795,8 +1795,8 @@ evt[9]: run=19, evt=9, p3(19, 29, 39)
 				return evt
 			},
 			sinfos: []rbytes.StreamerInfo{
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct1P3{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct1{})),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct1P3]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct1]()),
 			},
 		},
 		{
@@ -1906,8 +1906,8 @@ evt[8]: run=18, evt=8, p3(18, 28, 38) f32s([90, 91, 92, 93, 94, 95, 96, 97])
 evt[9]: run=19, evt=9, p3(19, 29, 39) f32s([100, 101, 102, 103, 104, 105, 106, 107, 108])
 `,
 			sinfos: []rbytes.StreamerInfo{
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct1P3{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct2{})),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct1P3]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct2]()),
 			},
 		},
 		{
@@ -2032,8 +2032,8 @@ evt[8]: run=18, evt=8, p3(18, 28, 38) f32s([90, 91, 92, 93, 94, 95, 96, 97])
 evt[9]: run=19, evt=9, p3(19, 29, 39) f32s([100, 101, 102, 103, 104, 105, 106, 107, 108])
 `,
 			sinfos: []rbytes.StreamerInfo{
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct1P3{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedStruct3{})),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct1P3]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedStruct3]()),
 			},
 		},
 		{
@@ -2152,7 +2152,7 @@ evt[8]: 9 [-90 -91 -92 -93 -94 -95 -96 -97 -98]
 evt[9]: 10 [-100 -101 -102 -103 -104 -105 -106 -107 -108 -109]
 `,
 			sinfos: []rbytes.StreamerInfo{
-				rdict.StreamerOf(sictx, reflect.TypeOf([]float32{})),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[]float32]()),
 			},
 		},
 		{
@@ -2559,14 +2559,14 @@ void scan(const char *fname, const char *tname, const char *oname) {
 [009][evt]: {false str-009 -9 -9 -9 -9 9 9 9 9 9 9 9 9 {9 9} obj-9 [false false false false false false false false false true] [-9 -9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9 -9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9 9] [{9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9}] [obj-9 obj-9 obj-9 obj-9 obj-9 obj-9 obj-9 obj-9 obj-9 obj-9] 9 [false false false false false false false false true] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [false false false false false false false false true] [std-009 std-009 std-009 std-009 std-009 std-009 std-009 std-009 std-009] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [-9 -9 -9 -9 -9 -9 -9 -9 -9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [9 9 9 9 9 9 9 9 9] [{9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9} {9 9}] [obj-009 obj-009 obj-009 obj-009 obj-009 obj-009 obj-009 obj-009 obj-009] [[0 1 2 3] [1 2 3 4] [2 3 4 5] [3 4 5 6] [4 5 6 7] [5 6 7 8] [6 7 8 9] [7 8 9 10] [8 9 10 11]] [[vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012] [vec-009 vec-010 vec-011 vec-012]] [[{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}] [{9 9} {10 10} {11 11} {12 12}]]}
 `,
 			sinfos: []rbytes.StreamerInfo{
-				rdict.StreamerOf(sictx, reflect.TypeOf([]float64{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf([]string{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf([][]float64{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf([][]string{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedP2{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf([]TNestedP2{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf([][]TNestedP2{})),
-				rdict.StreamerOf(sictx, reflect.TypeOf(TNestedEvent1{})),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[]float64]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[]string]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[][]float64]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[][]string]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedP2]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[]TNestedP2]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[[][]TNestedP2]()),
+				rdict.StreamerOf(sictx, reflect.TypeFor[TNestedEvent1]()),
 			},
 		},
 	} {

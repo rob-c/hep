@@ -60,7 +60,7 @@ func (rv ReadVar) Deref() any {
 // a struct value.
 func ReadVarsFromStruct(ptr any) []ReadVar {
 	rv := reflect.ValueOf(ptr)
-	if rv.Kind() != reflect.Ptr {
+	if rv.Kind() != reflect.Pointer {
 		panic(fmt.Errorf("rtree: expect a pointer value, got %T", ptr))
 	}
 
@@ -330,27 +330,27 @@ func newValue(leaf Leaf) any {
 		panic(fmt.Errorf("rtree: type %T not supported", reflect.New(etype).Elem().Interface()))
 	case reflect.Int8:
 		if unsigned {
-			etype = reflect.TypeOf(uint8(0))
+			etype = reflect.TypeFor[uint8]()
 		}
 	case reflect.Int16:
 		if unsigned {
-			etype = reflect.TypeOf(uint16(0))
+			etype = reflect.TypeFor[uint16]()
 		}
 	case reflect.Int32:
 		if unsigned {
-			etype = reflect.TypeOf(uint32(0))
+			etype = reflect.TypeFor[uint32]()
 		}
 	case reflect.Int64:
 		if unsigned {
-			etype = reflect.TypeOf(uint64(0))
+			etype = reflect.TypeFor[uint64]()
 		}
 	case reflect.Float32:
 		if _, ok := leaf.(*LeafF16); ok {
-			etype = reflect.TypeOf(root.Float16(0))
+			etype = reflect.TypeFor[root.Float16]()
 		}
 	case reflect.Float64:
 		if _, ok := leaf.(*LeafD32); ok {
-			etype = reflect.TypeOf(root.Double32(0))
+			etype = reflect.TypeFor[root.Double32]()
 		}
 	}
 

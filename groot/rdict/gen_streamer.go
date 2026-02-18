@@ -99,7 +99,7 @@ func (g *genStreamer) init() error {
 	}
 	g.rvers = o.(*types.TypeName).Type().Underlying().(*types.Interface)
 
-	sz := int64(reflect.TypeOf(int(0)).Size())
+	sz := int64(reflect.TypeFor[int]().Size())
 	g.gosizes = &types.StdSizes{WordSize: sz, MaxAlign: sz}
 	return nil
 }
@@ -154,8 +154,7 @@ func (o *%[1]s) MarshalROOT(w *rbytes.WBuffer) (int, error) {
 	)
 
 	typ := t.Underlying().(*types.Struct)
-	for i := range typ.NumFields() {
-		ft := typ.Field(i)
+	for ft := range typ.Fields() {
 		n := ft.Name() // no `groot:"foo"` redirection.
 		g.genMarshalType(ft.Type(), n)
 	}

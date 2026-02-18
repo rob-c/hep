@@ -83,7 +83,7 @@ func TestTypeFromSI(t *testing.T) {
 				}
 				return si
 			}(),
-			want: reflect.TypeOf((*rbase.Object)(nil)).Elem(),
+			want: reflect.TypeFor[rbase.Object](),
 		},
 		{
 			name: "TString",
@@ -95,7 +95,7 @@ func TestTypeFromSI(t *testing.T) {
 				}
 				return si
 			}(),
-			want: reflect.TypeOf((*string)(nil)).Elem(),
+			want: reflect.TypeFor[string](),
 		},
 		{
 			name: "TNamed",
@@ -107,7 +107,7 @@ func TestTypeFromSI(t *testing.T) {
 				}
 				return si
 			}(),
-			want: reflect.TypeOf((*rbase.Named)(nil)).Elem(),
+			want: reflect.TypeFor[rbase.Named](),
 		},
 		{
 			name: "TObjString",
@@ -119,7 +119,7 @@ func TestTypeFromSI(t *testing.T) {
 				}
 				return si
 			}(),
-			want: reflect.TypeOf((*rbase.ObjString)(nil)).Elem(),
+			want: reflect.TypeFor[rbase.ObjString](),
 		},
 		{
 			name: "TObjArray",
@@ -131,7 +131,7 @@ func TestTypeFromSI(t *testing.T) {
 				}
 				return si
 			}(),
-			want: reflect.TypeOf((*rcont.ObjArray)(nil)).Elem(),
+			want: reflect.TypeFor[rcont.ObjArray](),
 		},
 		{
 			name: "TArrayD",
@@ -143,7 +143,7 @@ func TestTypeFromSI(t *testing.T) {
 				}
 				return si
 			}(),
-			want: reflect.TypeOf((*rcont.ArrayD)(nil)).Elem(),
+			want: reflect.TypeFor[rcont.ArrayD](),
 		},
 		{
 			name: "MyArrayD",
@@ -179,7 +179,7 @@ func TestTypeFromSI(t *testing.T) {
 		{
 			name: "string-old-streamer-v2",
 			si:   rdict.NewCxxStreamerInfo("string", 2, 0, nil),
-			want: reflect.TypeOf(""),
+			want: reflect.TypeFor[string](),
 		},
 		{
 			name: "vector<double>-old-streamer-v6",
@@ -191,7 +191,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "vector<double>",
 				}.New(), rmeta.STLvector, rmeta.Float64),
 			}),
-			want: reflect.TypeOf((*[]float64)(nil)).Elem(),
+			want: reflect.TypeFor[[]float64](),
 		},
 		{
 			name: "pair<int,float>",
@@ -226,7 +226,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "vector<int>",
 				}.New(), rmeta.STLvector, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "list<int>",
@@ -238,7 +238,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "list<int>",
 				}.New(), rmeta.STLlist, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "deque<int>",
@@ -250,7 +250,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "deque<int>",
 				}.New(), rmeta.STLdeque, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "set<int>",
@@ -262,7 +262,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "set<int>",
 				}.New(), rmeta.STLset, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "multiset<int>",
@@ -274,7 +274,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "set<int>",
 				}.New(), rmeta.STLmultiset, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "unordered_set<int>",
@@ -286,7 +286,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "unordered_set<int>",
 				}.New(), rmeta.STLunorderedset, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "unordered_multiset<int>",
@@ -298,7 +298,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "unordered_multiset<int>",
 				}.New(), rmeta.STLunorderedmultiset, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]int32)(nil)).Elem(),
+			want: reflect.TypeFor[[]int32](),
 		},
 		{
 			name: "map<int,float>",
@@ -310,7 +310,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,float>",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]float32)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]float32](),
 		},
 		{
 			name: "multimap<int,float>",
@@ -322,7 +322,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "multimap<int,float>",
 				}.New(), rmeta.STLmultimap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]float32)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]float32](),
 		},
 		{
 			name: "unordered_map<int,float>",
@@ -334,7 +334,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "unordered_map<int,float>",
 				}.New(), rmeta.STLunorderedmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]float32)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]float32](),
 		},
 		{
 			name: "unordered_multimap<int,float>",
@@ -346,7 +346,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "unordered_multimap<int,float>",
 				}.New(), rmeta.STLunorderedmultimap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]float32)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]float32](),
 		},
 		{
 			name: "map<int,string>",
@@ -358,7 +358,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,string>",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]string)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]string](),
 		},
 		{
 			name: "map<int,TNamed>",
@@ -370,7 +370,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,TNamed>",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]rbase.Named)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]rbase.Named](),
 		},
 		{
 			name: "map<TNamed,int>",
@@ -382,7 +382,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<TNamed,int>",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[rbase.Named]int32)(nil)).Elem(),
+			want: reflect.TypeFor[map[rbase.Named]int32](),
 		},
 		{
 			name: "map<int,vector<TNamed> >",
@@ -394,7 +394,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,vector<TNamed> >",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32][]rbase.Named)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32][]rbase.Named](),
 		},
 		{
 			name: "map<int,vector<string> >",
@@ -406,7 +406,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,vector<string> >",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32][]string)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32][]string](),
 		},
 		{
 			name: "map<int,map<int,vector<string> > >",
@@ -418,7 +418,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,map<int,vector<string> > >",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*map[int32]map[int32][]string)(nil)).Elem(),
+			want: reflect.TypeFor[map[int32]map[int32][]string](),
 		},
 		{
 			name: "map<int,string>-with-pair-dict",
@@ -444,7 +444,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "vector<TObject>",
 				}.New(), rmeta.STLvector, rmeta.TObject),
 			}),
-			want: reflect.TypeOf((*[]rbase.Object)(nil)).Elem(),
+			want: reflect.TypeFor[[]rbase.Object](),
 		},
 		{
 			name: "vector<TNamed>",
@@ -456,7 +456,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "vector<TNamed>",
 				}.New(), rmeta.STLvector, rmeta.TNamed),
 			}),
-			want: reflect.TypeOf((*[]rbase.Named)(nil)).Elem(),
+			want: reflect.TypeFor[[]rbase.Named](),
 		},
 		{
 			name: "vector<TObjString>",
@@ -468,7 +468,7 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "vector<TObjString>",
 				}.New(), rmeta.STLvector, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*[]rbase.ObjString)(nil)).Elem(),
+			want: reflect.TypeFor[[]rbase.ObjString](),
 		},
 		{
 			name: "bitset<256>",
