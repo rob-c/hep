@@ -19,6 +19,8 @@ type URL struct {
 
 // Parse parses name into an xrootd URL structure.
 func Parse(name string) (URL, error) {
+	// FIXME(sbinet): just use url.Parse instead ?
+
 	var (
 		user string
 		addr string
@@ -76,9 +78,9 @@ func parseUA(s string) (user, addr string, err error) {
 }
 
 func parseUser(s string) string {
-	before, _, ok := strings.Cut(s, ":")
+	usr, _, ok := strings.Cut(s, ":")
 	if !ok {
 		return s
 	}
-	return before
+	return usr
 }

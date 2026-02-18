@@ -71,9 +71,7 @@ func (ann *Annotation) unmarshalYODAv1(data []byte) error {
 	s := bufio.NewScanner(bytes.NewReader(data))
 	for s.Scan() {
 		txt := s.Text()
-		before, after, _ := strings.Cut(txt, "=")
-		k := before
-		v := after
+		k, v, _ := strings.Cut(txt, "=")
 		(*ann)[k] = v
 	}
 	err = s.Err()

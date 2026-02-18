@@ -646,14 +646,15 @@ func (store *streamerStoreImpl) addStreamer(si rbytes.StreamerInfo) {
 
 func nameOf(field reflect.StructField) string {
 	tag, ok := field.Tag.Lookup("groot")
-	if ok {
-		i := strings.Index(tag, "[")
-		if i < 0 {
-			return tag
-		}
-		return tag[:i]
+	if !ok {
+		return field.Name
 	}
-	return field.Name
+
+	name, _, ok := strings.Cut(tag, "[")
+	if !ok {
+		return tag
+	}
+	return name
 }
 
 func hasCount(field reflect.StructField) (string, bool) {
