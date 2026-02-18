@@ -480,7 +480,7 @@ func ExampleClient_read() {
 	}
 	defer client.Close()
 
-	file, err := client.FS().Open(ctx, "/tmp/test.txt", xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
+	file, err := client.FS().Open(ctx, "/tmp/test-read.txt", xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
 	if err != nil {
 		log.Fatal(err)
 	}
