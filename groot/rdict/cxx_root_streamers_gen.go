@@ -6558,7 +6558,7 @@ func init() {
 			Factor: 0.000000,
 		}.New()},
 		&StreamerString{StreamerElement: Element{
-			Name:   *rbase.NewNamed("fClonesName", "Name of class in TClonesArray (if any)"),
+			Name:   *rbase.NewNamed("fClonesName", "Name of class in TClonesArray or (STL) collection (if any)"),
 			Type:   rmeta.TString,
 			Size:   24,
 			ArrLen: 0,
@@ -7301,7 +7301,7 @@ func init() {
 			Factor: 0.000000,
 		}.New()},
 	}))
-	StreamerInfos.Add(NewCxxStreamerInfo("TLeafF16", 1, 0xeb35f883, []rbytes.StreamerElement{
+	StreamerInfos.Add(NewCxxStreamerInfo("TLeafF16", 2, 0xeb35f883, []rbytes.StreamerElement{
 		NewStreamerBase(Element{
 			Name:   *rbase.NewNamed("TLeaf", "Leaf: description of a Branch data type"),
 			Type:   rmeta.Base,
@@ -7342,7 +7342,7 @@ func init() {
 			Factor: 0.000000,
 		}.New()},
 	}))
-	StreamerInfos.Add(NewCxxStreamerInfo("TLeafD32", 1, 0xe1dc6401, []rbytes.StreamerElement{
+	StreamerInfos.Add(NewCxxStreamerInfo("TLeafD32", 2, 0xe1dc6401, []rbytes.StreamerElement{
 		NewStreamerBase(Element{
 			Name:   *rbase.NewNamed("TLeaf", "Leaf: description of a Branch data type"),
 			Type:   rmeta.Base,

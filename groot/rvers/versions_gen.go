@@ -7,7 +7,7 @@
 package rvers
 
 // ROOT version
-const ROOT = 63602
+const ROOT = 63800
 
 // ROOT classes versions
 const (
@@ -121,8 +121,8 @@ const (
 	LeafG                    = 1  // ROOT version for TLeafG
 	LeafF                    = 1  // ROOT version for TLeafF
 	LeafD                    = 1  // ROOT version for TLeafD
-	LeafF16                  = 1  // ROOT version for TLeafF16
-	LeafD32                  = 1  // ROOT version for TLeafD32
+	LeafF16                  = 2  // ROOT version for TLeafF16
+	LeafD32                  = 2  // ROOT version for TLeafD32
 	LeafC                    = 1  // ROOT version for TLeafC
 	Ntuple                   = 2  // ROOT version for TNtuple
 	NtupleD                  = 1  // ROOT version for TNtupleD

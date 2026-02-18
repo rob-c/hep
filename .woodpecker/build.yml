@@ -4,7 +4,7 @@ when:
 
 steps:
   build:
-    image: codeberg.org/go-hep/groot-docker:6.36.02
+    image: codeberg.org/go-hep/groot-docker:6.38.00-202602191513
     environment:
       CGO_ENABLED: 1
       GOVERSION: "1.26.0"
@@ -14,9 +14,12 @@ steps:
       GOCOVERAGE: "-coverpkg=go-hep.org/x/hep/..."
 
     commands:
+      - orig_dir=`pwd`
       - . /opt/root/setup-groot.sh
+      - cd $orig_dir
       - root.exe --version
       - export PATH=/root/go/bin:$PATH
+      - go version
       - GOARCH=amd64 go install -v $GOTAGS ./...
       - go run ./ci/run-tests.go $GOTAGS $GORACE $GOCOVERAGE
       - go vet $GOTAGS ./...
