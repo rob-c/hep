@@ -1,129 +1,129 @@
 ================================================================================
 file: output.npz
 entry: B
-npy-header: Header{Major:2, Minor:0, Descr:{Type:|b1, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'|b1', Fortran:false, Shape:[10]}}
 data = [true false true false true false true false true false]
 
 entry: Str
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<U5, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<U5', Fortran:false, Shape:[10]}}
 data = ["str-0" "str-1" "str-2" "str-3" "str-4" "str-5" "str-6" "str-7" "str-8" "str-9"]
 
 entry: I8
-npy-header: Header{Major:2, Minor:0, Descr:{Type:|i1, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'|i1', Fortran:false, Shape:[10]}}
 data = [0 -1 -2 -3 -4 -5 -6 -7 -8 -9]
 
 entry: I16
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i2, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i2', Fortran:false, Shape:[10]}}
 data = [0 -1 -2 -3 -4 -5 -6 -7 -8 -9]
 
 entry: I32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i4, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i4', Fortran:false, Shape:[10]}}
 data = [0 -1 -2 -3 -4 -5 -6 -7 -8 -9]
 
 entry: I64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i8, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i8', Fortran:false, Shape:[10]}}
 data = [0 -1 -2 -3 -4 -5 -6 -7 -8 -9]
 
 entry: G64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i8, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i8', Fortran:false, Shape:[10]}}
 data = [0 -1 -2 -3 -4 -5 -6 -7 -8 -9]
 
 entry: U8
-npy-header: Header{Major:2, Minor:0, Descr:{Type:|u1, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'|u1', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: U16
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u2, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u2', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: U32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u4, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u4', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: U64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u8, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u8', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: UGG
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u8, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u8', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: F32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f4, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f4', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: F64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f8, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f8', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: D16
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f4, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f2', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: D32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f8, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f4', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]
 
 entry: ArrBs
-npy-header: Header{Major:2, Minor:0, Descr:{Type:|b1, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'|b1', Fortran:false, Shape:[10 10]}}
 data = [true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true false false false false false false false false false false true]
 
 entry: ArrI8
-npy-header: Header{Major:2, Minor:0, Descr:{Type:|i1, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'|i1', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2 -2 -2 -2 -2 -2 -2 -2 -2 -2 -3 -3 -3 -3 -3 -3 -3 -3 -3 -3 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -5 -5 -5 -5 -5 -5 -5 -5 -5 -5 -6 -6 -6 -6 -6 -6 -6 -6 -6 -6 -7 -7 -7 -7 -7 -7 -7 -7 -7 -7 -8 -8 -8 -8 -8 -8 -8 -8 -8 -8 -9 -9 -9 -9 -9 -9 -9 -9 -9 -9]
 
 entry: ArrI16
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i2, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i2', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2 -2 -2 -2 -2 -2 -2 -2 -2 -2 -3 -3 -3 -3 -3 -3 -3 -3 -3 -3 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -5 -5 -5 -5 -5 -5 -5 -5 -5 -5 -6 -6 -6 -6 -6 -6 -6 -6 -6 -6 -7 -7 -7 -7 -7 -7 -7 -7 -7 -7 -8 -8 -8 -8 -8 -8 -8 -8 -8 -8 -9 -9 -9 -9 -9 -9 -9 -9 -9 -9]
 
 entry: ArrI32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i4, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i4', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2 -2 -2 -2 -2 -2 -2 -2 -2 -2 -3 -3 -3 -3 -3 -3 -3 -3 -3 -3 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -5 -5 -5 -5 -5 -5 -5 -5 -5 -5 -6 -6 -6 -6 -6 -6 -6 -6 -6 -6 -7 -7 -7 -7 -7 -7 -7 -7 -7 -7 -8 -8 -8 -8 -8 -8 -8 -8 -8 -8 -9 -9 -9 -9 -9 -9 -9 -9 -9 -9]
 
 entry: ArrI64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i8, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i8', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2 -2 -2 -2 -2 -2 -2 -2 -2 -2 -3 -3 -3 -3 -3 -3 -3 -3 -3 -3 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -5 -5 -5 -5 -5 -5 -5 -5 -5 -5 -6 -6 -6 -6 -6 -6 -6 -6 -6 -6 -7 -7 -7 -7 -7 -7 -7 -7 -7 -7 -8 -8 -8 -8 -8 -8 -8 -8 -8 -8 -9 -9 -9 -9 -9 -9 -9 -9 -9 -9]
 
 entry: ArrG64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i8, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i8', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2 -2 -2 -2 -2 -2 -2 -2 -2 -2 -3 -3 -3 -3 -3 -3 -3 -3 -3 -3 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -5 -5 -5 -5 -5 -5 -5 -5 -5 -5 -6 -6 -6 -6 -6 -6 -6 -6 -6 -6 -7 -7 -7 -7 -7 -7 -7 -7 -7 -7 -8 -8 -8 -8 -8 -8 -8 -8 -8 -8 -9 -9 -9 -9 -9 -9 -9 -9 -9 -9]
 
 entry: ArrU8
-npy-header: Header{Major:2, Minor:0, Descr:{Type:|u1, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'|u1', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrU16
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u2, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u2', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrU32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u4, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u4', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrU64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u8, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u8', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrUGG
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<u8, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<u8', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrF32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f4, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f4', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrF64
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f8, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f8', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrD16
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f4, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f2', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: ArrD32
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f8, Fortran:false, Shape:[10 10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f4', Fortran:false, Shape:[10 10]}}
 data = [0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6 6 6 6 6 6 6 7 7 7 7 7 7 7 7 7 7 8 8 8 8 8 8 8 8 8 8 9 9 9 9 9 9 9 9 9 9]
 
 entry: N
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i4, Fortran:false, Shape:[10]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i4', Fortran:false, Shape:[10]}}
 data = [0 1 2 3 4 5 6 7 8 9]

@@ -16,8 +16,8 @@ codeberg.org/gonuts/binary v0.3.2 h1:7kSBmdRwbUv5fI8LaGp/gV+ow2OTi7EnRKO/pQ6YBJo
 codeberg.org/gonuts/binary v0.3.2/go.mod h1:hf+kigzXMZzpPTDOuSnTz+ppy5p037QluUFVtJ3OjWI=
 codeberg.org/gonuts/commander v0.5.1 h1:Rmy1GllX4L7/jtLEZURtPUzAkGX+XLJInyGepTF8ois=
 codeberg.org/gonuts/commander v0.5.1/go.mod h1:hFEcJLh+CwTVL4KNiHjpf/FydRGzbunV8mkK45SCXuU=
-codeberg.org/sbinet/npyio v0.11.0 h1:CnMQ+B4rK+eY9R3wUgXQz9mX8xu/pOc+gsLf+aRr6CI=
-codeberg.org/sbinet/npyio v0.11.0/go.mod h1:m2ec2Sj6SPfyCXXSrDVlRt9RXaeqmsZLzczzh+xcBjs=
+codeberg.org/sbinet/npyio v0.14.0 h1:anRg/xWVzQjagST3bQJNvlB1nqTaHH/pZf8Gqkd1poM=
+codeberg.org/sbinet/npyio v0.14.0/go.mod h1:MRJaKobDsvZq8J4G/RfZJLPu/Ev33JzON4ErvqYQQik=
 git.sr.ht/~sbinet/cmpimg v0.1.0 h1:E0zPRk2muWuCqSKSVZIWsgtU9pjsw3eKHi8VmQeScxo=
 git.sr.ht/~sbinet/cmpimg v0.1.0/go.mod h1:FU12psLbF4TfNXkKH2ZZQ29crIqoiqTZmeQ7dkp/pxE=
 git.sr.ht/~sbinet/epok v0.5.0 h1:eQcocQpGQVYWLiA93dkIgngH0jjjDiTdj7rS3vQLp6w=

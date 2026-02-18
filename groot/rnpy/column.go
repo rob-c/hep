@@ -8,7 +8,19 @@ import (
 	"fmt"
 	"reflect"
 
+	"codeberg.org/sbinet/npyio/npy"
+	"go-hep.org/x/hep/groot/root"
 	"go-hep.org/x/hep/groot/rtree"
+)
+
+var (
+	_ npy.Descr       = (*root.Float16)(nil)
+	_ npy.Marshaler   = (*root.Float16)(nil)
+	_ npy.Unmarshaler = (*root.Float16)(nil)
+
+	_ npy.Descr       = (*root.Double32)(nil)
+	_ npy.Marshaler   = (*root.Double32)(nil)
+	_ npy.Unmarshaler = (*root.Double32)(nil)
 )
 
 // NewColumns returns all the ReadVars of the provided Tree as

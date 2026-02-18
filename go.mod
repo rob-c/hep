@@ -7,7 +7,7 @@ require (
 	codeberg.org/go-mmap/mmap v0.8.0
 	codeberg.org/gonuts/binary v0.3.2
 	codeberg.org/gonuts/commander v0.5.1
-	codeberg.org/sbinet/npyio v0.11.0
+	codeberg.org/sbinet/npyio v0.14.0
 	git.sr.ht/~sbinet/epok v0.5.0
 	git.sr.ht/~sbinet/go-arrow v0.3.0
 	github.com/google/go-cmp v0.7.0

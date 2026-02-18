@@ -157,43 +157,43 @@ func schemaFrom(npy *npy.Reader) *arrow.Schema {
 		dtype arrow.DataType
 	)
 	switch hdr.Descr.Type {
-	case "b1", "<b1", "|b1", "bool":
+	case "'b1'", "'<b1'", "'|b1'", "'bool'":
 		dtype = arrow.FixedWidthTypes.Boolean
 
-	case "u1", "<u1", "|u1", "uint8":
+	case "'u1'", "'<u1'", "'|u1'", "'uint8'":
 		dtype = arrow.PrimitiveTypes.Uint8
 
-	case "u2", "<u2", "|u2", ">u2", "uint16":
+	case "'u2'", "'<u2'", "'|u2'", "'>u2'", "'uint16'":
 		dtype = arrow.PrimitiveTypes.Uint16
 
-	case "u4", "<u4", "|u4", ">u4", "uint32":
+	case "'u4'", "'<u4'", "'|u4'", "'>u4'", "'uint32'":
 		dtype = arrow.PrimitiveTypes.Uint32
 
-	case "u8", "<u8", "|u8", ">u8", "uint64":
+	case "'u8'", "'<u8'", "'|u8'", "'>u8'", "'uint64'":
 		dtype = arrow.PrimitiveTypes.Uint64
 
-	case "i1", "<i1", "|i1", ">i1", "int8":
+	case "'i1'", "'<i1'", "'|i1'", "'>i1'", "'int8'":
 		dtype = arrow.PrimitiveTypes.Int8
 
-	case "i2", "<i2", "|i2", ">i2", "int16":
+	case "'i2'", "'<i2'", "'|i2'", "'>i2'", "'int16'":
 		dtype = arrow.PrimitiveTypes.Int16
 
-	case "i4", "<i4", "|i4", ">i4", "int32":
+	case "'i4'", "'<i4'", "'|i4'", "'>i4'", "'int32'":
 		dtype = arrow.PrimitiveTypes.Int32
 
-	case "i8", "<i8", "|i8", ">i8", "int64":
+	case "'i8'", "'<i8'", "'|i8'", "'>i8'", "'int64'":
 		dtype = arrow.PrimitiveTypes.Int64
 
-	case "f4", "<f4", "|f4", ">f4", "float32":
+	case "'f4'", "'<f4'", "'|f4'", "'>f4'", "'float32'":
 		dtype = arrow.PrimitiveTypes.Float32
 
-	case "f8", "<f8", "|f8", ">f8", "float64":
+	case "'f8'", "'<f8'", "'|f8'", "'>f8'", "'float64'":
 		dtype = arrow.PrimitiveTypes.Float64
 
-		//	case "c8", "<c8", "|c8", ">c8", "complex64":
+		//	case "'c8'", "'<c8'", "'|c8'", "'>c8'", "'complex64'":
 		//		panic(fmt.Errorf("npy2root: complex64 not supported"))
 		//
-		//	case "c16", "<c16", "|c16", ">c16", "complex128":
+		//	case "'c16'", "'<c16'", "'|c16'", "'>c16'", "'complex128'":
 		//		panic(fmt.Errorf("npy2root: complex128 not supported"))
 
 	default:

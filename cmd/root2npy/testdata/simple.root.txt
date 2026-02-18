@@ -1,13 +1,13 @@
 ================================================================================
 file: output.npz
 entry: one
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<i4, Fortran:false, Shape:[4]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<i4', Fortran:false, Shape:[4]}}
 data = [1 2 3 4]
 
 entry: two
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<f4, Fortran:false, Shape:[4]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<f4', Fortran:false, Shape:[4]}}
 data = [1.1 2.2 3.3 4.4]
 
 entry: three
-npy-header: Header{Major:2, Minor:0, Descr:{Type:<U6, Fortran:false, Shape:[4]}}
+npy-header: Header{Major:2, Minor:0, Descr:{Type:'<U6', Fortran:false, Shape:[4]}}
 data = ["uno" "dos" "tres" "quatro"]

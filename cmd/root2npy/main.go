@@ -206,10 +206,6 @@ func process(oname, fname, tname string) error {
 			return fmt.Errorf("could not write %q: %w", col.Name(), err)
 		}
 
-		if err != nil {
-			return fmt.Errorf("could not process column %q: %w", col.Name(), err)
-		}
-
 		wz, err := npz.Create(col.Name())
 		if err != nil {
 			return fmt.Errorf("could not create column %q: %w", col.Name(), err)
