@@ -14,13 +14,11 @@ steps:
       GOCOVERAGE: "-coverpkg=go-hep.org/x/hep/..."
 
     commands:
-      - orig_dir=`pwd`
       - . /opt/root/setup-groot.sh
-      - cd $orig_dir
       - root.exe --version
       - export PATH=/root/go/bin:$PATH
       - go version
-      - GOARCH=amd64 go install -v $GOTAGS ./...
+      - GOARCH=amd64 go build -v $GOTAGS ./...
       - go run ./ci/run-tests.go $GOTAGS $GORACE $GOCOVERAGE
       - go vet $GOTAGS ./...
       - go install honnef.co/go/tools/cmd/staticcheck@latest
