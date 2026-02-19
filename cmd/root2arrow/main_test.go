@@ -5,26 +5,12 @@
 package main // import "go-hep.org/x/hep/cmd/root2arrow"
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"testing"
 
 	"go-hep.org/x/hep/internal/diff"
 )
-
-func init() {
-	_, err := exec.LookPath("arrow-cat")
-	if err == nil {
-		return
-	}
-
-	o, err := exec.Command("go", "install", "git.sr.ht/~sbinet/go-arrow/ipc/cmd/arrow-cat@latest").CombinedOutput()
-	if err != nil {
-		panic(fmt.Errorf("could not install arrow-cat command:\n%v\nerr: %w", string(o), err))
-	}
-
-}
 
 func TestFile(t *testing.T) {
 	for _, tc := range []struct {
@@ -102,5 +88,9 @@ func TestFile(t *testing.T) {
 }
 
 func arrowCat(fname string) ([]byte, error) {
-	return exec.Command("arrow-cat", fname).CombinedOutput()
+	return exec.Command(
+		"go", "tool",
+		"git.sr.ht/~sbinet/go-arrow/ipc/cmd/arrow-cat",
+		fname,
+	).CombinedOutput()
 }

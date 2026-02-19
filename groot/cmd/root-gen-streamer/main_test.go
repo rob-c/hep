@@ -125,7 +125,8 @@ key[000]: data;1 "" (go_hep_org::x::hep::groot::internal::rdatatest::T1) => &{he
 
 			out.Reset()
 			cmd = exec.Command(
-				"root-gen-streamer",
+				"go", "tool",
+				"go-hep.org/x/hep/groot/cmd/root-gen-streamer",
 				"-p", tc.pkg, "-t", strings.Join(tc.types, ","),
 				"-o", tc.out,
 			)
@@ -191,7 +192,11 @@ func main() {
 			}
 
 			out.Reset()
-			cmd = exec.Command("root-dump", "testdata/out.root")
+			cmd = exec.Command(
+				"go", "tool",
+				"go-hep.org/x/hep/groot/cmd/root-dump",
+				"testdata/out.root",
+			)
 			cmd.Stdout = out
 			cmd.Stderr = out
 			err = cmd.Run()
