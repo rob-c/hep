@@ -31,10 +31,10 @@ type Efficiency struct {
 	confLvl float64    // confidence level (default = 0.683, 1 sigma)
 	funcs   rcont.List // ->pointer to list of functions
 
-	passedHist H1      // histogram for events which passed certain criteria
-	statOpt    int32   // defines how the confidence intervals are determined
-	totHist    H1      // histogram for total number of events
-	weight     float64 // weight for all events (default = 1)
+	passedHist root.Object // histogram for events which passed certain criteria
+	statOpt    int32       // defines how the confidence intervals are determined
+	totHist    root.Object // histogram for total number of events
+	weight     float64     // weight for all events (default = 1)
 }
 
 func (*Efficiency) Class() string {
@@ -111,14 +111,14 @@ func (o *Efficiency) UnmarshalROOT(r *rbytes.RBuffer) error {
 	{
 		o.passedHist = nil
 		if oo := r.ReadObjectAny(); oo != nil { // obj-ptr
-			o.passedHist = oo.(H1)
+			o.passedHist = oo
 		}
 	}
 	o.statOpt = r.ReadI32()
 	{
 		o.totHist = nil
 		if oo := r.ReadObjectAny(); oo != nil { // obj-ptr
-			o.totHist = oo.(H1)
+			o.totHist = oo
 		}
 	}
 	o.weight = r.ReadF64()

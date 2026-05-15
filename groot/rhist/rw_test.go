@@ -267,6 +267,18 @@ func TestWRBuffer(t *testing.T) {
 			want: loadFrom("../testdata/tconfidence-level.root", "eff"),
 		},
 		{
+			name: "TEfficiency1D",
+			want: loadFrom("../testdata/tefficiency.root", "eff1"),
+		},
+		{
+			name: "TEfficiency2D",
+			want: loadFrom("../testdata/tefficiency.root", "eff2"),
+		},
+		{
+			name: "TEfficiency3D",
+			want: loadFrom("../testdata/tefficiency.root", "eff3"),
+		},
+		{
 			name: "TProfile",
 			want: loadFrom("../testdata/tprofile.root", "p1d"),
 		},
