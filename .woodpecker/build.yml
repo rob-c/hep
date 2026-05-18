@@ -4,7 +4,7 @@ when:
 
 steps:
   build:
-    image: codeberg.org/go-hep/groot-docker:6.38.00-202602191513
+    image: codeberg.org/go-hep/groot-docker:6.38.04-202605181253
     environment:
       CGO_ENABLED: 1
       GOVERSION: "1.26.0"
