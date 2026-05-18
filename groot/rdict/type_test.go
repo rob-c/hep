@@ -170,10 +170,10 @@ func TestTypeFromSI(t *testing.T) {
 				},
 			}),
 			want: func() reflect.Type {
-				return reflect.TypeOf((*struct {
+				return reflect.TypeFor[struct {
 					ROOT_Name  string       `groot:"Name"`
 					ROOT_Array rcont.ArrayD `groot:"Array"`
-				})(nil)).Elem()
+				}]()
 			}(),
 		},
 		{
@@ -211,10 +211,10 @@ func TestTypeFromSI(t *testing.T) {
 					}.New(),
 				},
 			}),
-			want: reflect.TypeOf((*struct {
+			want: reflect.TypeFor[struct {
 				ROOT_first  int32   `groot:"first"`
 				ROOT_second float32 `groot:"second"`
-			})(nil)).Elem(),
+			}](),
 		},
 		{
 			name: "vector<int>",
@@ -430,9 +430,9 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "map<int,string>",
 				}.New(), rmeta.STLmap, rmeta.Object),
 			}),
-			want: reflect.TypeOf((*struct {
+			want: reflect.TypeFor[struct {
 				ROOT_mapI32Str map[int32]string `groot:"mapI32Str"`
-			})(nil)).Elem(),
+			}](),
 		},
 		{
 			name: "vector<TObject>",
@@ -480,9 +480,9 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "bitset<256>",
 				}.New(), rmeta.STLbitset, 0),
 			}),
-			want: reflect.TypeOf((*struct {
+			want: reflect.TypeFor[struct {
 				ROOT_bs []uint8 `groot:"bs"`
-			})(nil)).Elem(),
+			}](),
 		},
 		{
 			name: "vector<bitset<256> >",
@@ -494,9 +494,9 @@ func TestTypeFromSI(t *testing.T) {
 					EName: "vector<bitset<256> >",
 				}.New(), rmeta.STLvector, 0),
 			}),
-			want: reflect.TypeOf((*struct {
+			want: reflect.TypeFor[struct {
 				ROOT_bs [][]uint8 `groot:"bs"`
-			})(nil)).Elem(),
+			}](),
 		},
 		{
 			name: "event",
@@ -1116,91 +1116,82 @@ func TestTypeFromSI(t *testing.T) {
 					}.New(),
 				},
 			}),
-			want: reflect.TypeOf((*struct {
-				ROOT_TObject rbase.Object  `groot:"TObject"`
-				ROOT_b       bool          `groot:"b"`
-				ROOT_i8      int8          `groot:"i8"`
-				ROOT_i16     int16         `groot:"i16"`
-				ROOT_i32     int32         `groot:"i32"`
-				ROOT_i64     int64         `groot:"i64"`
-				ROOT_u8      uint8         `groot:"u8"`
-				ROOT_u16     uint16        `groot:"u16"`
-				ROOT_u32     uint32        `groot:"u32"`
-				ROOT_u64     uint64        `groot:"u64"`
-				ROOT_N       int32         `groot:"N"`
-				ROOT_NN      int64         `groot:"NN"`
-				ROOT_bits    uint32        `groot:"bits"`
-				ROOT_f32     float32       `groot:"f32"`
-				ROOT_f64     float64       `groot:"f64"`
-				ROOT_f16     root.Float16  `groot:"f16"`
-				ROOT_d32     root.Double32 `groot:"d32"`
-				ROOT_str     string        `groot:"str"`
-				ROOT_cstr    string        `groot:"cstr"`
-				// arrays
-				ROOT_arrB    [3]bool          `groot:"arrB[3]"`
-				ROOT_arrI8   [3]int8          `groot:"arrI8[3]"`
-				ROOT_arrI16  [3]int16         `groot:"arrI16[3]"`
-				ROOT_arrI32  [3]int32         `groot:"arrI32[3]"`
-				ROOT_arrI64  [3]int64         `groot:"arrI64[3]"`
-				ROOT_arrU8   [3]uint8         `groot:"arrU8[3]"`
-				ROOT_arrU16  [3]uint16        `groot:"arrU16[3]"`
-				ROOT_arrU32  [3]uint32        `groot:"arrU32[3]"`
-				ROOT_arrU64  [3]uint64        `groot:"arrU64[3]"`
-				ROOT_arrF32  [3]float32       `groot:"arrF32[3]"`
-				ROOT_arrF64  [3]float64       `groot:"arrF64[3]"`
-				ROOT_arrF16  [3]root.Float16  `groot:"arrF16[3]"`
-				ROOT_arrD32  [3]root.Double32 `groot:"arrD32[3]"`
-				ROOT_arrStr  [3]string        `groot:"arrStr[3]"`
-				ROOT_arrCstr [3]string        `groot:"arrCstr[3]"`
-				//	ROOT_arrN32  [3]int32         `groot:"arrN32[3]"`
-				//	ROOT_arrN64  [3]int64         `groot:"arrN64[3]"`
-				ROOT_arrTObj [3]rbase.Object `groot:"arrTObj[3]"`
-
-				// slices
-				ROOT_sliB    []bool          `groot:"sliB[N]"`
-				ROOT_sliI8   []int8          `groot:"sliI8[N]"`
-				ROOT_sliI16  []int16         `groot:"sliI16[N]"`
-				ROOT_sliI32  []int32         `groot:"sliI32[N]"`
-				ROOT_sliI64  []int64         `groot:"sliI64[N]"`
-				ROOT_sliU8   []uint8         `groot:"sliU8[N]"`
-				ROOT_sliU16  []uint16        `groot:"sliU16[N]"`
-				ROOT_sliU32  []uint32        `groot:"sliU32[N]"`
-				ROOT_sliU64  []uint64        `groot:"sliU64[N]"`
-				ROOT_sliF32  []float32       `groot:"sliF32[N]"`
-				ROOT_sliF64  []float64       `groot:"sliF64[N]"`
-				ROOT_sliF16  []root.Float16  `groot:"sliF16[N]"`
-				ROOT_sliD32  []root.Double32 `groot:"sliD32[N]"`
-				ROOT_sliStr  []string        `groot:"sliStr[N]"`
-				ROOT_sliCstr []string        `groot:"sliCstr[N]"`
-
-				// std::vectors
-				ROOT_stdVecB      []bool          `groot:"stdVecB"`
-				ROOT_stdVecI8     []int8          `groot:"stdVecI8"`
-				ROOT_stdVecI16    []int16         `groot:"stdVecI16"`
-				ROOT_stdVecI32    []int32         `groot:"stdVecI32"`
-				ROOT_stdVecI64    []int64         `groot:"stdVecI64"`
-				ROOT_stdVecU8     []uint8         `groot:"stdVecU8"`
-				ROOT_stdVecU16    []uint16        `groot:"stdVecU16"`
-				ROOT_stdVecU32    []uint32        `groot:"stdVecU32"`
-				ROOT_stdVecU64    []uint64        `groot:"stdVecU64"`
-				ROOT_stdVecF32    []float32       `groot:"stdVecF32"`
-				ROOT_stdVecF64    []float64       `groot:"stdVecF64"`
-				ROOT_stdVecF16    []root.Float16  `groot:"stdVecF16"`
-				ROOT_stdVecD32    []root.Double32 `groot:"stdVecD32"`
-				ROOT_stdVecStr    []string        `groot:"stdVecStr"`
-				ROOT_stdVecCstr   []string        `groot:"stdVecCstr"`
-				ROOT_stdVecNamed1 []rbase.Named   `groot:"stdVecNamed1"`
-				ROOT_stdVecNamed2 []rbase.Named   `groot:"stdVecNamed2"`
-
-				// obj-ptr
-				ROOT_ptrObj  *rbase.Object `groot:"ptrObj"`
-				ROOT_ptrPos1 *struct {
+			want: reflect.TypeFor[struct {
+				ROOT_TObject      rbase.Object     `groot:"TObject"`
+				ROOT_b            bool             `groot:"b"`
+				ROOT_i8           int8             `groot:"i8"`
+				ROOT_i16          int16            `groot:"i16"`
+				ROOT_i32          int32            `groot:"i32"`
+				ROOT_i64          int64            `groot:"i64"`
+				ROOT_u8           uint8            `groot:"u8"`
+				ROOT_u16          uint16           `groot:"u16"`
+				ROOT_u32          uint32           `groot:"u32"`
+				ROOT_u64          uint64           `groot:"u64"`
+				ROOT_N            int32            `groot:"N"`
+				ROOT_NN           int64            `groot:"NN"`
+				ROOT_bits         uint32           `groot:"bits"`
+				ROOT_f32          float32          `groot:"f32"`
+				ROOT_f64          float64          `groot:"f64"`
+				ROOT_f16          root.Float16     `groot:"f16"`
+				ROOT_d32          root.Double32    `groot:"d32"`
+				ROOT_str          string           `groot:"str"`
+				ROOT_cstr         string           `groot:"cstr"`
+				ROOT_arrB         [3]bool          `groot:"arrB[3]"`
+				ROOT_arrI8        [3]int8          `groot:"arrI8[3]"`
+				ROOT_arrI16       [3]int16         `groot:"arrI16[3]"`
+				ROOT_arrI32       [3]int32         `groot:"arrI32[3]"`
+				ROOT_arrI64       [3]int64         `groot:"arrI64[3]"`
+				ROOT_arrU8        [3]uint8         `groot:"arrU8[3]"`
+				ROOT_arrU16       [3]uint16        `groot:"arrU16[3]"`
+				ROOT_arrU32       [3]uint32        `groot:"arrU32[3]"`
+				ROOT_arrU64       [3]uint64        `groot:"arrU64[3]"`
+				ROOT_arrF32       [3]float32       `groot:"arrF32[3]"`
+				ROOT_arrF64       [3]float64       `groot:"arrF64[3]"`
+				ROOT_arrF16       [3]root.Float16  `groot:"arrF16[3]"`
+				ROOT_arrD32       [3]root.Double32 `groot:"arrD32[3]"`
+				ROOT_arrStr       [3]string        `groot:"arrStr[3]"`
+				ROOT_arrCstr      [3]string        `groot:"arrCstr[3]"`
+				ROOT_arrTObj      [3]rbase.Object  `groot:"arrTObj[3]"`
+				ROOT_sliB         []bool           `groot:"sliB[N]"`
+				ROOT_sliI8        []int8           `groot:"sliI8[N]"`
+				ROOT_sliI16       []int16          `groot:"sliI16[N]"`
+				ROOT_sliI32       []int32          `groot:"sliI32[N]"`
+				ROOT_sliI64       []int64          `groot:"sliI64[N]"`
+				ROOT_sliU8        []uint8          `groot:"sliU8[N]"`
+				ROOT_sliU16       []uint16         `groot:"sliU16[N]"`
+				ROOT_sliU32       []uint32         `groot:"sliU32[N]"`
+				ROOT_sliU64       []uint64         `groot:"sliU64[N]"`
+				ROOT_sliF32       []float32        `groot:"sliF32[N]"`
+				ROOT_sliF64       []float64        `groot:"sliF64[N]"`
+				ROOT_sliF16       []root.Float16   `groot:"sliF16[N]"`
+				ROOT_sliD32       []root.Double32  `groot:"sliD32[N]"`
+				ROOT_sliStr       []string         `groot:"sliStr[N]"`
+				ROOT_sliCstr      []string         `groot:"sliCstr[N]"`
+				ROOT_stdVecB      []bool           `groot:"stdVecB"`
+				ROOT_stdVecI8     []int8           `groot:"stdVecI8"`
+				ROOT_stdVecI16    []int16          `groot:"stdVecI16"`
+				ROOT_stdVecI32    []int32          `groot:"stdVecI32"`
+				ROOT_stdVecI64    []int64          `groot:"stdVecI64"`
+				ROOT_stdVecU8     []uint8          `groot:"stdVecU8"`
+				ROOT_stdVecU16    []uint16         `groot:"stdVecU16"`
+				ROOT_stdVecU32    []uint32         `groot:"stdVecU32"`
+				ROOT_stdVecU64    []uint64         `groot:"stdVecU64"`
+				ROOT_stdVecF32    []float32        `groot:"stdVecF32"`
+				ROOT_stdVecF64    []float64        `groot:"stdVecF64"`
+				ROOT_stdVecF16    []root.Float16   `groot:"stdVecF16"`
+				ROOT_stdVecD32    []root.Double32  `groot:"stdVecD32"`
+				ROOT_stdVecStr    []string         `groot:"stdVecStr"`
+				ROOT_stdVecCstr   []string         `groot:"stdVecCstr"`
+				ROOT_stdVecNamed1 []rbase.Named    `groot:"stdVecNamed1"`
+				ROOT_stdVecNamed2 []rbase.Named    `groot:"stdVecNamed2"`
+				ROOT_ptrObj       *rbase.Object    `groot:"ptrObj"`
+				ROOT_ptrPos1      *struct {
 					ROOT_px float32 `groot:"px"`
 					ROOT_py float64 `groot:"py"`
 				} `groot:"ptrPos1"`
 				ROOT_ptrPos2 *TypeFromSI_Pos2 `groot:"ptrPos2"`
 				ROOT_ptrArrF *rcont.ArrayF    `groot:"ptrArrF"`
-			})(nil)).Elem(),
+			}](),
 		},
 		{
 			name: "event-ndim",
@@ -1372,7 +1363,7 @@ func TestTypeFromSI(t *testing.T) {
 					}.New(),
 				},
 			}),
-			want: reflect.TypeOf((*struct {
+			want: reflect.TypeFor[struct {
 				ROOT_arrB    [2][3][4][5]bool          `groot:"arrB[2][3][4][5]"`
 				ROOT_arrI8   [2][3][4][5]int8          `groot:"arrI8[2][3][4][5]"`
 				ROOT_arrI16  [2][3][4][5]int16         `groot:"arrI16[2][3][4][5]"`
@@ -1388,7 +1379,7 @@ func TestTypeFromSI(t *testing.T) {
 				ROOT_arrD32  [2][3][4][5]root.Double32 `groot:"arrD32[2][3][4][5]"`
 				ROOT_arrStr  [2][3][4][5]string        `groot:"arrStr[2][3][4][5]"`
 				ROOT_arrCstr [2][3][4][5]string        `groot:"arrCstr[2][3][4][5]"`
-			})(nil)).Elem(),
+			}](),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

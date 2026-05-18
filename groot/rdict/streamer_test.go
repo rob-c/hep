@@ -253,7 +253,7 @@ func TestTypenameOf(t *testing.T) {
 		},
 		{
 			name:   "empty-struct",
-			typ:    reflect.TypeOf(struct{}{}),
+			typ:    reflect.TypeFor[struct{}](),
 			panics: "rdict: invalid reflect type struct {}",
 		},
 		{

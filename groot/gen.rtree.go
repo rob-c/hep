@@ -72,7 +72,7 @@ func genLeaves() {
 			Type:       "bool",
 			Kind:       "reflect.Bool",
 			LenType:    1,
-			GoLenType:  int(reflect.TypeOf(true).Size()),
+			GoLenType:  int(reflect.TypeFor[bool]().Size()),
 			RFunc:      "r.ReadBool()",
 			RFuncArray: "r.ReadArrayBool",
 			ResizeFunc: "rbytes.ResizeBool",
@@ -85,7 +85,7 @@ func genLeaves() {
 			Kind:       "reflect.Int8",
 			UKind:      "reflect.Uint8",
 			LenType:    1,
-			GoLenType:  int(reflect.TypeOf(int8(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[int8]().Size()),
 			DoUnsigned: true,
 			RFunc:      "r.ReadI8()",
 			RFuncArray: "r.ReadArrayI8",
@@ -100,7 +100,7 @@ func genLeaves() {
 			Kind:       "reflect.Int16",
 			UKind:      "reflect.Uint16",
 			LenType:    2,
-			GoLenType:  int(reflect.TypeOf(int16(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[int16]().Size()),
 			DoUnsigned: true,
 			RFunc:      "r.ReadI16()",
 			RFuncArray: "r.ReadArrayI16",
@@ -115,7 +115,7 @@ func genLeaves() {
 			Kind:       "reflect.Int32",
 			UKind:      "reflect.Uint32",
 			LenType:    4,
-			GoLenType:  int(reflect.TypeOf(int32(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[int32]().Size()),
 			DoUnsigned: true,
 			RFunc:      "r.ReadI32()",
 			RFuncArray: "r.ReadArrayI32",
@@ -130,7 +130,7 @@ func genLeaves() {
 			Kind:       "reflect.Int64",
 			UKind:      "reflect.Uint64",
 			LenType:    8,
-			GoLenType:  int(reflect.TypeOf(int64(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[int64]().Size()),
 			DoUnsigned: true,
 			RFunc:      "r.ReadI64()",
 			RFuncArray: "r.ReadArrayI64",
@@ -145,7 +145,7 @@ func genLeaves() {
 			Kind:       "reflect.Int64",
 			UKind:      "reflect.Uint64",
 			LenType:    8,
-			GoLenType:  int(reflect.TypeOf(int64(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[int64]().Size()),
 			DoUnsigned: true,
 			RFunc:      "r.ReadI64()",
 			RFuncArray: "r.ReadArrayI64",
@@ -159,7 +159,7 @@ func genLeaves() {
 			Type:       "float32",
 			Kind:       "reflect.Float32",
 			LenType:    4,
-			GoLenType:  int(reflect.TypeOf(float32(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[float32]().Size()),
 			RFunc:      "r.ReadF32()",
 			RFuncArray: "r.ReadArrayF32",
 			ResizeFunc: "rbytes.ResizeF32",
@@ -171,7 +171,7 @@ func genLeaves() {
 			Type:       "float64",
 			Kind:       "reflect.Float64",
 			LenType:    8,
-			GoLenType:  int(reflect.TypeOf(float64(0)).Size()),
+			GoLenType:  int(reflect.TypeFor[float64]().Size()),
 			RFunc:      "r.ReadF64()",
 			RFuncArray: "r.ReadArrayF64",
 			ResizeFunc: "rbytes.ResizeF64",
@@ -183,7 +183,7 @@ func genLeaves() {
 			Type:                "root.Float16",
 			Kind:                "reflect.Float32",
 			LenType:             4,
-			GoLenType:           int(reflect.TypeOf(root.Float16(0)).Size()),
+			GoLenType:           int(reflect.TypeFor[root.Float16]().Size()),
 			RFunc:               "r.ReadF16(leaf.elm)",
 			RFuncArray:          "r.ReadArrayF16",
 			ResizeFunc:          "rbytes.ResizeF16",
@@ -197,7 +197,7 @@ func genLeaves() {
 			Type:                "root.Double32",
 			Kind:                "reflect.Float64",
 			LenType:             8,
-			GoLenType:           int(reflect.TypeOf(root.Double32(0)).Size()),
+			GoLenType:           int(reflect.TypeFor[root.Double32]().Size()),
 			RFunc:               "r.ReadD32(leaf.elm)",
 			RFuncArray:          "r.ReadArrayD32",
 			ResizeFunc:          "rbytes.ResizeD32",
@@ -211,7 +211,7 @@ func genLeaves() {
 			Type:       "string",
 			Kind:       "reflect.String",
 			LenType:    1,
-			GoLenType:  int(reflect.TypeOf("").Size()),
+			GoLenType:  int(reflect.TypeFor[string]().Size()),
 			RFunc:      "r.ReadString()",
 			RFuncArray: "r.ReadArrayString",
 			ResizeFunc: "rbytes.ResizeStr",
@@ -315,14 +315,11 @@ func (leaf *{{.Name}}) Kind() reflect.Kind {
 func (leaf *{{.Name}}) Type() reflect.Type {
 {{- if .DoUnsigned}}
 	if leaf.IsUnsigned() {
-		var v u{{.Type}}
-		return reflect.TypeOf(v)
+		return reflect.TypeFor[u{{.Type}}]()
 	}
-	var v {{.Type}}
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[{{.Type}}]()
 {{- else}}
-	var v {{.Type}}
-	return reflect.TypeOf(v)
+	return reflect.TypeFor[{{.Type}}]()
 {{- end}}
 }
 
@@ -589,81 +586,81 @@ func genRLeaves() {
 			Name: "Bool",
 			Base: "LeafO",
 			Type: "bool",
-			Size: int(reflect.TypeOf(true).Size()),
+			Size: int(reflect.TypeFor[bool]().Size()),
 		},
 		{
 			Name:  "I8",
 			Base:  "LeafB",
 			Type:  "int8",
-			Size:  int(reflect.TypeOf(int8(0)).Size()),
+			Size:  int(reflect.TypeFor[int8]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "I16",
 			Base:  "LeafS",
 			Type:  "int16",
-			Size:  int(reflect.TypeOf(int16(0)).Size()),
+			Size:  int(reflect.TypeFor[int16]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "I32",
 			Base:  "LeafI",
 			Type:  "int32",
-			Size:  int(reflect.TypeOf(int32(0)).Size()),
+			Size:  int(reflect.TypeFor[int32]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "I64",
 			Base:  "LeafL",
 			Type:  "int64",
-			Size:  int(reflect.TypeOf(int64(0)).Size()),
+			Size:  int(reflect.TypeFor[int64]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "U8",
 			Base:  "LeafB",
 			Type:  "uint8",
-			Size:  int(reflect.TypeOf(uint8(0)).Size()),
+			Size:  int(reflect.TypeFor[uint8]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "U16",
 			Base:  "LeafS",
 			Type:  "uint16",
-			Size:  int(reflect.TypeOf(uint16(0)).Size()),
+			Size:  int(reflect.TypeFor[uint16]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "U32",
 			Base:  "LeafI",
 			Type:  "uint32",
-			Size:  int(reflect.TypeOf(uint32(0)).Size()),
+			Size:  int(reflect.TypeFor[uint32]().Size()),
 			Count: true,
 		},
 		{
 			Name:  "U64",
 			Base:  "LeafL",
 			Type:  "uint64",
-			Size:  int(reflect.TypeOf(uint64(0)).Size()),
+			Size:  int(reflect.TypeFor[uint64]().Size()),
 			Count: true,
 		},
 		{
 			Name: "F32",
 			Base: "LeafF",
 			Type: "float32",
-			Size: int(reflect.TypeOf(float32(0)).Size()),
+			Size: int(reflect.TypeFor[float32]().Size()),
 		},
 		{
 			Name: "F64",
 			Base: "LeafD",
 			Type: "float64",
-			Size: int(reflect.TypeOf(float64(0)).Size()),
+			Size: int(reflect.TypeFor[float64]().Size()),
 		},
 		{
 			Name: "D32",
 			Base: "LeafD32",
 			Type: "root.Double32",
-			Size: int(reflect.TypeOf(root.Double32(0)).Size()),
+			Size: int(reflect.TypeFor[root.Double32]().Size()),
 
 			WithStreamerElement: true,
 		},
@@ -671,7 +668,7 @@ func genRLeaves() {
 			Name: "F16",
 			Base: "LeafF16",
 			Type: "root.Float16",
-			Size: int(reflect.TypeOf(root.Float16(0)).Size()),
+			Size: int(reflect.TypeFor[root.Float16]().Size()),
 
 			WithStreamerElement: true,
 		},
@@ -679,7 +676,7 @@ func genRLeaves() {
 			Name: "Str",
 			Base: "LeafC",
 			Type: "string",
-			Size: int(reflect.TypeOf("").Size()),
+			Size: int(reflect.TypeFor[string]().Size()),
 		},
 	} {
 		for j, kind := range []Kind{Val, Arr, Sli} {
