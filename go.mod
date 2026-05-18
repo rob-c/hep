@@ -3,13 +3,13 @@ module go-hep.org/x/hep
 go 1.25.0
 
 require (
-	codeberg.org/astrogo/fitsio v0.4.0
+	codeberg.org/astrogo/fitsio v0.5.1
 	codeberg.org/go-mmap/mmap v0.8.0
 	codeberg.org/gonuts/binary v0.4.0
 	codeberg.org/gonuts/commander v0.5.1
 	codeberg.org/sbinet/npyio v0.14.0
-	git.sr.ht/~sbinet/epok v0.5.0
-	git.sr.ht/~sbinet/go-arrow v0.3.0
+	git.sr.ht/~sbinet/epok v0.6.0
+	git.sr.ht/~sbinet/go-arrow v0.4.0
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jcmturner/gokrb5/v8 v8.4.4
@@ -31,10 +31,10 @@ require (
 )
 
 require (
-	codeberg.org/go-fonts/liberation v0.5.0 // indirect
-	codeberg.org/go-latex/latex v0.2.0 // indirect
-	codeberg.org/go-pdf/fpdf v0.11.1 // indirect
-	git.sr.ht/~sbinet/gg v0.7.0 // indirect
+	codeberg.org/go-fonts/liberation v0.6.0 // indirect
+	codeberg.org/go-latex/latex v0.3.0 // indirect
+	codeberg.org/go-pdf/fpdf v0.12.0 // indirect
+	git.sr.ht/~sbinet/gg v0.8.0 // indirect
 	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b // indirect
 	github.com/campoy/embedmd v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
