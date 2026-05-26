@@ -73,6 +73,7 @@ tool (
 	git.sr.ht/~sbinet/go-arrow/ipc/cmd/arrow-cat
 	github.com/campoy/embedmd
 	go-hep.org/x/hep/brio/cmd/brio-gen
+	go-hep.org/x/hep/groot/cmd/root-cp
 	go-hep.org/x/hep/groot/cmd/root-dump
 	go-hep.org/x/hep/groot/cmd/root-gen-streamer
 	golang.org/x/tools/cmd/goimports
