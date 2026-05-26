@@ -266,16 +266,22 @@ func (si *StreamerInfo) NewRStreamer(kind rbytes.StreamKind) (rbytes.RStreamer, 
 		return nil, fmt.Errorf("rdict: could not build read streamers: %w", err)
 	}
 
-	roops := make([]rstreamer, len(si.descr))
+	var (
+		sictx = StreamerInfos
+		rops  = make([]rstreamer, len(si.descr))
+	)
 	switch kind {
 	case rbytes.ObjectWise:
-		copy(roops, si.roops)
+		for i := range si.roops {
+			rops[i] = si.makeROp(sictx, i, si.descr[i])
+		}
 	case rbytes.MemberWise:
-		copy(roops, si.rmops)
+		copy(rops, si.rmops)
+		panic("not implemented")
 	default:
 		return nil, fmt.Errorf("rdict: invalid stream kind %v", kind)
 	}
-	return newRStreamerInfo(si, kind, roops)
+	return newRStreamerInfo(si, kind, rops)
 }
 
 func (si *StreamerInfo) NewWStreamer(kind rbytes.StreamKind) (rbytes.WStreamer, error) {
@@ -284,12 +290,18 @@ func (si *StreamerInfo) NewWStreamer(kind rbytes.StreamKind) (rbytes.WStreamer, 
 		return nil, fmt.Errorf("rdict: could not build write streamers: %w", err)
 	}
 
-	wops := make([]wstreamer, len(si.descr))
+	var (
+		sictx = StreamerInfos
+		wops  = make([]wstreamer, len(si.descr))
+	)
 	switch kind {
 	case rbytes.ObjectWise:
-		copy(wops, si.woops)
+		for i := range si.roops {
+			wops[i] = si.makeWOp(sictx, i, si.descr[i])
+		}
 	case rbytes.MemberWise:
 		copy(wops, si.wmops)
+		panic("not implemented")
 	default:
 		return nil, fmt.Errorf("rdict: invalid stream kind %v", kind)
 	}
