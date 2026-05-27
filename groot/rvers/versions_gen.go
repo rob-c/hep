@@ -79,7 +79,6 @@ const (
 	H1D                      = 3  // ROOT version for TH1D
 	H1F                      = 3  // ROOT version for TH1F
 	H1I                      = 3  // ROOT version for TH1I
-	H1K                      = 2  // ROOT version for TH1K
 	H1S                      = 3  // ROOT version for TH1S
 	H2                       = 5  // ROOT version for TH2
 	H2C                      = 4  // ROOT version for TH2C

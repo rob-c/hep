@@ -3994,47 +3994,6 @@ func init() {
 			Factor: 0.000000,
 		}.New(), 1),
 	}))
-	StreamerInfos.Add(NewCxxStreamerInfo("TH1K", 2, 0xfd37ced5, []rbytes.StreamerElement{
-		NewStreamerBase(Element{
-			Name:   *rbase.NewNamed("TH1", "1-Dim histogram base class"),
-			Type:   rmeta.Base,
-			Size:   0,
-			ArrLen: 0,
-			ArrDim: 0,
-			MaxIdx: [5]int32{0, 473383108, 0, 0, 0},
-			Offset: 0,
-			EName:  "BASE",
-			XMin:   0.000000,
-			XMax:   0.000000,
-			Factor: 0.000000,
-		}.New(), 8),
-		NewStreamerBase(Element{
-			Name:   *rbase.NewNamed("TArrayF", "Array of floats"),
-			Type:   rmeta.Base,
-			Size:   0,
-			ArrLen: 0,
-			ArrDim: 0,
-			MaxIdx: [5]int32{0, 1510733553, 0, 0, 0},
-			Offset: 0,
-			EName:  "BASE",
-			XMin:   0.000000,
-			XMax:   0.000000,
-			Factor: 0.000000,
-		}.New(), 1),
-		&StreamerBasicType{StreamerElement: Element{
-			Name:   *rbase.NewNamed("fNIn", ""),
-			Type:   rmeta.Int,
-			Size:   4,
-			ArrLen: 0,
-			ArrDim: 0,
-			MaxIdx: [5]int32{0, 0, 0, 0, 0},
-			Offset: 0,
-			EName:  "int",
-			XMin:   0.000000,
-			XMax:   0.000000,
-			Factor: 0.000000,
-		}.New()},
-	}))
 	StreamerInfos.Add(NewCxxStreamerInfo("TH1S", 3, 0x8c4d9dcb, []rbytes.StreamerElement{
 		NewStreamerBase(Element{
 			Name:   *rbase.NewNamed("TH1", "1-Dim histogram base class"),
