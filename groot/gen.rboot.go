@@ -133,9 +133,9 @@ func genStreamers(classes []string) {
 void genstreamers(const char* fname) {
 	auto f = TFile::Open(fname, "RECREATE");
 
-{{range .}}
+{{- range .}}
 	TClass::GetClass("{{.}}")->GetStreamerInfo()->Write("streamer-info-{{.}}");
-{{end }}
+{{- end }}
 
 	f->Write();
 	f->Close();
@@ -168,7 +168,7 @@ void genstreamers(const char* fname) {
 		}
 		obj, err := k.Object()
 		if err != nil {
-			log.Fatalf("could not load streamer %q: +v", k.Name(), err)
+			log.Fatalf("could not load streamer %q: %+v", k.Name(), err)
 		}
 		si, ok := obj.(rbytes.StreamerInfo)
 		if !ok {
