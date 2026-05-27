@@ -29,6 +29,7 @@ var (
 	classes = []string{
 		// rbase
 		"TAttAxis", "TAttBBox2D", "TAttFill", "TAttLine", "TAttMarker", "TAttPad",
+		"TBox",
 		"TDatime",
 		"TNamed",
 		"TObject", "TObjString",

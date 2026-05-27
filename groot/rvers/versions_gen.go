@@ -17,6 +17,7 @@ const (
 	AttLine                  = 2  // ROOT version for TAttLine
 	AttMarker                = 3  // ROOT version for TAttMarker
 	AttPad                   = 4  // ROOT version for TAttPad
+	Box                      = 3  // ROOT version for TBox
 	Datime                   = 1  // ROOT version for TDatime
 	Named                    = 1  // ROOT version for TNamed
 	Object                   = 1  // ROOT version for TObject
