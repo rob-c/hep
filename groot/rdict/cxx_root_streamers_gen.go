@@ -5671,7 +5671,7 @@ func init() {
 			Factor: 0.000000,
 		}.New()},
 		&StreamerBasicType{StreamerElement: Element{
-			Name:   *rbase.NewNamed("fNbytes", "Number of bytes for the object on file"),
+			Name:   *rbase.NewNamed("fNbytes", "Number of bytes for the whole key on file (key header and data)"),
 			Type:   rmeta.Int,
 			Size:   4,
 			ArrLen: 0,

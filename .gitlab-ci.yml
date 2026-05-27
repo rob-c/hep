@@ -10,7 +10,7 @@ stages:
  - build
 
 go-1.26:
- image: codeberg.org/go-hep/groot-docker:6.38.00
+ image: codeberg.org/go-hep/groot-docker:6.40.00-202605271116
  stage: build
  script:
   - root.exe --version
