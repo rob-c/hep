@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"slices"
 
 	"go-hep.org/x/hep/groot/root"
 	"go-hep.org/x/hep/groot/rvers"
@@ -88,6 +89,18 @@ func (w *WBuffer) StreamerInfo(name string, version int) (StreamerInfo, error) {
 		return nil, fmt.Errorf("rbytes: no streamers")
 	}
 	return w.sictx.StreamerInfo(name, version)
+}
+
+// Streamers returns the list of typenames' streamers used during writing.
+func (w *WBuffer) Streamers() []string {
+	vs := make([]string, 0, len(w.refs))
+	for k := range w.refs {
+		if k, ok := k.(string); ok {
+			vs = append(vs, k)
+		}
+	}
+	slices.Sort(vs)
+	return vs
 }
 
 func (w *WBuffer) Grow(n int)     { w.w.grow(n) }

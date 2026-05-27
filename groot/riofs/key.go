@@ -13,6 +13,7 @@ import (
 
 	"go-hep.org/x/hep/groot/internal/rcompress"
 	"go-hep.org/x/hep/groot/rbytes"
+	"go-hep.org/x/hep/groot/rdict"
 	"go-hep.org/x/hep/groot/root"
 	"go-hep.org/x/hep/groot/rtypes"
 	"go-hep.org/x/hep/groot/rvers"
@@ -97,7 +98,8 @@ type Key struct {
 	buf []byte      // buffer of the Key's value
 	obj root.Object // Key's value
 
-	otyp reflect.Type // Go type of the Key's payload.
+	otyp  reflect.Type        // Go type of the Key's payload.
+	types map[string]struct{} // (deep) list of required streamers, if any.
 
 	parent Directory // directory holding this key
 }
@@ -198,6 +200,15 @@ func newKeyFrom(dir *tdirectoryFile, name, title, class string, obj root.Object,
 	}
 	if f.IsBigFile() {
 		k.rvers += 1000
+	}
+
+	var (
+		streamers  = buf.Streamers()
+		nstreamers = len(streamers)
+	)
+	k.types = make(map[string]struct{}, nstreamers)
+	for _, typename := range streamers {
+		k.types[typename] = struct{}{}
 	}
 
 	compress := k.f.compression
@@ -634,6 +645,27 @@ func (k *Key) writeFile(f *File) (int, error) {
 	n += nn
 	if err != nil {
 		return n, err
+	}
+
+	// make sure we have a streamer for the possibly deeply nested objects
+	// inside the objects' stream.
+	for typename := range k.types {
+		if isCoreType(typename) {
+			continue
+		}
+		cxx := rdict.GoName2Cxx(typename)
+		si, err := f.StreamerInfo(cxx, -1)
+		if err != nil {
+			_, err = streamerInfoFrom(k.obj, f)
+			if err != nil {
+				return n, fmt.Errorf("riofs: could not generate streamer for key %q and type %T: %w", k.name, k.obj, err)
+			}
+			si, err = f.StreamerInfo(cxx, -1)
+		}
+		if err != nil {
+			return n, fmt.Errorf("riofs: could not find streamer for %T: %w", k.obj, err)
+		}
+		f.addStreamer(si)
 	}
 
 	k.buf = nil
