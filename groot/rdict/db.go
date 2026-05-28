@@ -93,7 +93,7 @@ func (db *streamerDb) Add(streamer rbytes.StreamerInfo) {
 		old, dup := db.db[key]
 		if dup {
 			if old.CheckSum() != streamer.CheckSum() {
-				panic(fmt.Errorf("rdict: StreamerInfo class=%q version=%d with checksum=%d (got checksum=%d)",
+				panic(fmt.Errorf("rdict: StreamerInfo class=%q version=%d with checksum=0x%x (ref checksum=0x%x)",
 					streamer.Name(), streamer.ClassVersion(), streamer.CheckSum(), old.CheckSum(),
 				))
 			}

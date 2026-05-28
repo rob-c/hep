@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -537,12 +539,12 @@ var muWriteStreamerInfo sync.Mutex
 
 // writeStreamerInfo writes the list of StreamerInfos used in this file.
 func (f *File) writeStreamerInfo() error {
-	muWriteStreamerInfo.Lock()
-	defer muWriteStreamerInfo.Unlock()
-
 	if f.w == nil {
 		return nil
 	}
+
+	muWriteStreamerInfo.Lock()
+	defer muWriteStreamerInfo.Unlock()
 
 	var (
 		err    error
@@ -555,8 +557,20 @@ func (f *File) writeStreamerInfo() error {
 		return fmt.Errorf("riofs: could not find dependent streamers: %w", err)
 	}
 
+	simap := make(map[string]rbytes.StreamerInfo, len(f.sinfos))
 	for _, si := range f.sinfos {
-		sinfos.Append(si)
+		name := si.Name()
+		if dup, ok := simap[name]; ok && dup.ClassVersion() > si.ClassVersion() {
+			continue
+		}
+		simap[name] = si
+	}
+
+	sikeys := slices.Collect(maps.Keys(simap))
+	slices.Sort(sikeys)
+
+	for _, k := range sikeys {
+		sinfos.Append(simap[k])
 	}
 
 	if rules.Len() > 0 {
@@ -606,7 +620,16 @@ func (f *File) findDepStreamers() error {
 		err = rdict.Visit(rdict.StreamerInfos, si, func(depth int, se rbytes.StreamerElement) error {
 			switch se := se.(type) {
 			case *rdict.StreamerBase:
-				deps = append(deps, depsType{se.Name(), se.Base()})
+				// FIXME(sbinet): we used to have `se.Base()` instead of `-1`.
+				// but this caused a weird hysteresis effect as documented in
+				// issue #1053: we could pick-up the wrong version of the
+				// streamer's base class and advertise an incorrect version of
+				// it for downstream clients.
+				//
+				// it seems always using the latest version is what we should
+				// stick to (as that's what groot and ROOT/C++ actually end up
+				// doing anyway.)
+				deps = append(deps, depsType{se.Name(), -1})
 			case *rdict.StreamerObject, *rdict.StreamerObjectAny:
 				deps = append(deps, depsType{se.TypeName(), -1})
 			case *rdict.StreamerObjectPointer, *rdict.StreamerObjectAnyPointer:

@@ -17,6 +17,7 @@ import (
 	"go-hep.org/x/hep/groot/riofs"
 	"go-hep.org/x/hep/groot/root"
 	"go-hep.org/x/hep/groot/rtree"
+	"go-hep.org/x/hep/groot/rvers"
 	"go-hep.org/x/hep/internal/diff"
 )
 
@@ -298,5 +299,58 @@ func TestROOTCpTree(t *testing.T) {
 
 	if got, want := got.String(), want.String(); got != want {
 		t.Fatalf("dumps differ:\n%s\n", diff.Format(got, want))
+	}
+}
+
+// TestROOTCopyDupStreamers tests whether we correctly handle weird checksums.
+// the testdata/th1-with-attmarker-v2.root file contains a TH1F that derives
+// from a TAttMarker-v2 (with a "weird" checksum. see groot/rdict/db.go:checkdups).
+//
+// th1-with-attmarker-v2.root was created with ROOT-6.32.04 like so:
+//
+//	$> python
+//	>>> import ROOT
+//	>>> f = ROOT.TFile.Open("th1-with-attmarker-v2.root","RECREATE")
+//	>>> h = ROOT.TH1F("h","h",10,0,10)
+//	>>> h.FillRandom("gaus", 5)
+//	>>> h.Write()
+//	>>> f.Close()
+//
+// Reading that file would install a TH1-v8 streamer with the TAttMarker-v2
+// inside our global registry of streamers, replacing our original TH1-v8 (that
+// happens to be the latest version at the time of writing, ie: ROOT/C++@v6.40.xx)
+// Writing back that TH1F would then write a TAttMarker-v3 (the latest version
+// of TAttMarker at this time) but advertised as a TAttMarker-v2.
+// This test makes sure we have code that prevents this situation.
+func TestROOTCopyDupStreamers(t *testing.T) {
+	dir := t.TempDir()
+	oname := filepath.Join(dir, "out.root")
+
+	err := rcmd.Copy(oname, []string{"testdata/th1-with-attmarker-v2.root"})
+	if err != nil {
+		t.Fatalf("could not copy file: %v", err)
+	}
+
+	f, err := groot.Open(oname)
+	if err != nil {
+		t.Fatalf("could not open copied file: %v", err)
+	}
+	defer f.Close()
+
+	for _, si := range f.StreamerInfos() {
+		var (
+			vers = si.ClassVersion()
+			name = si.Name()
+			sum  = si.CheckSum()
+		)
+		if name != "TAttMarker" {
+			continue
+		}
+		if vers <= 2 {
+			t.Fatalf("invalid %s version: %d -- checksum=0x%x", name, vers, sum)
+		}
+		if vers != rvers.AttMarker {
+			t.Fatalf("invalid %s version: got=%d, want=%d -- checksum=0x%x", name, vers, rvers.AttMarker, sum)
+		}
 	}
 }
