@@ -15,9 +15,12 @@ import (
 	"time"
 
 	"go-hep.org/x/hep/groot"
+	"go-hep.org/x/hep/groot/internal/rdatatest"
 	"go-hep.org/x/hep/groot/internal/rtests"
 	"go-hep.org/x/hep/groot/rbase"
+	"go-hep.org/x/hep/groot/rcmd"
 	"go-hep.org/x/hep/groot/rcont"
+	"go-hep.org/x/hep/groot/rdict"
 	"go-hep.org/x/hep/groot/riofs"
 	"go-hep.org/x/hep/groot/root"
 	"go-hep.org/x/hep/groot/rtree"
@@ -565,4 +568,169 @@ func TestTopLevelString(t *testing.T) {
 	if got != want {
 		t.Fatalf("got=%q, want=%q", got, want)
 	}
+}
+
+// TestVersionSkew tests we correctly detect version skews coming from,
+// e.g., a ROOT/C++ class version that groot doesn't know how to handle yet.
+//
+// We create v1.root with TMyObjString-v1, implemented in ROOT/C++ and in groot.
+// We create v2.root with TMyObjString-v2, only implemented in ROOT/C++.
+//
+// We try to read+copy v1.root: that should obviously succeed.
+// We try to read+copy v2.root: that should fail (panic) at the `read` step.
+// We try to read+copy v1.root: that should still succeed, and we should still
+// get the correct TMyObjString-v1 streamer, for both the TMyObjString value
+// contained in the TH1F value, and for the TMyObjString base class of the
+// TMyObjRope value also contained in that TH1F value.
+//
+// Note that when reading the 'v2.root' file, the TMyObjString-v2 streamer is
+// loaded into our global registry of streamers, even though we correctly
+// detect later on we don't know how to write that class version (through a
+// panic). That TMyObjString-v2 streamer shouldn't end up in an output stream
+// or file: rbytes.WBuffer will prevent that, and riofs.File.findDepStreamers
+// only looks for streamers in the file-local cache of streamers.
+func TestVersionSkew(t *testing.T) {
+	tmp := t.TempDir()
+
+	const tmyobjstring = rdatatest.MyObjStringSrc
+
+	var (
+		v1name = filepath.Join(tmp, "v1.root")
+		v2name = filepath.Join(tmp, "v2.root")
+	)
+
+	for _, tc := range []struct {
+		name string
+		vers int
+	}{
+		{name: v1name, vers: rdatatest.MyObjStringVersion},
+		{name: v2name, vers: rdatatest.MyObjStringVersion + 1},
+	} {
+		out, err := rtests.RunCxxROOT(
+			"gentmyobjstr+",
+			[]byte(fmt.Sprintf(tmyobjstring, tc.vers)),
+			tc.name,
+		)
+		if err != nil {
+			t.Fatalf("could not run ROOT/C++ for %q:\n%s\nerror: %v", tc.name, out, err)
+		}
+	}
+
+	oname := filepath.Join(tmp, "copy.root")
+
+	{
+		err := rcmd.Copy(oname, []string{v1name})
+		if err != nil {
+			t.Fatalf("could not copy ROOT file: %v", err)
+		}
+
+		f, err := groot.Open(oname)
+		if err != nil {
+			t.Fatalf("could not open ROOT file: %v", err)
+		}
+		defer f.Close()
+
+		for _, si := range f.StreamerInfos() {
+			if si.Name() != "TMyObjString" && si.Name() != "TMyObjRope" {
+				continue
+			}
+			t.Logf("- %q, version=%d\n%s", si.Name(), si.ClassVersion(), si)
+		}
+	}
+
+	var panicked bool
+	func() {
+		defer func() {
+			err := recover()
+			if err == nil {
+				return
+			}
+
+			const want = `rbytes: invalid version for "TMyObjString": got=2 > max=1`
+			var got string
+			switch err := err.(type) {
+			case error:
+				got = err.Error()
+			case string:
+				got = err
+			default:
+				t.Errorf("invalid panic message type %T: %v", err, err)
+			}
+
+			if got == want {
+				panicked = true
+				return
+			}
+			t.Errorf("invalid panic message:\ngot= %q\nwant=%q", got, want)
+		}()
+		err := rcmd.Copy(oname, []string{v2name})
+		if err != nil {
+			t.Fatalf("could not copy ROOT file: %v", err)
+		}
+
+		f, err := groot.Open(oname)
+		if err != nil {
+			t.Fatalf("could not open ROOT file: %v", err)
+		}
+		defer f.Close()
+
+		for _, si := range f.StreamerInfos() {
+			if si.Name() != "TMyObjString" && si.Name() != "TMyObjRope" {
+				continue
+			}
+			t.Logf("- %q, version=%d\n%s", si.Name(), si.ClassVersion(), si)
+		}
+	}()
+	if !panicked {
+		t.Fatal("reading TMyObjString-v2, should have panicked")
+	}
+
+	{
+		err := rcmd.Copy(oname, []string{v1name})
+		if err != nil {
+			t.Fatalf("could not copy ROOT file: %v", err)
+		}
+
+		f, err := groot.Open(oname)
+		if err != nil {
+			t.Fatalf("could not open ROOT file: %v", err)
+		}
+		defer f.Close()
+
+		want := map[string]int{
+			"TMyObjString": rdatatest.MyObjStringVersion,
+			"TMyObjRope":   int(((*rdatatest.MyObjRope)(nil)).RVersion()),
+		}
+		for _, si := range f.StreamerInfos() {
+			name := si.Name()
+			if _, ok := want[name]; !ok {
+				continue
+			}
+			vers := si.ClassVersion()
+			t.Logf("- %q, version=%d\n%s", name, vers, si)
+			if got, want := vers, want[si.Name()]; got != want {
+				t.Fatalf("invalid %q version: got=%d, want=%d", name, got, want)
+			}
+			if name == "TMyObjRope" {
+				base := si.Elements()[0].(*rdict.StreamerBase)
+				t.Logf("base[%s]: %q, vers=%d", name, base.Name(), base.Base())
+				if got, want := base.Name(), "TMyObjString"; got != want {
+					t.Fatalf("invalid base class for %q: got=%q, want=%q", name, got, want)
+				}
+				if got, want := base.Base(), want[base.Name()]; got != want {
+					t.Fatalf("invalid base class streamer version for %q → %q: got=%d, want=%d",
+						name, base.Name(), got, want,
+					)
+				}
+			}
+		}
+	}
+
+	t.Logf("checking global registry content...")
+	for _, si := range rdict.StreamerInfos.Values() {
+		if si.Name() == "TMyObjString" || si.Name() == "TMyObjRope" {
+			t.Logf("%s", si)
+		}
+	}
+	t.Logf("checking global registry content... [done]")
 }
