@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	stdpath "path"
+	"path/filepath"
 	"regexp"
 
 	"go-hep.org/x/hep/groot"
@@ -57,11 +58,12 @@ func (cmd copyCmd) process(o *riofs.File, arg string) error {
 	}
 	defer f.Close()
 
+	top := filepath.Clean(f.Name()) // drop leading './', if any.
 	err = riofs.Walk(f, func(path string, obj root.Object, err error) error {
 		if err != nil {
 			return err
 		}
-		name := path[len(f.Name()):]
+		name := path[len(top):]
 		if !re.MatchString(name) {
 			return nil
 		}
