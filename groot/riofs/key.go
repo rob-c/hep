@@ -98,8 +98,8 @@ type Key struct {
 	buf []byte      // buffer of the Key's value
 	obj root.Object // Key's value
 
-	otyp  reflect.Type        // Go type of the Key's payload.
-	types map[string]struct{} // (deep) list of required streamers, if any.
+	otyp reflect.Type                   // Go type of the Key's payload.
+	sids map[rbytes.StreamerID]struct{} // (deep) list of required streamers, if any.
 
 	parent Directory // directory holding this key
 }
@@ -206,9 +206,9 @@ func newKeyFrom(dir *tdirectoryFile, name, title, class string, obj root.Object,
 		streamers  = buf.Streamers()
 		nstreamers = len(streamers)
 	)
-	k.types = make(map[string]struct{}, nstreamers)
-	for _, typename := range streamers {
-		k.types[typename] = struct{}{}
+	k.sids = make(map[rbytes.StreamerID]struct{}, nstreamers)
+	for _, id := range streamers {
+		k.sids[id] = struct{}{}
 	}
 
 	compress := k.f.compression
@@ -649,12 +649,13 @@ func (k *Key) writeFile(f *File) (int, error) {
 
 	// make sure we have a streamer for the possibly deeply nested objects
 	// inside the objects' stream.
-	for typename := range k.types {
+	for sid := range k.sids {
+		typename := sid.Name
 		if isCoreType(typename) {
 			continue
 		}
 		cxx := rdict.GoName2Cxx(typename)
-		si, err := f.StreamerInfo(cxx, -1)
+		si, err := f.StreamerInfo(cxx, int(sid.Vers))
 		if err != nil {
 			_, err = streamerInfoFrom(k.obj, f)
 			if err != nil {

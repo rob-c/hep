@@ -26,6 +26,12 @@ type Header struct {
 	MemberWise bool // whether the value has been written member-wise.
 }
 
+// StreamerID represents a streamer used during reading or writing.
+type StreamerID struct {
+	Name string // name of the type that was read/written in the buffer.
+	Vers int16  // version of the type that was read/written in the buffer.
+}
+
 // RVersioner is the interface implemented by an object that
 // can tell the ROOT system what is its current version.
 type RVersioner interface {

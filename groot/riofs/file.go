@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -653,7 +654,11 @@ func (f *File) findDepStreamers() error {
 		if isCoreType(dep.name) || isCxxBuiltin(dep.name) {
 			continue
 		}
-		sub, err := rdict.StreamerInfos.StreamerInfo(dep.name, dep.vers)
+		sub, err := f.streamerInfo(dep.name, dep.vers)
+		if errors.Is(err, errNotExist) {
+			// retry, using the global registry.
+			sub, err = rdict.StreamerInfos.StreamerInfo(dep.name, dep.vers)
+		}
 		if err != nil {
 			return fmt.Errorf("riofs: could not find streamer for %q and version=%d: %w", dep.name, dep.vers, err)
 		}
@@ -818,6 +823,54 @@ func (f *File) StreamerInfo(name string, version int) (rbytes.StreamerInfo, erro
 	}
 
 	return nil, fmt.Errorf("riofs: no streamer for %q", name)
+}
+
+var errNotExist = errors.New("no such streamer info in local file")
+
+// streamerInfo returns the named StreamerInfo from the current riofs.File.
+// streamerInfo doesn't try to find that named StreamerInfo from the global
+// registry of streamers.
+// streamerInfo returns errNotExist if it couldn't find that named streamer locally.
+func (f *File) streamerInfo(name string, version int) (rbytes.StreamerInfo, error) {
+	switch {
+	case version < 0:
+		var (
+			slice []rbytes.StreamerInfo
+		)
+		for _, si := range f.sinfos {
+			if si.Name() == name {
+				slice = append(slice, si)
+				continue
+			}
+			title := si.Title()
+			if title == "" {
+				continue
+			}
+			if class, ok := rdict.Typename(name, title); ok && class == name {
+				slice = append(slice, si)
+			}
+		}
+		if len(slice) == 0 {
+			return nil, errNotExist
+		}
+		sort.Slice(slice, func(i, j int) bool {
+			return slice[i].ClassVersion() < slice[j].ClassVersion()
+		})
+		return slice[len(slice)-1], nil
+	default:
+		for _, si := range f.sinfos {
+			if si.ClassVersion() != version {
+				continue
+			}
+			if si.Name() == name {
+				return si, nil
+			}
+			if class, ok := rdict.Typename(name, si.Title()); ok && class == name {
+				return si, nil
+			}
+		}
+		return nil, errNotExist
+	}
 }
 
 // RegisterStreamer adds the given streamer info to the list of streamers

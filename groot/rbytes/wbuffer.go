@@ -6,6 +6,7 @@ package rbytes
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -66,6 +67,7 @@ type WBuffer struct {
 	err    error
 	offset uint32
 	refs   map[any]int64
+	types  map[StreamerID]struct{}
 	sictx  StreamerInfoContext
 }
 
@@ -78,6 +80,7 @@ func NewWBuffer(data []byte, refs map[any]int64, offset uint32, ctx StreamerInfo
 		w:      wbuff{p: data, c: 0},
 		refs:   refs,
 		offset: offset,
+		types:  make(map[StreamerID]struct{}),
 		sictx:  ctx,
 	}
 }
@@ -92,14 +95,17 @@ func (w *WBuffer) StreamerInfo(name string, version int) (StreamerInfo, error) {
 }
 
 // Streamers returns the list of typenames' streamers used during writing.
-func (w *WBuffer) Streamers() []string {
-	vs := make([]string, 0, len(w.refs))
-	for k := range w.refs {
-		if k, ok := k.(string); ok {
-			vs = append(vs, k)
-		}
+func (w *WBuffer) Streamers() []StreamerID {
+	vs := make([]StreamerID, 0, len(w.types))
+	for k := range w.types {
+		vs = append(vs, k)
 	}
-	slices.Sort(vs)
+	slices.SortFunc(vs, func(a, b StreamerID) int {
+		if a.Name != b.Name {
+			return cmp.Compare(a.Name, b.Name)
+		}
+		return cmp.Compare(a.Vers, b.Vers)
+	})
 	return vs
 }
 
@@ -223,6 +229,9 @@ func (w *WBuffer) WriteClass(beg int64, obj root.Object) uint32 {
 	}
 
 	class := obj.Class()
+	rvers := obj.(RVersioner).RVersion()
+	w.types[StreamerID{Name: class, Vers: rvers}] = struct{}{}
+
 	ref64, ok := w.refs[class]
 	if !ok {
 		// first time we see this type
