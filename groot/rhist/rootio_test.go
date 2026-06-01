@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -22,12 +21,7 @@ import (
 )
 
 func TestCreate(t *testing.T) {
-
-	dir, err := os.MkdirTemp("", "groot-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for i, tc := range []struct {
 		Name string

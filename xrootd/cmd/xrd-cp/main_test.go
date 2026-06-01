@@ -11,12 +11,7 @@ import (
 )
 
 func TestXrdCp(t *testing.T) {
-	dir, err := os.MkdirTemp("", "xrootd-xrdcp-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
+	dir := t.TempDir()
 	dst := filepath.Join(dir, "chain.1.root")
 	src := "root://ccxrootdgotest.in2p3.fr:9001/tmp/rootio/testdata/chain.1.root"
 
@@ -25,7 +20,7 @@ func TestXrdCp(t *testing.T) {
 		verbose   = true
 	)
 
-	err = xrdcopy(dst, src, recursive, verbose)
+	err := xrdcopy(dst, src, recursive, verbose)
 	if err != nil {
 		t.Fatalf("could not copy remote file: %v", err)
 	}
@@ -44,12 +39,7 @@ func BenchmarkXrdCp_Large(b *testing.B) {
 }
 
 func benchmarkXrdCp(b *testing.B, src string) {
-	dir, err := os.MkdirTemp("", "xrootd-xrdcp-")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
+	dir := b.TempDir()
 	dst := filepath.Join(dir, filepath.Base(src))
 
 	const (
@@ -60,7 +50,7 @@ func benchmarkXrdCp(b *testing.B, src string) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		os.RemoveAll(dst)
-		err = xrdcopy(dst, src, recursive, verbose)
+		err := xrdcopy(dst, src, recursive, verbose)
 		if err != nil {
 			b.Fatalf("could not copy remote file: %v", err)
 		}

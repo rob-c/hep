@@ -7,7 +7,6 @@ package rcont_test
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -61,11 +60,7 @@ func TestTClonesArray(t *testing.T) {
 }
 
 func TestTClonesArrayRW(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for i, tc := range []struct {
 		name string

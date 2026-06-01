@@ -7,7 +7,6 @@ package rtree_test
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -19,11 +18,7 @@ import (
 
 func TestCopyTree(t *testing.T) {
 	const deep = true
-	tmp, err := os.MkdirTemp("", "groot-rtree-copy-")
-	if err != nil {
-		t.Fatalf("could not create tmpdir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	for _, tc := range []struct {
 		file     string

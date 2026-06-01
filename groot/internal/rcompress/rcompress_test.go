@@ -10,7 +10,6 @@ import (
 	"bytes"
 	"compress/flate"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -26,11 +25,7 @@ import (
 func TestCompress(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "groot-rcompress-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	wants := map[string]root.Object{
 		"small": rbase.NewObjString("hello"),

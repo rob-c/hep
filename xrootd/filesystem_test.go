@@ -27,18 +27,15 @@ var fstest = map[string]*xrdfs.EntryStat{
 	},
 }
 
-func tempdir(client *Client, dir, prefix string) (name string, err error) {
-	name, err = os.MkdirTemp("", prefix)
-	if err != nil {
-		return "", err
-	}
-	os.RemoveAll(name)
+func tempdir(t *testing.T, client *Client, dir string) (name string, err error) {
+	name = t.TempDir()
 
 	// Cross-platform way of obtaining the directory name.
 	name = filepath.ToSlash(name)
 	name = path.Base(name)
 
 	name = path.Join(dir, name)
+	_ = os.RemoveAll(name)
 
 	fs := client.FS()
 	err = fs.MkdirAll(context.Background(), name, xrdfs.OpenModeOwnerRead|xrdfs.OpenModeOwnerWrite|xrdfs.OpenModeOwnerExecute)
@@ -152,7 +149,7 @@ func testFileSystem_RemoveFile(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	dir, err := tempdir(client, "/tmp/", "xrd-test-rm")
+	dir, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +209,7 @@ func testFileSystem_Truncate(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	dir, err := tempdir(client, "/tmp/", "xrd-test-truncate")
+	dir, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +370,7 @@ func testFileSystem_RemoveDir(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	parent, err := tempdir(client, "/tmp/", "xrd-test-removedir")
+	parent, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +442,7 @@ func TestFileSystem_RemoveAll(t *testing.T) {
 			defer client.Close()
 			fs := client.FS()
 
-			parent, err := tempdir(client, "/tmp/", "xrd-test-remove-all")
+			parent, err := tempdir(t, client, "/tmp/")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -504,7 +501,7 @@ func testFileSystem_Rename(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	parent, err := tempdir(client, "/tmp/", "xrd-test-rename")
+	parent, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,7 +583,7 @@ func testFileSystem_Chmod(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	parent, err := tempdir(client, "/tmp/", "xrd-test-chmod")
+	parent, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}

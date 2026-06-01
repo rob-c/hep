@@ -340,11 +340,7 @@ func TestRecDirPut(t *testing.T) {
 }
 
 func TestFileOf(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-riofs-")
-	if err != nil {
-		t.Fatalf("%+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	f, err := Create(stdpath.Join(tmp, "file.root"))
 	if err != nil {
@@ -405,13 +401,9 @@ func TestFileOf(t *testing.T) {
 }
 
 func TestWalk(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-riofs-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
-	err = os.MkdirAll(stdpath.Join(tmp, "data"), 0755)
+	err := os.MkdirAll(stdpath.Join(tmp, "data"), 0755)
 	if err != nil {
 		t.Fatal(err)
 	}

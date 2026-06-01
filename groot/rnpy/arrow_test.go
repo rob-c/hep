@@ -37,11 +37,7 @@ func TestRecord(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmp, err := os.MkdirTemp("", "npy2root-")
-			if err != nil {
-				t.Fatalf("%+v", err)
-			}
-			defer os.RemoveAll(tmp)
+			tmp := t.TempDir()
 
 			fname := filepath.Join(tmp, "data.npy")
 			src, err := os.Create(fname)

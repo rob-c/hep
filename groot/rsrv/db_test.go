@@ -5,7 +5,6 @@
 package rsrv
 
 import (
-	"os"
 	"reflect"
 	"testing"
 
@@ -13,11 +12,7 @@ import (
 )
 
 func TestDB(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-rsrv-db-")
-	if err != nil {
-		t.Fatalf("%+v", err)
-	}
-	os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	db := NewDB(dir)
 	if got, want := len(db.Files()), 0; got != want {

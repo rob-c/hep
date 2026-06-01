@@ -26,11 +26,7 @@ func TestProcess(t *testing.T) {
 		return string(raw)
 	}
 
-	tmp, err := os.MkdirTemp("", "root2npy-")
-	if err != nil {
-		t.Fatalf("could not create tmp dir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	for _, tc := range []struct {
 		name string
@@ -101,11 +97,7 @@ type nilNamer struct{}
 func (nilNamer) Name() string { return "output.npz" }
 
 func BenchmarkProcess(b *testing.B) {
-	tmp, err := os.MkdirTemp("", "root2npy-")
-	if err != nil {
-		b.Fatalf("could not create tmp dir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := b.TempDir()
 
 	const (
 		fname = "../../groot/testdata/small-flat-tree.root"

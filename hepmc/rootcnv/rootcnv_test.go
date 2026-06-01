@@ -18,11 +18,7 @@ import (
 )
 
 func TestRW(t *testing.T) {
-	dir, err := os.MkdirTemp("", "hepmc-rootcnv-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for _, tc := range []string{
 		"../testdata/small.hepmc",

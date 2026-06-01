@@ -17,11 +17,7 @@ import (
 )
 
 func TestHandler(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "hplot-htex-")
-	if err != nil {
-		t.Fatalf("could not create tmpdir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	for i, tc := range []struct {
 		name  string

@@ -14,11 +14,7 @@ import (
 )
 
 func TestConvert(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "hepmc2root-")
-	if err != nil {
-		t.Fatalf("could not create tmpdir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	for _, name := range []string{
 		"testdata/small.hepmc",

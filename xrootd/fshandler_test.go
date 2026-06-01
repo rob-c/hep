@@ -34,11 +34,8 @@ func getTCPAddr() (string, error) {
 	return l.Addr().String(), nil
 }
 
-func createServer(errorHandler func(err error)) (srv *xrootd.Server, addr, baseDir string, err error) {
-	baseDir, err = os.MkdirTemp("", "xrd-srv-")
-	if err != nil {
-		return nil, "", "", fmt.Errorf("xrd-srv: could not create test dir: %w", err)
-	}
+func createServer(t testing.TB, errorHandler func(err error)) (srv *xrootd.Server, addr, baseDir string, err error) {
+	baseDir = t.TempDir()
 
 	addr, err = getTCPAddr()
 	if err != nil {
@@ -68,13 +65,12 @@ func createClient(addr string) (*xrootd.Client, error) {
 }
 
 func TestHandler_Dirlist(t *testing.T) {
-	srv, addr, baseDir, err := createServer(func(err error) {
+	srv, addr, baseDir, err := createServer(t, func(err error) {
 		t.Error(err)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
 	defer func() {
 		_ = srv.Shutdown(context.Background())
 	}()
@@ -114,14 +110,14 @@ func TestHandler_Dirlist(t *testing.T) {
 		t.Fatalf("wrong Dirlist response:\ngot = %v\nwant = %v", got, want)
 	}
 }
+
 func TestHandler_Dirlist_WhenPathIsInvalid(t *testing.T) {
-	srv, addr, baseDir, err := createServer(func(err error) {
+	srv, addr, _, err := createServer(t, func(err error) {
 		t.Error(err)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
 	defer func() {
 		_ = srv.Shutdown(context.Background())
 	}()
@@ -143,13 +139,12 @@ func TestHandler_Dirlist_WhenPathIsInvalid(t *testing.T) {
 }
 
 func TestHandler_Dirlist_With1000Requests(t *testing.T) {
-	srv, addr, baseDir, err := createServer(func(err error) {
+	srv, addr, baseDir, err := createServer(t, func(err error) {
 		t.Error(err)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
 	defer func() {
 		_ = srv.Shutdown(context.Background())
 	}()
@@ -181,13 +176,12 @@ func TestHandler_Dirlist_With1000Requests(t *testing.T) {
 }
 
 func BenchmarkHandler_Dirlist(b *testing.B) {
-	srv, addr, baseDir, err := createServer(func(err error) {
+	srv, addr, baseDir, err := createServer(b, func(err error) {
 		b.Error(err)
 	})
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
 	defer func() {
 		_ = srv.Shutdown(context.Background())
 	}()
@@ -280,13 +274,12 @@ func TestHandler_Open(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -388,13 +381,12 @@ func TestHandler_Read(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -484,13 +476,12 @@ func TestHandler_Write(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -562,13 +553,12 @@ func TestHandler_Stat(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -667,13 +657,12 @@ func TestHandler_Truncate(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -746,13 +735,12 @@ func TestHandler_Rename(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -824,13 +812,12 @@ func TestHandler_Mkdir(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -889,13 +876,12 @@ func TestHandler_Remove(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -964,13 +950,12 @@ func TestHandler_RemoveDir(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -1018,13 +1003,12 @@ func TestHandler_RemoveDir(t *testing.T) {
 }
 
 func TestHandler_Ping(t *testing.T) {
-	srv, addr, baseDir, err := createServer(func(err error) {
+	srv, addr, _, err := createServer(t, func(err error) {
 		t.Error(err)
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
 	defer func() {
 		_ = srv.Shutdown(context.Background())
 	}()

@@ -6,7 +6,6 @@ package rhist_test
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -19,12 +18,7 @@ import (
 )
 
 func TestRWHist(t *testing.T) {
-
-	dir, err := os.MkdirTemp("", "groot-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for i, tc := range rhist.HistoTestCases {
 		fname := filepath.Join(dir, fmt.Sprintf("histos-%d.root", i))

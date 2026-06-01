@@ -5,7 +5,6 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -15,11 +14,7 @@ import (
 )
 
 func TestROOTCopyIssue1053(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-root-cp-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	oname := filepath.Join(dir, "out.root")
 

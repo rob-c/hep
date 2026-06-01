@@ -5,7 +5,6 @@
 package riofs_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,11 +17,7 @@ import (
 )
 
 func TestDirs(t *testing.T) {
-	rootdir, err := os.MkdirTemp("", "groot-dir-subdir-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(rootdir)
+	rootdir := t.TempDir()
 
 	fname := filepath.Join(rootdir, "subdirs.root")
 

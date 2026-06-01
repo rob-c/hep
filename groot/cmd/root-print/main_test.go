@@ -17,11 +17,7 @@ import (
 )
 
 func TestPrint(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-root-print-")
-	if err != nil {
-		t.Fatalf("%+v", err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	refname := filepath.Join(dir, "ref.root")
 	ref, err := groot.Create(refname)
@@ -183,11 +179,7 @@ func TestPrint(t *testing.T) {
 		tname := tc.fname
 		tname = tname[len(dir)+1:]
 		t.Run(tname, func(t *testing.T) {
-			odir, err := os.MkdirTemp("", "groot-root-print-out-")
-			if err != nil {
-				t.Fatalf("%+v", err)
-			}
-			defer os.RemoveAll(odir)
+			odir := t.TempDir()
 
 			const verbose = false
 			err = rootprint(odir, []string{tc.fname}, tc.otype, verbose)

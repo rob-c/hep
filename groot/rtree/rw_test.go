@@ -27,16 +27,13 @@ import (
 )
 
 func TestBasketRW(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatalf("could not create temporary directory: %v", err)
-	}
+	tmp := t.TempDir()
+
 	f, err := riofs.Create(filepath.Join(tmp, "basket.root"))
 	if err != nil {
 		t.Fatalf("could not create temporary file: %v", err)
 	}
 	defer f.Close()
-	defer os.RemoveAll(tmp)
 
 	dir, err := f.Mkdir("data")
 	if err != nil {
@@ -215,16 +212,13 @@ func TestBranchRW(t *testing.T) {
 		signed   = false
 	)
 
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatalf("could not create temporary directory: %v", err)
-	}
+	tmp := t.TempDir()
+
 	f, err := riofs.Create(filepath.Join(tmp, "basket.root"))
 	if err != nil {
 		t.Fatalf("could not create temporary file: %v", err)
 	}
 	defer f.Close()
-	defer os.RemoveAll(tmp)
 
 	dir, err := f.Mkdir("data")
 	if err != nil {
@@ -670,11 +664,7 @@ func TestBranchRW(t *testing.T) {
 }
 
 func TestTreeRW(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatalf("could not create dir: %v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	const (
 		treeName = "mytree"
@@ -1656,11 +1646,7 @@ void scan(const char* fname, const char* tree, const char *list, const char *ona
 }
 
 func TestNestedTreeRW(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatalf("could not create dir: %v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	const (
 		treeName = "mytree"
@@ -2764,11 +2750,7 @@ void scan(const char *fname, const char *tname, const char *oname) {
 }
 
 func TestTreeWriteSubdir(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatalf("could not create dir: %v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	fname := filepath.Join(tmp, "tree-subdir.root")
 
@@ -2871,11 +2853,7 @@ void scan(const char *fname, const char *tree, const char *oname) {
 var sumBenchReadTreeF64 = 0.0
 
 func BenchmarkReadTreeF64(b *testing.B) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-read-tree-f64-")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := b.TempDir()
 
 	const nevts = 10000
 
@@ -2970,11 +2948,7 @@ func BenchmarkReadTreeF64(b *testing.B) {
 var sumBenchReadTreeSliF64 = 0
 
 func BenchmarkReadTreeSliF64(b *testing.B) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-read-tree-sli-f64s-")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := b.TempDir()
 
 	const nevts = 1000
 

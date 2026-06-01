@@ -16,11 +16,7 @@ import (
 )
 
 func TestConvert(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "fits2root-")
-	if err != nil {
-		t.Fatalf("%+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	for _, tc := range []struct {
 		name string

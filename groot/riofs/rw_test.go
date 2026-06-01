@@ -6,7 +6,6 @@ package riofs
 
 import (
 	"io"
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -176,11 +175,7 @@ func TestWRBuffer(t *testing.T) {
 }
 
 func TestWriteBigFile(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-riofs-")
-	if err != nil {
-		t.Fatalf("could not create tmp dir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	fname := filepath.Join(tmp, "big-file.root")
 

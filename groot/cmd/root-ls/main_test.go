@@ -12,11 +12,7 @@ import (
 )
 
 func TestROOTls(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "root-ls-")
-	if err != nil {
-		t.Fatalf("could not create tmp dir: %+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	for _, tc := range []struct {
 		name string

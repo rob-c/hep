@@ -8,7 +8,6 @@ import (
 	"compress/flate"
 	"fmt"
 	"math/rand/v2"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -107,13 +106,7 @@ func TestInvalidTreeMerger(t *testing.T) {
 }
 
 func TestConcurrentWrite(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		_ = os.RemoveAll(tmp)
-	}()
+	tmp := t.TempDir()
 
 	const N = 10
 	var wg sync.WaitGroup
@@ -174,11 +167,7 @@ func TestConcurrentWrite(t *testing.T) {
 }
 
 func TestWriteThisStreamers(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatalf("could not create dir: %v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	fname := filepath.Join(tmp, "streamers.root")
 	o, err := riofs.Create(fname)
@@ -248,13 +237,7 @@ func TestWriteThisStreamers(t *testing.T) {
 }
 
 func TestWriterWithCompression(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-rtree-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		_ = os.RemoveAll(tmp)
-	}()
+	tmp := t.TempDir()
 
 	for _, tc := range []struct {
 		wopt WriteOption

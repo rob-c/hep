@@ -7,7 +7,6 @@ package riofs_test
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -314,11 +313,7 @@ func TestOpenEmptyFile(t *testing.T) {
 }
 
 func TestCreate(t *testing.T) {
-	dir, err := os.MkdirTemp("", "riofs-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for i, tc := range []struct {
 		name string

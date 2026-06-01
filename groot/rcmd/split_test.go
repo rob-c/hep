@@ -7,7 +7,6 @@ package rcmd_test
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,11 +17,7 @@ import (
 )
 
 func TestSplit(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "groot-root-split-")
-	if err != nil {
-		t.Fatalf("%+v", err)
-	}
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	type funcT func(t *testing.T, fname string) error
 	for _, tc := range []struct {

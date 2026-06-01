@@ -15,11 +15,7 @@ import (
 )
 
 func TestRMemFile(t *testing.T) {
-	dir, err := os.MkdirTemp("", "riofs-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	fname := filepath.Join(dir, "objstring.root")
 

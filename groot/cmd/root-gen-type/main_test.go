@@ -21,11 +21,7 @@ var (
 )
 
 func TestGenerate(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-gen-type-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for _, tc := range []struct {
 		fname   string
@@ -89,11 +85,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestRW(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-gen-type-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	for _, tc := range []struct {
 		fname   string

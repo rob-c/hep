@@ -58,7 +58,7 @@ func testFile_CloseVerify(t *testing.T, addr string) {
 
 	fs := client.FS()
 
-	dir, err := tempdir(client, "/tmp/", "xrd-test-close-verify")
+	dir, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func testFile_WriteAt(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	dir, err := tempdir(client, "/tmp/", "xrd-test-file-write-at-")
+	dir, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func testFile_Truncate(t *testing.T, addr string) {
 
 	fs := client.FS()
 
-	dir, err := tempdir(client, "/tmp/", "xrd-test-truncate")
+	dir, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func testFile_VerifyWriteAt(t *testing.T, addr string) {
 	defer client.Close()
 	fs := client.FS()
 
-	dir, err := tempdir(client, "/tmp/", "xrd-test-verify-write")
+	dir, err := tempdir(t, client, "/tmp/")
 	if err != nil {
 		t.Fatal(err)
 	}

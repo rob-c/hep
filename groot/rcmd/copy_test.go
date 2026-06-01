@@ -22,13 +22,8 @@ import (
 )
 
 func TestROOTCp(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-root-cp-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	err = os.MkdirAll(filepath.Join(dir, "sub1", "sub11"), 0755)
+	dir := t.TempDir()
+	err := os.MkdirAll(filepath.Join(dir, "sub1", "sub11"), 0755)
 	if err != nil {
 		t.Fatalf("could not create subdirs: %v", err)
 	}
@@ -269,11 +264,7 @@ func TestROOTCp(t *testing.T) {
 }
 
 func TestROOTCpTree(t *testing.T) {
-	dir, err := os.MkdirTemp("", "groot-root-cp-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	refname := filepath.Join(dir, "ref.root")
 	ref, err := groot.Create(refname)
