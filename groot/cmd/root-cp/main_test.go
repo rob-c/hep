@@ -53,3 +53,33 @@ func TestROOTCopyIssue1053(t *testing.T) {
 		t.Fatalf("missing streamer for TBox !")
 	}
 }
+
+func TestROOTCopyIssue1063(t *testing.T) {
+	dir := t.TempDir()
+
+	oname := filepath.Join(dir, "out.root")
+
+	cmd := exec.Command(
+		"go", "tool",
+		"go-hep.org/x/hep/groot/cmd/root-cp", "../../testdata/issue-1063.root", oname,
+	)
+	got, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("could not copy issue-1063.root:\n%s\nerror: %v", got, err)
+	}
+
+	f, err := groot.Open(oname)
+	if err != nil {
+		t.Fatalf("could not open copied file: %v", err)
+	}
+	defer f.Close()
+
+	eff, err := f.Get("eff")
+	if err != nil {
+		t.Fatalf("could not retrieve eff: %v", err)
+	}
+
+	if got, want := eff.(root.Named).Name(), "eff"; got != want {
+		t.Fatalf("invalid eff object: got=%q, want=%q", got, want)
+	}
+}

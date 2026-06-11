@@ -640,7 +640,14 @@ func (f *File) findDepStreamers() error {
 
 			case *rdict.StreamerSTL:
 				for _, etn := range se.ElemTypeName() {
-					deps = append(deps, depsType{etn, -1})
+					switch {
+					case strings.HasPrefix(etn, "pair<"):
+						// ignore streamer for pair<T,U>.
+						// we'll only collect streamers for T and U.
+						continue
+					default:
+						deps = append(deps, depsType{etn, -1})
+					}
 				}
 			}
 			return nil

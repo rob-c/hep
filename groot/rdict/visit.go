@@ -127,10 +127,33 @@ func (v *visitor) visitSE(depth int, se rbytes.StreamerElement) error {
 				return nil
 			}
 			si, err := v.ctx.StreamerInfo(tname, -1)
-			if err != nil {
+			switch err {
+			case nil:
+				return v.run(depth+1, si)
+			default:
+				//log.Printf("--- %s ---", tname)
+				if strings.HasPrefix(tname, "pair<") {
+					cxx := rmeta.CxxTemplateFrom(tname)
+					//log.Printf("→ %q", cxx)
+					for _, ename := range cxx.Args {
+						if _, ok := rmeta.CxxBuiltins[ename]; ok {
+							continue
+						}
+						si, err := v.ctx.StreamerInfo(ename, -1)
+						if err != nil {
+							return fmt.Errorf("could not find std::pair<T,U> element %q: %w", ename, err)
+						}
+						err = v.run(depth+2, si)
+						if err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+				//log.Printf("sinfo-visit: tname=%q, etn=%q: err=%v", tname, etn, err)
+				//log.Printf("se: %q", se.Name())
 				return fmt.Errorf("could not find std::container<T> element %q: %w", tname, err)
 			}
-			return v.run(depth+1, si)
 
 		default:
 			return fmt.Errorf("rdict: cant visit non-vector-like STL streamers %#v", se)
