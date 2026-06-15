@@ -38,6 +38,7 @@ func (db *streamerDb) StreamerInfo(name string, vers int) (rbytes.StreamerInfo, 
 func (db *streamerDb) Get(class string, vers int) (rbytes.StreamerInfo, bool) {
 	db.RLock()
 	defer db.RUnlock()
+
 	switch {
 	case vers < 0:
 		var slice []rbytes.StreamerInfo
