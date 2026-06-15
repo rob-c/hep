@@ -45,6 +45,9 @@ func (*Efficiency) RVersion() int16 {
 	return rvers.Efficiency
 }
 
+func (eff *Efficiency) Name() string  { return eff.named.Name() }
+func (eff *Efficiency) Title() string { return eff.named.Title() }
+
 // MarshalROOT implements rbytes.Marshaler
 func (o *Efficiency) MarshalROOT(w *rbytes.WBuffer) (int, error) {
 	if w.Err() != nil {
@@ -189,6 +192,7 @@ func init() {
 
 var (
 	_ root.Object        = (*Efficiency)(nil)
+	_ root.Named         = (*Efficiency)(nil)
 	_ rbytes.RVersioner  = (*Efficiency)(nil)
 	_ rbytes.Marshaler   = (*Efficiency)(nil)
 	_ rbytes.Unmarshaler = (*Efficiency)(nil)
