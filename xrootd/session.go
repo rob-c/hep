@@ -16,6 +16,7 @@ import (
 	"go-hep.org/x/hep/xrootd/internal/mux"
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/protocol"
 	"go-hep.org/x/hep/xrootd/xrdproto/signing"
 	"go-hep.org/x/hep/xrootd/xrdproto/sigver"
 )
@@ -60,6 +61,9 @@ type cliSession struct {
 	addr      string
 	loginID   [16]byte
 	pathID    xrdproto.PathID
+
+	wantTLS      bool              // client requested TLS (roots:// or WithTLS)
+	protocolInfo protocol.Response // cached kXR_protocol response from bootstrap
 }
 
 // pendingRequest is a request that has been sent to the remote server.
@@ -101,38 +105,79 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 		maxSubs:   8, // TODO: The value of 8 is just a guess. Change it?
 	}
 
-	go sess.consume()
-
-	if err := sess.handshake(ctx); err != nil {
+	// Bootstrap runs synchronously so that consume() does not race the socket
+	// during the handshake, protocol negotiation, and TLS upgrade: TLS replaces
+	// sess.conn in place, which is only safe while no other goroutine reads it.
+	if err := sess.handshakeBootstrap(ctx); err != nil {
 		sess.Close()
 		return nil, err
 	}
+
+	protocolInfo, err := sess.protocolBootstrap(ctx)
+	if err != nil {
+		sess.Close()
+		return nil, err
+	}
+	sess.protocolInfo = protocolInfo
+	sess.signRequirements = signing.New(protocolInfo.SecurityLevel, protocolInfo.SecurityOverrides)
+
+	// Task 4 inserts the TLS upgrade decision here, before consume() and login.
+
+	go sess.consume()
 
 	securityInfo, err := sess.Login(ctx, username, token)
 	if err != nil {
 		sess.Close()
 		return nil, err
 	}
-
 	sess.loginID = securityInfo.SessionID
 
 	if len(securityInfo.SecurityInformation) > 0 {
-		err = sess.auth(ctx, securityInfo.SecurityInformation)
-		if err != nil {
+		if err := sess.auth(ctx, securityInfo.SecurityInformation); err != nil {
 			sess.Close()
 			return nil, err
 		}
 	}
 
-	protocolInfo, err := sess.Protocol(ctx)
-	if err != nil {
-		sess.Close()
-		return nil, err
+	return sess, nil
+}
+
+// bootstrapExchange writes a single request and synchronously reads exactly one
+// response frame directly off sess.conn. It is used only during session
+// bootstrap (protocol negotiation and, for TLS, the pre-login exchanges),
+// before the consume() read-loop goroutine takes ownership of the socket.
+func (sess *cliSession) bootstrapExchange(ctx context.Context, streamID xrdproto.StreamID, req xrdproto.Request, resp xrdproto.Response) error {
+	var wBuffer xrdenc.WBuffer
+	header := xrdproto.RequestHeader{StreamID: streamID, RequestID: req.ReqID()}
+	if err := header.MarshalXrd(&wBuffer); err != nil {
+		return err
+	}
+	if err := req.MarshalXrd(&wBuffer); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := sess.conn.SetDeadline(deadline); err != nil {
+			return err
+		}
+		defer sess.conn.SetDeadline(time.Time{})
+	}
+	if _, err := sess.conn.Write(wBuffer.Bytes()); err != nil {
+		return fmt.Errorf("xrootd: could not send bootstrap request: %w", err)
 	}
 
-	sess.signRequirements = signing.New(protocolInfo.SecurityLevel, protocolInfo.SecurityOverrides)
-
-	return sess, nil
+	var respHeader xrdproto.ResponseHeader
+	headerBytes := make([]byte, xrdproto.ResponseHeaderLength)
+	data, err := xrdproto.ReadResponseWithReuse(sess.conn, headerBytes, &respHeader)
+	if err != nil {
+		return fmt.Errorf("xrootd: could not read bootstrap response: %w", err)
+	}
+	if respHeader.Status == xrdproto.Error {
+		return respHeader.Error(data)
+	}
+	if resp == nil {
+		return nil
+	}
+	return resp.UnmarshalXrd(xrdenc.NewRBuffer(data))
 }
 
 // Close closes the connection. Any blocked operation will be unblocked and return error.

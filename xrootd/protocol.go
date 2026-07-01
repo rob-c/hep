@@ -7,6 +7,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 import (
 	"context"
 
+	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdproto/protocol"
 )
 
@@ -17,5 +18,18 @@ func (sess *cliSession) Protocol(ctx context.Context) (protocol.Response, error)
 	var resp protocol.Response
 	_, err := sess.Send(ctx, &resp, protocol.NewRequest(sess.protocolVersion, true))
 	// TODO: should we react somehow to redirection?
+	return resp, err
+}
+
+// protocolBootstrap issues the kXR_protocol request synchronously during
+// bootstrap, advertising TLS capability (and, when sess.wantTLS, requesting a
+// switch to TLS). It runs before login so the caller can upgrade the
+// connection to TLS before any credentials are sent. Stream ID {0, 1} is
+// reserved for this exchange, mirroring the reference C client; regular
+// mux-assigned streams start only once consume() is running.
+func (sess *cliSession) protocolBootstrap(ctx context.Context) (protocol.Response, error) {
+	var resp protocol.Response
+	req := protocol.NewRequestTLS(sess.protocolVersion, true, true, sess.wantTLS)
+	err := sess.bootstrapExchange(ctx, xrdproto.StreamID{0, 1}, req, &resp)
 	return resp, err
 }
