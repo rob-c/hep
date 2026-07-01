@@ -4,6 +4,18 @@
 **Status:** Approved design
 **Target package:** `go-hep.org/x/hep/xrootd` (Go 1.24)
 
+## 0. Acknowledgment
+
+This roadmap stands on substantial prior work: the design, implementation, and
+hard-won operational understanding of the native C client library `libxrdc`
+(`/home/rcurrie/HEP-x/nginx-xrootd/client`). That codebase established the
+protocol behaviors, edge cases, and VFS/copy/auth architecture this pure-Go
+effort deliberately mirrors. Where this plan looks obvious, it is because the C
+client already did the exploratory work of discovering what correct XRootD
+client behavior actually requires. The Go implementation is a re-expression of
+that understanding, and `libxrdc` (alongside the official XRootD implementation)
+serves as a reference oracle throughout.
+
 ## 1. Goal
 
 Extend go-hep's existing pure-Go `xrootd` package so its **client** reaches
@@ -141,18 +153,59 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──┐
 Phase 4 (alt protocols) both build on Phase 0's TLS + VFS groundwork and may then
 proceed in parallel; Phase 4's S3/WebDAV auth consumes Phase 3 credentials.
 
-## 6. Testing Strategy
+## 6. Testing Strategy — Dual-Oracle Parity
 
-- Extend go-hep's existing mock-server harness (`*_mock_test.go`) for unit-level
-  request/response coverage of each new request kind.
-- Use the native C `xrootd` server as an interop oracle, following the existing
-  `cxx_server_test.go` / `go_server_test.go` patterns, to validate wire
-  compatibility (TLS, pgread/pgwrite, fattr, TPC).
-- For Phase 4, test HTTP/S3/WebDAV backends against local test servers (e.g. a
-  MinIO-style S3 endpoint and an httptest server) plus the interop oracle where a
-  real server supports the protocol.
-- Each phase's plan defines its own acceptance criteria; a phase is "done" only
-  when its interop tests pass against a real server, not just the mock.
+Correctness is verified against **two independent reference oracles**, and a
+feature is not "done" until it agrees with both:
+
+1. **The official XRootD implementation** — the upstream C++ `xrootd` server (and
+   its `xrdcp`/`xrdfs` clients) define the canonical wire protocol.
+2. **The `libxrdc` C client** — the reference for client-side behavior, edge
+   cases, and the VFS/copy/auth semantics this port mirrors.
+
+Layered test approach:
+
+- **Unit / mock layer.** Extend go-hep's existing mock-server harness
+  (`*_mock_test.go`) for request/response coverage of each new request kind,
+  including malformed-frame and error-path cases. Golden byte-level tests assert
+  exact on-the-wire marshaling of every new request/response struct.
+- **Interop layer (official XRootD).** Following the existing
+  `cxx_server_test.go` / `go_server_test.go` patterns, run the go-hep client
+  against a real upstream XRootD server to validate TLS negotiation,
+  pgread/pgwrite CRC framing, fattr, checksums, and TPC. Skip cleanly (not fail)
+  when the server binary is unavailable, but run in CI where it is present.
+- **Cross-client parity (libxrdc).** For operations both clients perform (copy,
+  checksum, pgread/pgwrite, recursive listing), assert byte-for-byte identical
+  results — e.g. a file copied by go-hep and by `xrdcp`/`libxrdc` must have
+  identical bytes and matching server-reported checksums; a `pgwrite` from go-hep
+  must be readable by the C client and vice versa.
+- **Alt-protocol layer (Phase 4).** Test HTTP/S3/WebDAV backends against local
+  test servers (an httptest server, a MinIO-style S3 endpoint) plus a real server
+  interop check where available.
+
+Each phase's plan defines concrete acceptance criteria; a phase is "done" only
+when its interop and cross-client parity tests pass against real servers, not
+just the mock.
+
+## 6a. Code Quality Bar
+
+Every phase's implementation must meet these standards (enforced in review and,
+where possible, in CI):
+
+- **Formatting:** `gofmt`/`goimports` clean; no lint findings from `go vet` and
+  the repo's existing linters. Code reads as senior-engineer output.
+- **Documentation:** Every exported identifier has a complete doc comment
+  following Go conventions (starting with the identifier name). Package-level doc
+  comments explain purpose and usage. Non-obvious protocol constraints (e.g. why
+  a CRC is per-page, why a field is big-endian) are documented at the point they
+  matter — comments state constraints, not narration.
+- **Idiom & structure:** Idiomatic Go — `context.Context` plumbed through all I/O,
+  errors wrapped with `%w`, no naked returns in long functions, table-driven
+  tests, small single-responsibility files consistent with the existing
+  `xrdproto/*` layout. Follow existing go-hep patterns strictly rather than
+  introducing new ones.
+- **API design:** New public surface mirrors existing go-hep `xrootd` conventions
+  (e.g. `MarshalXrd`/`UnmarshalXrd`, `Auther`) so the package stays cohesive.
 
 ## 7. Deliverables per Phase
 
