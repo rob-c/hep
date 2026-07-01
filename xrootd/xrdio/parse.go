@@ -12,9 +12,21 @@ import (
 
 // URL stores an absolute reference to a XRootD path.
 type URL struct {
-	Addr string // address (host [:port]) of the server
-	User string // user name to use to log in
-	Path string // path to the remote file or directory
+	Scheme string // URL scheme without "://" (e.g. "root", "roots"); empty for a bare local path
+	Addr   string // address (host [:port]) of the server
+	User   string // user name to use to log in
+	Path   string // path to the remote file or directory
+}
+
+// TLS reports whether the URL scheme mandates in-protocol TLS.
+// The secure schemes are "roots" and "xroots".
+func (u URL) TLS() bool {
+	switch u.Scheme {
+	case "roots", "xroots":
+		return true
+	default:
+		return false
+	}
 }
 
 // Parse parses name into an xrootd URL structure.
@@ -22,10 +34,11 @@ func Parse(name string) (URL, error) {
 	// FIXME(sbinet): just use url.Parse instead ?
 
 	var (
-		user string
-		addr string
-		path string
-		err  error
+		scheme string
+		user   string
+		addr   string
+		path   string
+		err    error
 	)
 
 	idx := strings.Index(name, "://")
@@ -33,6 +46,7 @@ func Parse(name string) (URL, error) {
 	case -1:
 		path = name
 	default:
+		scheme = strings.ToLower(name[:idx])
 		uri := name[idx+len("://"):]
 		tok := strings.SplitN(uri, "/", 2)
 		user, addr, err = parseUA(tok[0])
@@ -46,7 +60,7 @@ func Parse(name string) (URL, error) {
 		path = path[1:]
 	}
 
-	return URL{Addr: addr, User: user, Path: path}, nil
+	return URL{Scheme: scheme, Addr: addr, User: user, Path: path}, nil
 }
 
 func parseUA(s string) (user, addr string, err error) {
