@@ -54,8 +54,28 @@ const (
 	// RequestOptionsNone specifies that only general response should be returned.
 	RequestOptionsNone RequestOptions = 0
 	// ReturnSecurityRequirements specifies that security requirements should be returned
-	// if that's supported by the server.
-	ReturnSecurityRequirements RequestOptions = 1
+	// if that's supported by the server. Wire value kXR_secreqs.
+	ReturnSecurityRequirements RequestOptions = 0x01
+	// AbleTLS advertises that the client is capable of in-protocol TLS. Wire value kXR_ableTLS.
+	AbleTLS RequestOptions = 0x02
+	// WantTLS requests that the connection be switched to TLS. Wire value kXR_wantTLS.
+	WantTLS RequestOptions = 0x04
+)
+
+// TLS-related bits carried in the protocol response Flags word.
+// They are declared through uint32 (not Flags) because kXR_haveTLS occupies the
+// sign bit of the wire-level int32; the Response accessors below test them via
+// uint32 to avoid sign-extension surprises.
+// See XProtocol.hh and http://xrootd.org/doc/dev45/XRdv310.pdf.
+const (
+	flagHaveTLS  uint32 = 0x80000000 // server supports in-protocol TLS (kXR_haveTLS)
+	flagGotoTLS  uint32 = 0x40000000 // server requires switching to TLS now (kXR_gotoTLS)
+	flagTLSData  uint32 = 0x01000000 // TLS required for the data stream (kXR_tlsData)
+	flagTLSGPF   uint32 = 0x02000000 // TLS required for gpfile (kXR_tlsGPF)
+	flagTLSLogin uint32 = 0x04000000 // TLS required for login (kXR_tlsLogin)
+	flagTLSSess  uint32 = 0x08000000 // TLS required for the session (kXR_tlsSess)
+	flagTLSTPC   uint32 = 0x10000000 // TLS required for third-party copy (kXR_tlsTPC)
+	flagTLSGPFA  uint32 = 0x20000000 // TLS required for anonymous gpfile (kXR_tlsGPFA)
 )
 
 // Request holds protocol request parameters.
@@ -71,6 +91,27 @@ func NewRequest(protocolVersion int32, withSecurityRequirements bool) *Request {
 	var options = RequestOptionsNone
 	if withSecurityRequirements {
 		options |= ReturnSecurityRequirements
+	}
+	return &Request{ClientProtocolVersion: protocolVersion, Options: options}
+}
+
+// NewRequestTLS forms a protocol Request that advertises TLS capability.
+//
+// withSecurityRequirements requests the security-requirements trailer (needed to
+// learn the signing level). ableTLS advertises that the client can speak TLS;
+// wantTLS additionally asks the server to switch the connection to TLS (set for
+// roots:// URLs). A server may still mandate TLS via kXR_gotoTLS even when
+// wantTLS is false.
+func NewRequestTLS(protocolVersion int32, withSecurityRequirements, ableTLS, wantTLS bool) *Request {
+	var options = RequestOptionsNone
+	if withSecurityRequirements {
+		options |= ReturnSecurityRequirements
+	}
+	if ableTLS {
+		options |= AbleTLS
+	}
+	if wantTLS {
+		options |= WantTLS
 	}
 	return &Request{ClientProtocolVersion: protocolVersion, Options: options}
 }
@@ -136,6 +177,33 @@ func (resp *Response) IsSupervisor() bool {
 // protocol does not support generic encryption.
 func (resp *Response) ForceSecurity() bool {
 	return resp.SecurityOptions&ForceSecurity != 0
+}
+
+func (resp *Response) flagBits() uint32 { return uint32(resp.Flags) }
+
+// HasTLS reports whether the server supports in-protocol TLS (kXR_haveTLS).
+func (resp *Response) HasTLS() bool { return resp.flagBits()&flagHaveTLS != 0 }
+
+// GotoTLS reports whether the server requires switching to TLS now (kXR_gotoTLS).
+func (resp *Response) GotoTLS() bool { return resp.flagBits()&flagGotoTLS != 0 }
+
+// TLSForData reports whether TLS is required for the data stream (kXR_tlsData).
+func (resp *Response) TLSForData() bool { return resp.flagBits()&flagTLSData != 0 }
+
+// TLSForLogin reports whether TLS is required for login (kXR_tlsLogin).
+func (resp *Response) TLSForLogin() bool { return resp.flagBits()&flagTLSLogin != 0 }
+
+// TLSForSession reports whether TLS is required for the whole session (kXR_tlsSess).
+func (resp *Response) TLSForSession() bool { return resp.flagBits()&flagTLSSess != 0 }
+
+// TLSForTPC reports whether TLS is required for third-party copy (kXR_tlsTPC).
+func (resp *Response) TLSForTPC() bool { return resp.flagBits()&flagTLSTPC != 0 }
+
+// NeedsTLS reports whether the client must upgrade the connection to TLS before
+// login. This is true when the server mandates it (kXR_gotoTLS) or when the
+// client wanted TLS and the server supports it (kXR_haveTLS).
+func (resp *Response) NeedsTLS(wantTLS bool) bool {
+	return resp.GotoTLS() || (wantTLS && resp.HasTLS())
 }
 
 // MarshalXrd implements xrdproto.Marshaler.
