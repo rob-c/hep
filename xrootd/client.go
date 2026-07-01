@@ -6,6 +6,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
 	"sync"
@@ -30,6 +31,10 @@ type Client struct {
 	sessions         map[string]*cliSession
 
 	maxRedirections int
+
+	tlsConfig   *tls.Config // TLS configuration for in-protocol TLS upgrades; nil means defaults.
+	wantTLS     bool        // request TLS during protocol negotiation (roots:// or WithTLS).
+	insecureTLS bool        // skip server-certificate verification (testing only).
 }
 
 // Option configures an XRootD client.

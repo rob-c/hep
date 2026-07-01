@@ -104,6 +104,12 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 		addr:      addr,
 		maxSubs:   8, // TODO: The value of 8 is just a guess. Change it?
 	}
+	// client is nil when a bare session is created outside of a Client
+	// (some tests do this); such sessions cannot request TLS themselves
+	// but still honour a server-mandated kXR_gotoTLS in upgradeTLS.
+	if client != nil {
+		sess.wantTLS = client.wantTLS
+	}
 
 	// Bootstrap runs synchronously so that consume() does not race the socket
 	// during the handshake, protocol negotiation, and TLS upgrade: TLS replaces
@@ -121,7 +127,19 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 	sess.protocolInfo = protocolInfo
 	sess.signRequirements = signing.New(protocolInfo.SecurityLevel, protocolInfo.SecurityOverrides)
 
-	// Task 4 inserts the TLS upgrade decision here, before consume() and login.
+	// TLS decision, mirroring the reference C client: upgrade when the server
+	// mandates it (kXR_gotoTLS) or when the client wanted TLS and the server
+	// supports it; refuse to continue in cleartext when TLS was wanted but the
+	// server offers none (no silent downgrade).
+	if sess.protocolInfo.NeedsTLS(sess.wantTLS) {
+		if err := sess.upgradeTLS(); err != nil {
+			sess.Close()
+			return nil, err
+		}
+	} else if sess.wantTLS && !sess.protocolInfo.HasTLS() {
+		sess.Close()
+		return nil, fmt.Errorf("xrootd: TLS requested but server %q offers no TLS", sess.addr)
+	}
 
 	go sess.consume()
 
