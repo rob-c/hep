@@ -43,7 +43,7 @@ Teach `xrdio.URL` about the URL scheme so the router in Task 6 can decide TLS fr
   - `xrdio.URL` gains field `Scheme string` (lower-cased scheme without `://`; empty when the input had no scheme, i.e. a bare local path).
   - `func (u URL) TLS() bool` — reports whether the scheme mandates in-protocol TLS (`roots`, `xroots`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `xrootd/xrdio/parse_test.go` (inside the existing test file; add the import of `reflect` only if absent):
 
@@ -76,12 +76,12 @@ func TestParseScheme(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdio/ -run TestParseScheme -v`
 Expected: FAIL — `got.Scheme undefined (type URL has no field or method Scheme)`.
 
-- [ ] **Step 3: Add the `Scheme` field and `TLS` method, and populate the scheme in `Parse`**
+- [x] **Step 3: Add the `Scheme` field and `TLS` method, and populate the scheme in `Parse`**
 
 In `xrootd/xrdio/parse.go`, extend the struct:
 
@@ -141,14 +141,14 @@ func Parse(name string) (URL, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdio/ -run TestParseScheme -v`
 Expected: PASS. Also run `go test ./xrootd/xrdio/` — all existing parse tests still pass (they compare only `Addr`/`User`/`Path` or construct `URL` with those fields; `Scheme` defaults to `""`, so struct-literal comparisons that omit it still match).
 
 > If any existing test builds a `URL{...}` literal and compares with `reflect.DeepEqual`, update that literal to include the expected `Scheme` value. Check `parse_test.go` for such cases and fix them in this step.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdio/parse.go xrootd/xrdio/parse_test.go
@@ -174,7 +174,7 @@ Add the TLS negotiation constants and accessors to `xrdproto/protocol`, plus a c
   - Response accessors: `func (resp *Response) HasTLS() bool`, `GotoTLS() bool`, `TLSForData() bool`, `TLSForLogin() bool`, `TLSForSession() bool`, `TLSForTPC() bool`.
   - `func (resp *Response) NeedsTLS(wantTLS bool) bool` — true when the client must upgrade before login: `GotoTLS() || (wantTLS && HasTLS())`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `xrootd/xrdproto/protocol/protocol_test.go`:
 
@@ -234,12 +234,12 @@ func TestResponseTLSAccessors(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/protocol/ -run 'TestNewRequestTLSOptions|TestResponseTLSAccessors' -v`
 Expected: FAIL — `undefined: NewRequestTLS`, `undefined: AbleTLS`, etc.
 
-- [ ] **Step 3: Add the constants, constructor, and accessors**
+- [x] **Step 3: Add the constants, constructor, and accessors**
 
 In `xrootd/xrdproto/protocol/protocol.go`, extend the `RequestOptions` block:
 
@@ -332,12 +332,12 @@ func (resp *Response) NeedsTLS(wantTLS bool) bool {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/protocol/ -run 'TestNewRequestTLSOptions|TestResponseTLSAccessors' -v`
 Expected: PASS. Run the whole package: `go test ./xrootd/xrdproto/protocol/` — existing marshal tests still pass (the `Flags` wire encoding is unchanged; the new constants are untyped `uint32` and don't alter `MarshalXrd`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/protocol/protocol.go xrootd/xrdproto/protocol/protocol_test.go
@@ -363,7 +363,7 @@ Reorder session bootstrap so the `kXR_protocol` exchange happens synchronously r
   - `func (sess *cliSession) bootstrapExchange(ctx context.Context, streamID xrdproto.StreamID, req xrdproto.Request, resp xrdproto.Response) error` — writes one request and synchronously reads exactly one response frame directly off `sess.conn`, without using the mux or `consume()`. Used only during bootstrap, before `go sess.consume()`.
   - `sess.wantTLS bool` and `sess.protocolInfo protocol.Response` fields on `cliSession`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `xrootd/session_bootstrap_test.go`. It stands up a raw TCP server that speaks the bootstrap by hand and asserts the client sends handshake, then a `kXR_protocol` request advertising `AbleTLS`, then `kXR_login` — in that order.
 
@@ -496,12 +496,12 @@ func writeBootstrapResponse(conn net.Conn, streamID xrdproto.StreamID, resp xrdp
 
 > Before writing these helpers, confirm the exact names/signatures of `xrdproto.ReadRequest`, `xrdproto.RequestHeaderLength`, `xrdproto.WriteResponse`, and `xrdproto.RequestHeader.UnmarshalXrd` by reading `xrootd/xrdproto/xrdproto.go`. Adjust the helper bodies to match (the header-length constant and `WriteResponse` signature are used elsewhere in `*_mock_test.go` — mirror those call sites).
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestBootstrapProtocolBeforeLogin -v`
 Expected: FAIL — the current bootstrap sends `login` before `protocol`, so the first recorded `reqID` is `login.RequestID`, not `protocol.RequestID`. (Compilation may also fail until `bootstrapExchange` exists; that is fine — it still counts as red.)
 
-- [ ] **Step 3: Add `bootstrapExchange` and reorder `newSession`**
+- [x] **Step 3: Add `bootstrapExchange` and reorder `newSession`**
 
 In `xrootd/session.go`, add the synchronous exchange helper:
 
@@ -658,7 +658,7 @@ func (sess *cliSession) protocolBootstrap(ctx context.Context) (protocol.Respons
 >
 > Add imports as needed: `time` and `fmt` are already imported in `session.go`; `xrootd/protocol.go` needs `xrdproto`, `xrdenc`, and `protocol` (already imports `protocol`); add the others.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run TestBootstrapProtocolBeforeLogin -v`
 Expected: PASS.
@@ -669,7 +669,7 @@ Expected: PASS. Pay special attention to `TestSession_Protocol_WithSecurityInfo`
 
 > If the mux-based `Protocol` method becomes entirely unused (vet/staticcheck flags it), keep it only if a test uses it; otherwise the test should call `protocolBootstrap`. Decide based on what the build reports; do not delete code a test depends on.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/session.go xrootd/handshake.go xrootd/protocol.go xrootd/session_bootstrap_test.go xrootd/bootstrap_testutil_test.go
