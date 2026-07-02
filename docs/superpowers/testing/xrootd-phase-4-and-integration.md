@@ -39,10 +39,9 @@ server config (`http.secxtractor` + an `acc.authdb`); the harness serves an
 anon-readable file, so it proves the transport + client-cert path, not authz
 rejection.
 
-## Outstanding: GSI / X.509 proxy (root://+gsi) — Phase 3b
+## GSI / X.509 proxy (root://+gsi) — partial
 
-The `root-gsi` leg is present but skipped because the GSI security provider is
-not implemented. GSI is a multi-round (`kXR_authmore`) exchange:
+GSI is a multi-round (`kXR_authmore`) exchange:
 
 1. client → `kXGC_certreq`; server → `kXGS_cert` (its DH public key + cert +
    cipher list), delivered as `kXR_authmore`.
@@ -50,17 +49,38 @@ not implemented. GSI is a multi-round (`kXR_authmore`) exchange:
    AES-256-CBC-wrapped inner buffer carrying the X.509 proxy PEM, with the
    signing key derived as `SHA256(DH shared secret)`.
 
-Implementing it requires:
+### Built and tested
 
-- `kXR_authmore` (4002) continuation support in `cliSession` (the read loop and
-  a multi-round `Auther` interface) — not yet present.
-- The bucket-TLV wire format, DH exchange, and AES wrapping, reverse-engineered
-  from the reference sources at
-  `/home/rcurrie/HEP-x/nginx-xrootd/src/gsi/*.c` (auth.c, cert_response.c,
-  gsi_core.c, gsi_dh.c, gsi_cipher.c, delegation.c, proxy_req.c) and
-  `src/protocol/gsi.h`.
-- X.509 proxy generation/loading (the nginx suite's `utils/make_proxy.py`
-  produces a compatible proxy).
+- **`kXR_authmore` (4002) multi-round transport** in `cliSession`: the status
+  is carried through the mux and read loop, and multi-round exchanges are driven
+  via the `auth.Continuer` interface (`More(challenge)`). Proven by a two-round
+  mock test (`authmore_mock_test.go`); single-round providers are unaffected.
+- **GSI XrdSutBuffer codec** (`xrootd/xrdproto/auth/gsi`): message framing
+  (`gsi\0` + step + buckets + terminator), bucket encode/decode/find, and the
+  round-1 `kXGC_certreq` builder — no cryptography. Unit-tested with round-trip
+  and structural assertions.
+
+### Remaining (the round-2 crypto kernel)
+
+The `root-gsi` harness leg is still skipped: round 2 is not implemented. It is a
+~5,000-line body of OpenSSL-heavy logic in the reference sources
+(`/home/rcurrie/HEP-x/nginx-xrootd/src/auth/gsi/*.c`: cert_response.c,
+gsi_core.c, gsi_dh.c, gsi_cipher.c, gsi_rsa.c, parse_x509.c, proxy_req.c) that
+must be reproduced to byte-match official `XrdSecgsi`:
+
+- parse the server's `kXGS_cert` (DH public key / signed DH params, server cert
+  chain, cipher + digest lists, the random tag to sign);
+- Diffie-Hellman agreement and derivation of the AES-256-CBC session key as
+  `SHA256(shared secret)`;
+- proof-of-possession: sign the server's `rtag` with the proxy's RSA key;
+- assemble the encrypted `kXRS_main` and the outer `kXGC_cert` carrying the
+  client DH public key, selected cipher, and X.509 proxy chain;
+- X.509 proxy loading (the nginx suite's `utils/make_proxy.py` mints a
+  compatible proxy at `/tmp/x509up_u<uid>`).
+
+Go has the needed primitives in the standard library (`crypto/rsa`,
+`crypto/aes`, `crypto/x509`, `crypto/sha256`, `math/big` for finite-field DH),
+so no cgo is required — but matching the exact wire encoding is the work.
 
 Once implemented, the harness's `root-gsi` subtest replaces its `t.Skip` with a
 real transfer: configure the server with
