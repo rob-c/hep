@@ -68,6 +68,12 @@ func (client *Client) initSecurityProviders() {
 // When the context expires, a response handling is stopped, however, it is
 // necessary to call Cancel to correctly free resources.
 func NewClient(ctx context.Context, address string, username string, opts ...Option) (*Client, error) {
+	dialAddr, schemeTLS, err := addressAndTLS(address)
+	if err != nil {
+		return nil, err
+	}
+	address = dialAddr
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	client := &Client{
@@ -90,7 +96,13 @@ func NewClient(ctx context.Context, address string, username string, opts ...Opt
 		}
 	}
 
-	_, err := client.getSession(ctx, address, "")
+	// Options run first so an explicit WithInsecureTLS/WithTLSConfig applies;
+	// a roots:// or xroots:// scheme additively requests TLS.
+	if schemeTLS {
+		client.wantTLS = true
+	}
+
+	_, err = client.getSession(ctx, address, "")
 	if err != nil {
 		client.Close()
 		return nil, err
