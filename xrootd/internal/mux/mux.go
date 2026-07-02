@@ -56,6 +56,9 @@ type ServerResponse struct {
 	Data        []byte
 	Err         error
 	Redirection *Redirection
+	// AuthMore reports that the response was a kXR_authmore challenge and the
+	// caller must send a follow-up authentication request.
+	AuthMore bool
 }
 
 // Redirection represents the redirection request from the server.

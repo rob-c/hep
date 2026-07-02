@@ -55,9 +55,7 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
 			continue
 		}
-		_, err = sess.Send(ctx, nil, r)
-		// TODO: should we react somehow to redirection?
-		if err != nil {
+		if err := sess.runAuth(ctx, auther, r); err != nil {
 			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
 			continue
 		}
@@ -65,4 +63,37 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 	}
 
 	return fmt.Errorf("xrootd: could not authorize:\n%v", errs)
+}
+
+// maxAuthRounds bounds a multi-round authentication exchange to guard against a
+// server that never completes it.
+const maxAuthRounds = 16
+
+// runAuth drives a (possibly multi-round) authentication exchange for one
+// provider: it sends the initial request and, while the server responds with
+// kXR_authmore and the provider is a Continuer, feeds each challenge back to
+// obtain the next request.
+func (sess *cliSession) runAuth(ctx context.Context, auther auth.Auther, req *auth.Request) error {
+	cont, _ := auther.(auth.Continuer)
+	for round := 0; round < maxAuthRounds; round++ {
+		more, challenge, err := sess.authRound(ctx, req)
+		if err != nil {
+			return err
+		}
+		if !more {
+			return nil
+		}
+		if cont == nil {
+			return fmt.Errorf("xrootd: server asked for more authentication but %q is single-round", auther.Provider())
+		}
+		next, err := cont.More(challenge)
+		if err != nil {
+			return err
+		}
+		if next == nil {
+			return nil
+		}
+		req = next
+	}
+	return fmt.Errorf("xrootd: authentication did not complete within %d rounds", maxAuthRounds)
 }
