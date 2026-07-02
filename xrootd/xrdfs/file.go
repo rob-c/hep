@@ -82,3 +82,15 @@ func (o *FileCompression) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.Type[:])
 	return nil
 }
+
+// PgReader is implemented by files that support paged reads with
+// per-page CRC-32C integrity (kXR_pgread).
+type PgReader interface {
+	PgReadAt(ctx context.Context, p []byte, off int64) (int, error)
+}
+
+// PgWriter is implemented by files that support paged writes with
+// per-page CRC-32C integrity (kXR_pgwrite).
+type PgWriter interface {
+	PgWriteAt(ctx context.Context, p []byte, off int64) error
+}
