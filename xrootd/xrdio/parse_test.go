@@ -160,6 +160,15 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			// a server address without any path component.
+			name: "roots://example.org:1094",
+			want: URL{
+				Scheme: "roots",
+				Addr:   "example.org:1094",
+				Path:   "",
+			},
+		},
+		{
 			name: "root://example.org:1:2/file1.root",
 			err:  fmt.Errorf(`could not parse URI "root://example.org:1:2/file1.root": could not extract host+port from URI: address example.org:1:2: too many colons in address`),
 		},
