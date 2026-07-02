@@ -699,7 +699,7 @@ Wrap the live TCP socket in a `crypto/tls` client session between the protocol r
   - `func (sess *cliSession) upgradeTLS() error` — replace `sess.conn` with a completed `*tls.Conn`.
   - `Client` fields: `tlsConfig *tls.Config`, `wantTLS bool`, `insecureTLS bool`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `xrootd/tls_test.go`. It runs a bootstrap server that, unlike Task 3, sets `kXR_gotoTLS` in the protocol response and then completes a TLS handshake using a self-signed cert; the client must upgrade and send login *inside* TLS. Verification is relaxed with `WithInsecureTLS`.
 
@@ -818,12 +818,12 @@ func writeBootstrapResponseW(conn net.Conn, streamID xrdproto.StreamID, resp xrd
 
 > `selfSignedCert` MUST be fully implemented (no `panic` placeholder) in the committed file. Implement it with `ecdsa.GenerateKey(elliptic.P256(), rand.Reader)`, an `x509.Certificate` template with `DNSNames: []string{"localhost"}` and `IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}`, `x509.CreateCertificate`, then `tls.X509KeyPair` over the PEM-encoded cert+key. The standard library's `crypto/tls` example `generate_cert.go` is the reference recipe.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestTLSUpgradeOnGotoTLS -v`
 Expected: FAIL — `undefined: WithInsecureTLS` (and the client never upgrades, so the server's `loginInTLS` receives `false` or the TLS handshake times out).
 
-- [ ] **Step 3: Implement the TLS upgrade and options**
+- [x] **Step 3: Implement the TLS upgrade and options**
 
 Create `xrootd/tls.go`:
 
@@ -957,14 +957,14 @@ And replace the Task-3 marker comment with the actual upgrade, *before* `go sess
 
 > This mirrors `libxrdc` conn.c: upgrade on `gotoTLS || (wantTLS && haveTLS)`; refuse (no silent downgrade) when the client wanted TLS but the server lacks it.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run TestTLSUpgradeOnGotoTLS -v`
 Expected: PASS.
 Run: `go test ./xrootd/...`
 Expected: PASS (cleartext bootstrap unaffected: `NeedsTLS(false)` is false when no TLS flags are set).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/tls.go xrootd/client.go xrootd/session.go xrootd/tls_test.go
@@ -990,7 +990,7 @@ git commit -m "xrootd: add in-protocol TLS upgrade (roots://) with client option
   - `func addressAndTLS(address string) (addr string, tls bool, err error)` — splits a possibly-schemed address into a dial target and a TLS flag. A bare `host[:port]` yields `tls=false`; `roots://host` yields `tls=true`.
   - `NewClient` honours a `roots://`/`xroots://` scheme by setting `client.wantTLS` before dialing.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `xrootd/client_tls_test.go`:
 
@@ -1030,12 +1030,12 @@ func TestAddressAndTLS(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestAddressAndTLS -v`
 Expected: FAIL — `undefined: addressAndTLS`.
 
-- [ ] **Step 3: Implement `addressAndTLS` and use it in `NewClient`**
+- [x] **Step 3: Implement `addressAndTLS` and use it in `NewClient`**
 
 In `xrootd/port.go`, add:
 
@@ -1078,14 +1078,14 @@ Then, after the `client.initSecurityProviders()` / options loop but before
 
 > Options run first (so an explicit `WithInsecureTLS()` still applies), and a `roots://` scheme additively requests TLS. `getSession` already receives the scheme-less `address`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run TestAddressAndTLS -v`
 Expected: PASS.
 Run: `go test ./xrootd/...`
 Expected: PASS (bare-address callers unaffected: `addressAndTLS` returns the input unchanged and `tls=false`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/port.go xrootd/client.go xrootd/client_tls_test.go
@@ -1111,7 +1111,7 @@ Introduce the VFS entry point that phases 2–4 target: a `Backend` interface an
   - `func Dial(ctx context.Context, rawurl, username string, opts ...Option) (Backend, error)` — parses the scheme and constructs the appropriate backend.
   - `var ErrUnsupportedScheme = errors.New("xrootd: unsupported URL scheme")`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `xrootd/backend_test.go`:
 
@@ -1149,12 +1149,12 @@ func TestDialRootScheme(t *testing.T) {
 
 > The `TestDialRootScheme` body above is a placeholder-free skip with a rationale: the root:// happy path is exercised by the interop test in Task 7 and by reusing the mock harness. If `testClientWithMockServer` (see `xrootd/main_mock_test.go`) can be adapted to hand back the dialed address, replace the skip with a real assertion that `Dial("root://<mockaddr>", ...)` returns a non-nil `Backend` whose `Client()` is non-nil. Do this only if the harness exposes the listener address; otherwise leave the documented skip.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestDialUnsupportedScheme -v`
 Expected: FAIL — `undefined: Dial`, `undefined: ErrUnsupportedScheme`.
 
-- [ ] **Step 3: Implement `Backend` and `Dial`**
+- [x] **Step 3: Implement `Backend` and `Dial`**
 
 Create `xrootd/backend.go`:
 
@@ -1233,14 +1233,14 @@ func Dial(ctx context.Context, rawurl, username string, opts ...Option) (Backend
 >
 > `Dial` passes the full `rawurl` (scheme included) to `NewClient`; Task 5 made `NewClient` scheme-aware, so `roots://` correctly enables TLS.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run 'TestDialUnsupportedScheme|TestDialRootScheme' -v`
 Expected: PASS (the unsupported-scheme cases assert `ErrUnsupportedScheme`; the root case is the documented skip or a real assertion if the harness allows).
 Run: `go test ./xrootd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/backend.go xrootd/backend_test.go
@@ -1263,7 +1263,7 @@ Add a build-tag-gated interop test that verifies the go-hep client negotiates TL
 - Consumes: `Dial` (Task 6), `WithInsecureTLS` (Task 4).
 - Produces: no new source API; a gated test plus a parity-verification runbook.
 
-- [ ] **Step 1: Write the (skipping) interop test**
+- [x] **Step 1: Write the (skipping) interop test**
 
 Create `xrootd/tls_interop_test.go`:
 
@@ -1323,12 +1323,12 @@ func TestTLSInterop(t *testing.T) {
 
 > Verify the `FS().Stat` signature by reading `xrootd/filesystem.go` / `xrdfs`: confirm it is `Stat(ctx, path) (xrdfs.EntryStat, error)` and that `EntryStat` has `Name()`, `Size()`, `IsDir()` (it does, per `xrdfs`). Adjust the log line if the accessors differ.
 
-- [ ] **Step 2: Run the test to verify it skips cleanly**
+- [x] **Step 2: Run the test to verify it skips cleanly**
 
 Run: `go test ./xrootd/ -run TestTLSInterop -v`
 Expected: PASS with `--- SKIP` (no `XROOTD_TLS_SERVER` set). This proves the test is well-formed and non-breaking on developer machines.
 
-- [ ] **Step 3: Write the parity runbook**
+- [x] **Step 3: Write the parity runbook**
 
 Create `docs/superpowers/testing/xrootd-phase-0-parity.md`:
 
@@ -1376,14 +1376,14 @@ go test ./xrootd/...   # full suite, all green
 ```
 ```
 
-- [ ] **Step 4: Run the full suite and vet**
+- [x] **Step 4: Run the full suite and vet**
 
 Run: `go test ./xrootd/...`
 Expected: PASS (all tasks' tests green, interop test skipped).
 Run: `go vet ./xrootd/...` and `gofmt -l xrootd/`
 Expected: no vet findings, no unformatted files.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/tls_interop_test.go
