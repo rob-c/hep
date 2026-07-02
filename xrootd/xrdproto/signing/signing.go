@@ -14,6 +14,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
+	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
 	"go-hep.org/x/hep/xrootd/xrdproto/rm"
 	"go-hep.org/x/hep/xrootd/xrdproto/rmdir"
@@ -77,6 +78,7 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 	if level >= xrdproto.Pedantic {
 		// TODO: set requirements
 		sr.requirements[dirlist.RequestID] = xrdproto.SignNeeded
+		sr.requirements[pgread.RequestID] = xrdproto.SignNeeded
 		sr.requirements[read.RequestID] = xrdproto.SignNeeded
 		sr.requirements[stat.RequestID] = xrdproto.SignNeeded
 		sr.requirements[statx.RequestID] = xrdproto.SignNeeded
