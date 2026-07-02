@@ -38,15 +38,23 @@ Verified legs:
 ## Phase 2 — copy engine (`xrootd/xrdcopy`)
 
 Working and verified: download, upload, local copy, recursive trees,
-post-transfer checksum verification, and **resumable transfers**. Native
-**TPC** is implemented per the stock client protocol (placement, source
-coordinator open with `tpc.dst`/`tpc.key`/`tpc.stage=copy`, destination puller
-open with the full `oss.asize`/`tpc.dlg`/`tpc.lfn` opaque) but the pgm-model
-pull does not yet complete against the test servers (the file arrives empty),
-so its harness leg is opt-in. Reference `xrdcp --tpc` succeeds against the same
-servers, so the gap is a client-protocol detail. Fixed along the way: a
-`mux.SendData` deadlock (blocking channel send under the mutex froze the whole
-mux) and `kXR_authmore`/`kXR_waitresp` handling.
+post-transfer checksum verification, and **resumable transfers**.
+
+Native **TPC** (`xrdcopy.TPC`) reproduces the stock client protocol as traced
+from `xrdcp --tpc` byte-for-byte: the placement open, the source coordinator
+open (`tpc.dst`/`tpc.key`/`tpc.stage=copy`, mode 0, `open_read|retstat|async`),
+and the destination puller open (full `oss.asize`/`tpc.dlg`/`tpc.lfn`/… opaque,
+mode 0644, `delete|open_updt|retstat|async`). The opaque is byte-identical to
+stock and the open flags map to the correct `kXR_*` bits. Despite this, the
+destination server does not fire its TPC job for the go-hep open (the file
+arrives empty) whereas the identical stock open does — the difference is below
+the ofs/protocol trace level captured so far (a wire-level detail of the open
+request or the login identity). The harness `copy-tpc` leg is therefore opt-in
+(`XROOTD_IT_TPC=1`) and this is the outstanding item.
+
+Fixed along the way: a `mux.SendData` deadlock (a blocking channel send under
+the mutex froze the whole mux when a reader went away), and
+`kXR_authmore`/`kXR_waitresp` handling.
 
 Note on the x509 leg: it verifies mutual-TLS access (the client presents its
 X.509 user cert and the server certificate is CA-verified). Enforced x509 →

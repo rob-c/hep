@@ -87,6 +87,13 @@ func TPC(ctx context.Context, dst, src string, opts Options) error {
 	}
 	size := st.Size()
 
+	// Placement probe: open the source with tpc.stage=placement and close it,
+	// as the stock client does to prepare the transfer.
+	if pf, err := srcFS.Open(ctx, su.Path+"?tpc.stage=placement", 0,
+		xrdfs.OpenOptionsOpenRead|xrdfs.OpenOptionsReturnStatus|xrdfs.OpenOptionsAsync); err == nil {
+		pf.Close(ctx)
+	}
+
 	dstClient, err := xrootd.NewClient(ctx, du.Addr, opts.user(du))
 	if err != nil {
 		return fmt.Errorf("xrdcopy: could not connect to destination %q: %w", du.Addr, err)
@@ -98,8 +105,8 @@ func TPC(ctx context.Context, dst, src string, opts Options) error {
 	//    registration stays live; closing it early would unregister the key
 	//    before the destination pulls.
 	srcOpaque := fmt.Sprintf("tpc.dst=%s&tpc.key=%s&tpc.stage=copy", dHost, key)
-	sf, err := srcFS.Open(ctx, su.Path+"?"+srcOpaque,
-		xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
+	sf, err := srcFS.Open(ctx, su.Path+"?"+srcOpaque, 0,
+		xrdfs.OpenOptionsOpenRead|xrdfs.OpenOptionsReturnStatus|xrdfs.OpenOptionsAsync)
 	if err != nil {
 		return fmt.Errorf("xrdcopy: TPC source coordinator open failed: %w", err)
 	}
@@ -112,11 +119,15 @@ func TPC(ctx context.Context, dst, src string, opts Options) error {
 		"oss.asize=%d&tpc.dlg=%s&tpc.dlgon=0&tpc.key=%s&tpc.lfn=%s&tpc.spr=root&tpc.src=%s&tpc.stage=copy&tpc.tpr=root",
 		size, srcHP, key, su.Path, srcHP)
 
+	// The destination open must use the update+delete flags the TPC handler
+	// recognises (a create/new open is treated as a plain write, not a pull),
+	// with mode 0644 to match the stock client.
+	const mode0644 = xrdfs.OpenModeOwnerRead | xrdfs.OpenModeOwnerWrite |
+		xrdfs.OpenModeGroupRead | xrdfs.OpenModeOtherRead
 	pullCtx, cancel := context.WithTimeout(ctx, tpcTransferTimeout)
 	defer cancel()
-	df, err := dstClient.FS().Open(pullCtx, du.Path+"?"+dstOpaque,
-		xrdfs.OpenModeOwnerRead|xrdfs.OpenModeOwnerWrite,
-		xrdfs.OpenOptionsNew|xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsMkPath)
+	df, err := dstClient.FS().Open(pullCtx, du.Path+"?"+dstOpaque, mode0644,
+		xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsOpenUpdate|xrdfs.OpenOptionsReturnStatus|xrdfs.OpenOptionsAsync)
 	if err != nil {
 		return fmt.Errorf("xrdcopy: TPC transfer failed: %w", err)
 	}
