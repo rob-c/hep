@@ -71,6 +71,11 @@ const (
 	Redirect ResponseStatus = 4004
 	// Wait indicates that the client must wait the indicated number of seconds and retry the request.
 	Wait ResponseStatus = 4005
+	// Status indicates that the request was processed and the response is a
+	// kXR_status frame: a CRC-protected StatusBody, an operation-specific
+	// info tail, and possibly trailing data whose length is carried in the
+	// body itself (outside the response-header data length).
+	Status ResponseStatus = 4007
 )
 
 // WaitResponse is the response indicating that the client must wait and retry the request.
