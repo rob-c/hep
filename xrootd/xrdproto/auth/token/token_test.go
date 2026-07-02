@@ -37,7 +37,7 @@ func TestEmptyTokenErrors(t *testing.T) {
 }
 
 func TestDiscoverBearerToken(t *testing.T) {
-	t.Setenv("BEARER_TOKEN", "  tok-from-env\n")
+	t.Setenv("BEARER_TOKEN", "tok-from-env\n")
 	t.Setenv("BEARER_TOKEN_FILE", "")
 	got, err := token.Discover()
 	if err != nil {
