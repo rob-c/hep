@@ -9,6 +9,8 @@ import (
 	rsync "sync"
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
+	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
+	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
 	"go-hep.org/x/hep/xrootd/xrdproto/sync"
@@ -171,6 +173,33 @@ func (f *file) do(ctx context.Context, fct func(ctx context.Context, sid string)
 	return nil
 }
 
+// PgReadAt implements xrdfs.PgReader: it reads up to len(p) bytes into p
+// starting at offset off using kXR_pgread, verifying the per-page CRC-32C
+// of every page received.
+func (f *file) PgReadAt(ctx context.Context, p []byte, off int64) (int, error) {
+	var resp pgread.Response
+	req := &pgread.Request{Handle: f.handle, Offset: off, ReadLength: int32(len(p))}
+	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+		return f.fs.c.sendSession(ctx, sid, &resp, req)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return copy(p, resp.Data), nil
+}
+
+// PgWriteAt implements xrdfs.PgWriter: it writes p at offset off using
+// kXR_pgwrite, attaching a CRC-32C to every page sent.
+func (f *file) PgWriteAt(ctx context.Context, p []byte, off int64) error {
+	var resp pgwrite.Response
+	req := &pgwrite.Request{Handle: f.handle, Offset: off, Data: p}
+	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+		return f.fs.c.sendSession(ctx, sid, &resp, req)
+	})
+}
+
 var (
-	_ xrdfs.File = (*file)(nil)
+	_ xrdfs.File     = (*file)(nil)
+	_ xrdfs.PgReader = (*file)(nil)
+	_ xrdfs.PgWriter = (*file)(nil)
 )
