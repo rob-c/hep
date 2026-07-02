@@ -76,6 +76,11 @@ const (
 	AuthMore ResponseStatus = 4002
 	// Wait indicates that the client must wait the indicated number of seconds and retry the request.
 	Wait ResponseStatus = 4005
+	// WaitResp indicates that the server has deferred the response: the real
+	// response for this request will arrive later on the same stream. Used by
+	// third-party copy, where the source open reply is held until the transfer
+	// completes.
+	WaitResp ResponseStatus = 4006
 	// Status indicates that the request was processed and the response is a
 	// kXR_status frame: a CRC-protected StatusBody, an operation-specific
 	// info tail, and possibly trailing data whose length is carried in the

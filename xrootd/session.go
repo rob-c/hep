@@ -307,7 +307,7 @@ func (sess *cliSession) consume() {
 			resp.Redirection = nil
 			resp.AuthMore = false
 
-			var statusPartial bool
+			var keepStream bool
 			switch header.Status {
 			case xrdproto.Error:
 				resp.Err = header.Error(resp.Data)
@@ -316,12 +316,16 @@ func (sess *cliSession) consume() {
 				if resp.Err == nil {
 					continue
 				}
+			case xrdproto.WaitResp:
+				// The response is deferred; the real one follows on this stream.
+				// Keep the stream open and do not deliver this placeholder.
+				continue
 			case xrdproto.Redirect:
 				resp.Redirection, resp.Err = mux.ParseRedirection(resp.Data)
 			case xrdproto.AuthMore:
 				resp.AuthMore = true
 			case xrdproto.Status:
-				resp.Data, statusPartial, resp.Err = sess.readStatusTail(resp.Data)
+				resp.Data, keepStream, resp.Err = sess.readStatusTail(resp.Data)
 			}
 
 			if err := sess.mux.SendData(header.StreamID, resp); err != nil {
@@ -333,7 +337,7 @@ func (sess *cliSession) consume() {
 				continue
 			}
 
-			if header.Status != xrdproto.OkSoFar && !statusPartial {
+			if header.Status != xrdproto.OkSoFar && !keepStream {
 				sess.cleanupRequest(header.StreamID)
 			}
 		}

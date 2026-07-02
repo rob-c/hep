@@ -53,9 +53,33 @@ func TestRemoteURLDetection(t *testing.T) {
 	}
 }
 
-func TestRemoteToRemoteUnsupported(t *testing.T) {
-	err := Copy(context.Background(), "root://h//dst", "root://h//src", Options{})
-	if err == nil {
-		t.Fatal("expected error for remote-to-remote copy")
+func TestGenTPCKey(t *testing.T) {
+	k1, err := genTPCKey()
+	if err != nil {
+		t.Fatalf("genTPCKey: %v", err)
+	}
+	if len(k1) != 24 {
+		t.Fatalf("key length: got=%d want=24", len(k1))
+	}
+	k2, _ := genTPCKey()
+	if k1 == k2 {
+		t.Fatal("two keys are identical")
+	}
+}
+
+func TestHostPort(t *testing.T) {
+	for _, tc := range []struct {
+		addr string
+		host string
+		port int
+	}{
+		{"example.org:1094", "example.org", 1094},
+		{"example.org:2094", "example.org", 2094},
+		{"example.org", "example.org", 1094},
+	} {
+		host, port := hostPort(tc.addr)
+		if host != tc.host || port != tc.port {
+			t.Fatalf("hostPort(%q)=(%q,%d) want (%q,%d)", tc.addr, host, port, tc.host, tc.port)
+		}
 	}
 }
