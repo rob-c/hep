@@ -1,6 +1,6 @@
 # XRootD Phase 1 — Native Protocol Parity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Bring go-hep's `root://` client to protocol parity with `libxrdc` for paged I/O (`kXR_pgread`/`kXR_pgwrite` with per-page CRC-32C), extended attributes (`kXR_fattr`), and the checksum surface (query `kXR_Qcksum` + local digests).
 
@@ -45,7 +45,7 @@
   - `func Sum(algo string, p []byte) (string, error)` — lower-case hex digest for `"adler32"`, `"crc32c"`, `"crc64"`, `"md5"`; unknown algo → error mentioning the algo.
   - `func Supported() []string` — the four names above, sorted.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/xrdsum/xrdsum_test.go` — known-answer vectors (the classic `"123456789"` check values):
 
@@ -89,12 +89,12 @@ func TestSum(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdsum/ -v`
 Expected: FAIL (package does not exist / build failure).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/xrdsum/xrdsum.go`:
 
@@ -150,12 +150,12 @@ func Sum(algo string, p []byte) (string, error) {
 func Supported() []string { return []string{"adler32", "crc32c", "crc64", "md5"} }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdsum/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdsum/ && go vet ./xrootd/xrdsum/
@@ -182,7 +182,7 @@ git commit -m "xrootd/xrdsum: add adler32/crc32c/crc64/md5 checksum helpers"
   - `func (o StatusBody) MarshalXrd(wBuffer *xrdenc.WBuffer) error` — writes the 16 bytes with the stored CRC32C (callers computing a frame use `SetCRC`).
   - `func StatusFrame(body StatusBody, info []byte) []byte` — assembles `body`+`info` and stamps the correct CRC over bytes 4..end; used by tests and mock servers.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/xrdproto/status_test.go`:
 
@@ -231,12 +231,12 @@ func TestStatusBodyShortFrame(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/ -run TestStatus -v`
 Expected: FAIL — `undefined: StatusBody` etc.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to the `ResponseStatus` const block in `xrootd/xrdproto/xrdproto.go`:
 
@@ -348,12 +348,12 @@ func StatusFrame(body StatusBody, info []byte) []byte {
 
 > Delete the placeholder note above — the file starts with the standard ©2026 license header and `package xrdproto`. Check `xrdenc.WBuffer` has `WriteU32` (it has `WriteI32`/`WriteU16`/`WriteU8`; verify `WriteU32` exists in `xrootd/internal/xrdenc/xrdenc.go` — if absent, add it there mirroring `WriteI32`, with a one-line doc comment, in this task).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/ -run TestStatus -v` then `go test ./xrootd/xrdproto/...`
 Expected: PASS, no regressions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/ xrootd/internal/xrdenc/ && go vet ./xrootd/...
@@ -377,7 +377,7 @@ git commit -m "xrootd/xrdproto: add kXR_status response code and CRC-verified St
   - `func Decode(off int64, frame []byte) ([]byte, error)` — inverse; verifies each unit's CRC (error names the failing file offset) and errors on malformed framing (e.g. truncated unit).
   - `func EncodedLen(off int64, n int) int` — bytes Encode will produce for n data bytes at off.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/internal/pgbuf/pgbuf_test.go`:
 
@@ -441,12 +441,12 @@ func TestDecodeTruncatedUnit(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/internal/pgbuf/ -v`
 Expected: FAIL (package missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/internal/pgbuf/pgbuf.go`:
 
@@ -533,12 +533,12 @@ func Decode(off int64, frame []byte) ([]byte, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/internal/pgbuf/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/internal/pgbuf/ && go vet ./xrootd/...
@@ -558,7 +558,7 @@ git commit -m "xrootd/internal/pgbuf: add pg page-unit codec with per-page CRC32
 - Consumes: `xrdproto.Status`, `xrdproto.StatusBody`, `xrdproto.StatusFrame`, `xrdproto.PartialResult`/`FinalResult` (Task 2); the mock helpers `readBootstrapRequest`/`writeBootstrapResponse` and harness `testClientWithMockServer` (existing).
 - Produces: `consume()` handles `Status` frames: verifies the frame CRC, drains `StatusBody.DataLength` trailing bytes off the socket, forwards `frame||trailing` to the mux, and keeps the stream open while `RespType == PartialResult` (also for `ProgressInfo`). Callers therefore receive, per request, the concatenation of complete status frames — each self-describing via its embedded `DataLength`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/session_status_test.go` — a mock server answers one request with two kXR_status frames (partial then final), each with trailing data *outside* the response-header dlen; the client must receive both frames concatenated. Use `ping` as the request vehicle (any request works — status handling is generic):
 
@@ -640,12 +640,12 @@ func TestConsumeStatusFrames(t *testing.T) {
 
 > Verify at implementation time: `ping.Request{}` satisfies `xrdproto.Request` (check `xrootd/xrdproto/ping/ping.go` for the exact zero-value construction used by `ping_mock_test.go`, and reuse that). `xrdenc.RBuffer.Bytes()` — check it exists (grep `func (r *RBuffer)` in `xrootd/internal/xrdenc/xrdenc.go`); if the remaining-bytes accessor has a different name (e.g. `ReadBytes` into a sized slice with `Len()`), adapt `rawStatusResponse.UnmarshalXrd` accordingly.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestConsumeStatusFrames -v`
 Expected: FAIL — with no Status handling, the first frame closes the stream after `hdr.dlen` bytes and 10 trailing bytes are misread as the next response header (a hang resolved by the test context/cancel, a length mismatch, or a panic — any failure counts).
 
-- [ ] **Step 3: Implement in `consume()`**
+- [x] **Step 3: Implement in `consume()`**
 
 In `xrootd/session.go`, inside the `switch header.Status` block of `consume()`, add a `case xrdproto.Status:` **and** change the stream-cleanup condition. The current tail of the loop is:
 
@@ -715,12 +715,12 @@ func (sess *cliSession) readStatusTail(frame []byte) ([]byte, bool, error) {
 
 > Add `"io"` to `session.go` imports. Note the `resp.Data` reuse hazard: `ReadResponseWithReuse` may reuse the buffer between loop iterations — check whether `resp.Data` aliases a reused buffer (read `ReadResponseWithReuse` in `xrdproto.go`); the existing mux path already copies via `data = append(data, resp.Data...)` in `session.send`, and `append(frame, tail...)` may grow a fresh array, which is fine. If `ReadResponseWithReuse` reuses `headerBytes` only, no change needed.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run TestConsumeStatusFrames -v`, then `go test ./xrootd/...` and `go test -race ./xrootd/ -run TestConsumeStatusFrames`.
 Expected: PASS everywhere; no regressions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/session.go xrootd/session_status_test.go && go vet ./xrootd/...
@@ -744,7 +744,7 @@ git commit -m "xrootd: handle kXR_status framing in the session read loop"
   - `type Request struct { Handle xrdfs.FileHandle; Offset int64; ReadLength int32 }` with `ReqID()`, `ShouldSign() bool` (returns `false` — reads sign only when the security level demands, mirroring `read`), `MarshalXrd`/`UnmarshalXrd` writing `fhandle[4] | offset i64 | rlen i32 | dlen i32=0`.
   - `type Response struct { Data []byte; Offset int64 }` with `RespID()` and `UnmarshalXrd` that walks one or more concatenated status frames (`[StatusBody 16][offset i64][page units DataLength bytes]`)... decoding and CRC-verifying the pages of each frame with `pgbuf.Decode` at that frame's offset, appending to `Data`. `Offset` records the first frame's offset. Frames with `DataLength == 0` (e.g. ProgressInfo) are skipped.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/xrdproto/pgread/pgread_test.go`:
 
@@ -826,12 +826,12 @@ func TestResponseCorruptPage(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/pgread/ -v`
 Expected: FAIL (package missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/xrdproto/pgread/pgread.go`:
 
@@ -943,12 +943,12 @@ In `xrootd/xrdproto/signing/signing.go`, add pgread beside `read.RequestID` in t
 
 with import `"go-hep.org/x/hep/xrootd/xrdproto/pgread"`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/pgread/ -v && go test ./xrootd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/ xrootd/internal/xrdenc/ && go vet ./xrootd/...
@@ -972,7 +972,7 @@ git commit -m "xrootd/xrdproto/pgread: add kXR_pgread request/response with page
   - `type Request struct { Handle xrdfs.FileHandle; Offset int64; Data []byte }` with `ReqID()`, `ShouldSign() bool` (returns `true`, mirroring `write`), and `MarshalXrd` writing `fhandle[4] | offset i64 | pathid u8=0 | reqflags u8=0 | reserved[2] | dlen i32` followed by the page units (`pgbuf.Encode(Offset, Data)`). `UnmarshalXrd` reads the params and decodes the page units back into `Data` (servers/tests need it).
   - `type Response struct { Offset int64 }` — `UnmarshalXrd` parses one status frame `[StatusBody 16][offset i64]` via `UnmarshalVerifyXrd`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/xrdproto/pgwrite/pgwrite_test.go`:
 
@@ -1027,12 +1027,12 @@ func TestResponseUnmarshal(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/pgwrite/ -v`
 Expected: FAIL (package missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/xrdproto/pgwrite/pgwrite.go`:
 
@@ -1134,12 +1134,12 @@ In `xrootd/xrdproto/signing/signing.go`, add pgwrite beside `write.RequestID` in
 
 with import `"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/pgwrite/ -v && go test ./xrootd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/ && go vet ./xrootd/...
@@ -1175,7 +1175,7 @@ git commit -m "xrootd/xrdproto/pgwrite: add kXR_pgwrite request/response with pa
     ```
   - On the client `file`: `func (f *file) PgReadAt(ctx context.Context, p []byte, off int64) (int, error)` and `func (f *file) PgWriteAt(ctx context.Context, p []byte, off int64) error`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/pg_mock_test.go` — mock server answers a pgread with two status frames and a pgwrite with an ack frame (reuse the harness). Read `xrootd/file_mock_test.go` first for how a `file` value is constructed against the mock (it builds `file{fs: &fileSystem{...}, handle: ...}`; mirror that construction exactly — copy the pattern from an existing test like `TestFile_ReadAt_Mock` if present, otherwise from `file_mock_test.go`'s first test):
 
@@ -1308,12 +1308,12 @@ func TestFile_PgWriteAt_Mock(t *testing.T) {
 
 > Verify the `file` struct's field names in `xrootd/file.go` (`fs`, `handle`) and whether `client.FS()` returns `*fileSystem` — `file_mock_test.go` constructs files against the mock somehow; copy its exact construction. Adjust the two `clientFunc`s accordingly.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run 'TestFile_PgReadAt_Mock|TestFile_PgWriteAt_Mock' -v`
 Expected: FAIL — `f.PgReadAt undefined`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `xrootd/xrdfs/file.go` the two optional interfaces exactly as in the Produces block above (with `"context"` already imported there).
 
@@ -1355,12 +1355,12 @@ var (
 )
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run 'TestFile_PgReadAt_Mock|TestFile_PgWriteAt_Mock' -v && go test ./xrootd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/ && go vet ./xrootd/...
@@ -1399,7 +1399,7 @@ git commit -m "xrootd: add PgReadAt/PgWriteAt paged I/O with per-page CRC32C"
   - `func (fs *fileSystem) ListXAttr(ctx context.Context, path string) ([]string, error)`
   - These are methods on the concrete `*fileSystem`, NOT additions to the `xrdfs.FileSystem` interface; add an optional `xrdfs.XAttrFS` interface in `xrootd/xrdfs/fs.go` declaring the four methods, and a compile-time `var _ xrdfs.XAttrFS = (*fileSystem)(nil)` assertion.
 
-- [ ] **Step 1: Write the failing test (wire golden bytes)**
+- [x] **Step 1: Write the failing test (wire golden bytes)**
 
 `xrootd/xrdproto/fattr/fattr_test.go`:
 
@@ -1472,12 +1472,12 @@ func TestResponseNames(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/fattr/ -v`
 Expected: FAIL (package missing).
 
-- [ ] **Step 3: Implement `fattr` package**
+- [x] **Step 3: Implement `fattr` package**
 
 `xrootd/xrdproto/fattr/fattr.go`:
 
@@ -1661,7 +1661,7 @@ func (resp *Response) Names() ([]string, error) {
 
 > `RBuffer.Len()` exists (used by `protocol.Response.UnmarshalXrd`). Note `Names` reads `resp.Raw` whole — List replies have no errcount/numattr prefix, so `UnmarshalXrd`'s opportunistic prefix decode is harmless there (callers of Names ignore those fields).
 
-- [ ] **Step 4: Run wire tests, then write and pass the filesystem mock test**
+- [x] **Step 4: Run wire tests, then write and pass the filesystem mock test**
 
 Run: `go test ./xrootd/xrdproto/fattr/ -v` → PASS.
 
@@ -1808,7 +1808,7 @@ func TestFileSystem_GetXAttr_Mock(t *testing.T) {
 Run: `go test ./xrootd/ -run TestFileSystem_GetXAttr_Mock -v && go test ./xrootd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/ && go vet ./xrootd/...
@@ -1831,7 +1831,7 @@ git commit -m "xrootd: add kXR_fattr extended-attribute support (get/set/del/lis
   - `xrdfs.ChecksumFS` optional interface: `Checksum(ctx context.Context, path string) (algo, value string, err error)`.
   - `func (fs *fileSystem) Checksum(ctx context.Context, path string) (string, string, error)` — sends the Qcksum query, parses the `"<algo> <hexvalue>"` reply (fields split on whitespace, trailing NUL trimmed), errors on malformed replies.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/checksum_mock_test.go`:
 
@@ -1887,12 +1887,12 @@ func TestFileSystem_Checksum_Mock(t *testing.T) {
 
 > `rawMarshaler` accepts a string here — make it `type rawMarshaler []byte` and pass `rawMarshaler("adler32 03d74a07\x00")` (string→[]byte conversion applies). Verify `query.Request`'s field names against `xrootd/xrdproto/query/query.go` before writing the client code, and check whether an existing test (e.g. `xrootd/xrdproto/query`'s own tests or `filesystem_test.go`) shows the canonical construction.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestFileSystem_Checksum_Mock -v`
 Expected: FAIL — `fs.Checksum undefined`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `xrootd/xrdfs/fs.go`:
 
@@ -1925,12 +1925,12 @@ func (fs *fileSystem) Checksum(ctx context.Context, path string) (string, string
 
 > The `query.Request`/`query.Response` field names above are the expected ones — verify against `xrootd/xrdproto/query/query.go` and adjust (the response may expose `Data []byte` or similar). Add `strings` to imports and the assertion `var _ xrdfs.ChecksumFS = (*fileSystem)(nil)`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run TestFileSystem_Checksum_Mock -v && go test ./xrootd/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/ && go vet ./xrootd/...
@@ -1950,7 +1950,7 @@ git commit -m "xrootd: add server-side Checksum query (kXR_Qcksum)"
 - Consumes: `Dial`, `fileSystem.Checksum/GetXAttr/SetXAttr/ListXAttr/DelXAttr`, `file.PgReadAt/PgWriteAt`, `xrdsum.Sum`.
 - Produces: env-gated tests (skip without `XROOTD_P1_SERVER`) that, against a real server: open a file, `PgReadAt` it fully, compare `xrdsum.Sum("adler32", data)` with the server's `Checksum` reply; round-trip an xattr. Plus a runbook documenting the `libxrdc` cross-checks.
 
-- [ ] **Step 1: Write the gated test**
+- [x] **Step 1: Write the gated test**
 
 `xrootd/phase1_interop_test.go`:
 
@@ -2060,12 +2060,12 @@ func TestPhase1Interop(t *testing.T) {
 
 > Verify `xrdfs.OpenModeOwnerRead`/`OpenOptionsOpenRead` constant names in `xrootd/xrdfs/` (grep `OpenMode` and `OpenOptions` consts) and `f.Close(ctx)`'s signature against `xrdfs.File`.
 
-- [ ] **Step 2: Verify it skips cleanly**
+- [x] **Step 2: Verify it skips cleanly**
 
 Run: `go test ./xrootd/ -run TestPhase1Interop -v`
 Expected: PASS with `--- SKIP`.
 
-- [ ] **Step 3: Write the parity runbook**
+- [x] **Step 3: Write the parity runbook**
 
 Create `docs/superpowers/testing/xrootd-phase-1-parity.md`:
 
@@ -2103,11 +2103,11 @@ All binaries under /home/rcurrie/HEP-x/nginx-xrootd/client/bin:
 unaligned first pages, multi-frame responses, and status-frame CRC failures.
 ```
 
-- [ ] **Step 4: Final phase verification**
+- [x] **Step 4: Final phase verification**
 
 Run: `gofmt -l xrootd/` (empty), `go vet ./xrootd/...` (clean), `go test ./xrootd/...` (green), `go test -race ./xrootd/` (green).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add xrootd/phase1_interop_test.go docs/superpowers/testing/xrootd-phase-1-parity.md
