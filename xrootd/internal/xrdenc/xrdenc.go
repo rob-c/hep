@@ -29,6 +29,12 @@ func (w *WBuffer) WriteI32(v int32) {
 	w.buf = append(w.buf, buf[:]...)
 }
 
+func (w *WBuffer) WriteU32(v uint32) {
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], v)
+	w.buf = append(w.buf, buf[:]...)
+}
+
 func (w *WBuffer) WriteI64(v int64) {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], uint64(v))
