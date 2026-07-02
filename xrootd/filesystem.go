@@ -6,11 +6,13 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
 	"context"
+	"fmt"
 	stdpath "path"
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
+	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
@@ -157,6 +159,64 @@ func (fs *fileSystem) Statx(ctx context.Context, paths []string) ([]xrdfs.StatFl
 	return resp.StatFlags, nil
 }
 
+// GetXAttr returns the value of the named extended attribute of path.
+func (fs *fileSystem) GetXAttr(ctx context.Context, path, name string) ([]byte, error) {
+	var resp fattr.Response
+	if _, err := fs.c.Send(ctx, &resp, fattr.GetRequest(path, name)); err != nil {
+		return nil, err
+	}
+	_, rc, value, err := resp.Attr()
+	if err != nil {
+		return nil, err
+	}
+	if rc != 0 {
+		return nil, fmt.Errorf("xrootd: fattr get %q on %q failed with status code %d", name, path, rc)
+	}
+	return value, nil
+}
+
+// SetXAttr sets the named extended attribute of path to value.
+func (fs *fileSystem) SetXAttr(ctx context.Context, path, name string, value []byte) error {
+	var resp fattr.Response
+	if _, err := fs.c.Send(ctx, &resp, fattr.SetRequest(path, name, value, false)); err != nil {
+		return err
+	}
+	_, rc, _, err := resp.Attr()
+	if err != nil {
+		return err
+	}
+	if rc != 0 {
+		return fmt.Errorf("xrootd: fattr set %q on %q failed with status code %d", name, path, rc)
+	}
+	return nil
+}
+
+// DelXAttr removes the named extended attribute of path.
+func (fs *fileSystem) DelXAttr(ctx context.Context, path, name string) error {
+	var resp fattr.Response
+	if _, err := fs.c.Send(ctx, &resp, fattr.DelRequest(path, name)); err != nil {
+		return err
+	}
+	_, rc, _, err := resp.Attr()
+	if err != nil {
+		return err
+	}
+	if rc != 0 {
+		return fmt.Errorf("xrootd: fattr del %q on %q failed with status code %d", name, path, rc)
+	}
+	return nil
+}
+
+// ListXAttr lists the extended attribute names of path.
+func (fs *fileSystem) ListXAttr(ctx context.Context, path string) ([]string, error) {
+	var resp fattr.Response
+	if _, err := fs.c.Send(ctx, &resp, fattr.ListRequest(path)); err != nil {
+		return nil, err
+	}
+	return resp.Names()
+}
+
 var (
 	_ xrdfs.FileSystem = (*fileSystem)(nil)
+	_ xrdfs.XAttrFS    = (*fileSystem)(nil)
 )

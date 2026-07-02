@@ -115,3 +115,12 @@ const (
 	// OpenOptionsNone specifies that file is opened without specific options.
 	OpenOptionsNone OpenOptions = 0
 )
+
+// XAttrFS is implemented by filesystems that support extended attributes
+// (kXR_fattr).
+type XAttrFS interface {
+	GetXAttr(ctx context.Context, path, name string) ([]byte, error)
+	SetXAttr(ctx context.Context, path, name string, value []byte) error
+	DelXAttr(ctx context.Context, path, name string) error
+	ListXAttr(ctx context.Context, path string) ([]string, error)
+}
