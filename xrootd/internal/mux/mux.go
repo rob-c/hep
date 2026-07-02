@@ -214,15 +214,24 @@ func (m *Mux) Unclaim(id xrdproto.StreamID) {
 }
 
 // SendData sends data to channel with specific id.
+//
+// The channel send is done without holding the mutex: a blocking send (the
+// waiting caller is slow or has gone away) must not freeze the whole mux, which
+// would deadlock every other stream. If the mux is closed while the send is
+// pending, the quit signal unblocks it.
 func (m *Mux) SendData(id xrdproto.StreamID, data ServerResponse) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	ch, ok := m.dataWaiters[id]
+	m.mu.Unlock()
 
-	if _, ok := m.dataWaiters[id]; !ok {
+	if !ok {
 		return fmt.Errorf("mux: cannot find data waiter for id %v", id)
 	}
 
-	m.dataWaiters[id] <- data
+	select {
+	case ch <- data:
+	case <-m.quit:
+	}
 
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"os"
 	stdpath "path"
 	"path/filepath"
+	"time"
 
 	"go-hep.org/x/hep/xrootd"
 	"go-hep.org/x/hep/xrootd/xrdfs"
@@ -67,7 +68,7 @@ func Copy(ctx context.Context, dst, src string, opts Options) error {
 	case !srcRemote && !dstRemote:
 		return localCopy(dst, src, opts)
 	default:
-		return fmt.Errorf("xrdcopy: remote-to-remote (third-party copy) is not implemented")
+		return TPC(ctx, dst, src, opts)
 	}
 }
 
@@ -182,6 +183,13 @@ func verifyChecksum(ctx context.Context, fs xrdfs.FileSystem, remotePath, localP
 	cks, ok := fs.(xrdfs.ChecksumFS)
 	if !ok {
 		return nil
+	}
+	// Bound the checksum query so a server that accepts but never answers it
+	// cannot hang the copy.
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
 	}
 	algo, want, err := cks.Checksum(ctx, remotePath)
 	if err != nil {

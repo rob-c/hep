@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // gridPKI is a Globus-style test PKI (CA + host cert + user cert) laid out the
@@ -103,6 +104,10 @@ func buildGridPKI(t *testing.T, dir string) gridPKI {
 
 	// User cert (end-entity) for x509/gsi client auth.
 	signCert(t, pki, userSubj, pki.userKey, pki.userCert, "", filepath.Join(dir, "user", "user.csr"))
+
+	// openssl stamps NotBefore at the current second; wait out that second so a
+	// TLS handshake microseconds later never sees a not-yet-valid certificate.
+	time.Sleep(2 * time.Second)
 
 	return pki
 }
