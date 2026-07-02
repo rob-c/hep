@@ -18,6 +18,7 @@ import (
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdhttp"
+	"go-hep.org/x/hep/xrootd/xrdproto/auth/gsi"
 )
 
 // TestIntegrationRealServer launches a real XRootD server with the grid PKI and
@@ -136,8 +137,111 @@ func TestIntegrationRealServer(t *testing.T) {
 	})
 
 	t.Run("root-gsi", func(t *testing.T) {
-		t.Skip("root://+gsi requires the GSI client (Phase 3b), not yet implemented")
+		secLib := firstExisting(
+			"/usr/lib64/libXrdSec-5.so", "/usr/lib/libXrdSec-5.so",
+			"/usr/lib/x86_64-linux-gnu/libXrdSec-5.so",
+		)
+		gsiLibDir := firstExistingDir("/usr/lib64", "/usr/lib/x86_64-linux-gnu", "/usr/lib")
+		if secLib == "" || gsiLibDir == "" {
+			t.Skip("XRootD security libraries not found")
+		}
+
+		gsiPort := freePort(t)
+		gcfg := writeGSIConfig(t, dir, gsiParams{
+			dataDir:    dataDir,
+			adminDir:   mkTmpDir(t, dir, "gadmin"),
+			runDir:     mkTmpDir(t, dir, "grun"),
+			port:       gsiPort,
+			gsiLibDir:  gsiLibDir,
+			serverCert: pki.serverCert,
+			serverKey:  pki.serverKey,
+			caDir:      pki.caDir,
+		})
+		launchXrootd(t, gcfg, mkTmpDir(t, dir, "gsi-log"), gsiPort)
+
+		proxy := buildProxy(t, dir, pki)
+		gsiAuth, err := gsi.LoadProxy(proxy)
+		if err != nil {
+			t.Fatalf("LoadProxy: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		c, err := NewClient(ctx, fmt.Sprintf("localhost:%d", gsiPort), "gopher", WithAuth(gsiAuth))
+		if err != nil {
+			t.Fatalf("NewClient with gsi: %v", err)
+		}
+		defer c.Close()
+		fs := c.FS()
+		fi, err := fs.Stat(ctx, "/hello.txt")
+		if err != nil {
+			t.Fatalf("gsi Stat: %v", err)
+		}
+		if fi.Size() != int64(len(payload)) {
+			t.Fatalf("gsi size: got=%d want=%d", fi.Size(), len(payload))
+		}
+		// Read the file to prove a real GSI-authenticated transfer.
+		f, err := fs.Open(ctx, "/hello.txt", xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
+		if err != nil {
+			t.Fatalf("gsi Open: %v", err)
+		}
+		defer f.Close(ctx)
+		buf := make([]byte, fi.Size())
+		if _, err := f.ReadAt(buf, 0); err != nil {
+			t.Fatalf("gsi ReadAt: %v", err)
+		}
+		if string(buf) != payload {
+			t.Fatalf("gsi content mismatch: %q", buf)
+		}
 	})
+}
+
+type gsiParams struct {
+	dataDir, adminDir, runDir    string
+	port                         int
+	gsiLibDir                    string
+	serverCert, serverKey, caDir string
+}
+
+func writeGSIConfig(t *testing.T, dir string, p gsiParams) string {
+	t.Helper()
+
+	// A grid-mapfile mapping our test DN (the proxy's issuer, the user cert)
+	// to a local name, so the server maps the authenticated identity.
+	gridmap := filepath.Join(dir, "grid-mapfile")
+	if err := os.WriteFile(gridmap,
+		[]byte("\"/DC=test/DC=xrootd/CN=Test User/CN=12345\" gopher\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// -gmapopt:1 uses the mapfile if present (no hard failure), -crl:0 disables
+	// CRL checking (no CRL dir in the test PKI), -dlgpxy:0 disables delegation.
+	cfg := fmt.Sprintf(`all.role server
+all.export /
+oss.localroot %[1]s
+all.adminpath %[2]s
+all.pidpath %[3]s
+xrd.port %[4]d
+xrootd.seclib libXrdSec.so
+sec.protocol %[5]s gsi -certdir:%[6]s -cert:%[7]s -key:%[8]s -gridmap:%[9]s -gmapopt:1 -crl:0 -vomsat:0 -moninfo:0 -dlgpxy:0
+sec.protbind * gsi
+`,
+		p.dataDir, p.adminDir, p.runDir, p.port,
+		p.gsiLibDir, p.caDir, p.serverCert, p.serverKey, gridmap)
+	path := filepath.Join(dir, "xrootd-gsi.cfg")
+	if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func firstExistingDir(paths ...string) string {
+	for _, p := range paths {
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			return p
+		}
+	}
+	return ""
 }
 
 type xrootdParams struct {
