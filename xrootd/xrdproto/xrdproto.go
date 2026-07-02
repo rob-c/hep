@@ -69,6 +69,10 @@ const (
 	Error ResponseStatus = 4003
 	// Redirect indicates that the client must re-issue the request to another server.
 	Redirect ResponseStatus = 4004
+	// Attn indicates an asynchronous attention response from the server. When
+	// its action code is AsyncResp, it wraps a deferred response for another
+	// stream (e.g. the completion of a third-party copy triggered by sync).
+	Attn ResponseStatus = 4001
 	// AuthMore indicates that the server needs more information to complete
 	// authentication; the response data carries a challenge and the client
 	// must send a follow-up auth request. Used by multi-round mechanisms such
@@ -87,6 +91,10 @@ const (
 	// body itself (outside the response-header data length).
 	Status ResponseStatus = 4007
 )
+
+// AsyncResp is the action code (in an Attn response body) marking an
+// asynchronous delayed response for another stream.
+const AsyncResp int32 = 5008
 
 // WaitResponse is the response indicating that the client must wait and retry the request.
 // See http://xrootd.org/doc/dev45/XRdv310.pdf, p. 35 for details.
