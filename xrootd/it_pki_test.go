@@ -107,6 +107,50 @@ func buildGridPKI(t *testing.T, dir string) gridPKI {
 	return pki
 }
 
+// buildProxy mints an RFC 3820 proxy certificate signed by the user
+// certificate: an ephemeral key, subject = user DN + "/CN=<serial>", and a
+// critical proxyCertInfo extension so XrdSecgsi accepts it. It writes a combined
+// proxy file (proxy cert + key + issuer chain) and returns its path.
+func buildProxy(t *testing.T, dir string, pki gridPKI) string {
+	t.Helper()
+	const userSubj = "/DC=test/DC=xrootd/CN=Test User/CN=12345"
+
+	proxyDir := filepath.Join(dir, "user")
+	proxyKey := filepath.Join(proxyDir, "proxykey.pem")
+	proxyCert := filepath.Join(proxyDir, "proxycert.pem")
+	proxyReq := filepath.Join(proxyDir, "proxy.csr")
+	extFile := filepath.Join(proxyDir, "proxy.ext")
+
+	if err := os.WriteFile(extFile, []byte(
+		"keyUsage=critical,digitalSignature,keyEncipherment\n"+
+			"proxyCertInfo=critical,language:id-ppl-inheritAll\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	openssl(t, "genrsa", "-out", proxyKey, "2048")
+	openssl(t, "req", "-new", "-key", proxyKey, "-out", proxyReq,
+		"-subj", userSubj+"/CN=1234567")
+	openssl(t, "x509", "-req", "-in", proxyReq,
+		"-CA", pki.userCert, "-CAkey", pki.userKey, "-CAcreateserial",
+		"-out", proxyCert, "-days", "1", "-sha256",
+		"-extfile", extFile)
+
+	// Combined proxy: proxy cert, proxy key, then the issuer (user) cert.
+	var combined []byte
+	for _, p := range []string{proxyCert, proxyKey, pki.userCert} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		combined = append(combined, b...)
+	}
+	out := filepath.Join(proxyDir, "proxy_std.pem")
+	if err := os.WriteFile(out, combined, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 // signCert generates a key + CSR for subj and signs it with the CA. When
 // extFile is non-empty its extensions (e.g. subjectAltName) are applied.
 func signCert(t *testing.T, pki gridPKI, subj, keyOut, certOut, extFile, csr string) {
