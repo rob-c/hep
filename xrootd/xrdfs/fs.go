@@ -124,3 +124,9 @@ type XAttrFS interface {
 	DelXAttr(ctx context.Context, path, name string) error
 	ListXAttr(ctx context.Context, path string) ([]string, error)
 }
+
+// ChecksumFS is implemented by filesystems that can report a server-side
+// file checksum (query kXR_Qcksum).
+type ChecksumFS interface {
+	Checksum(ctx context.Context, path string) (algo, value string, err error)
+}
