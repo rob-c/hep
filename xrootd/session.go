@@ -7,6 +7,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"sync"
@@ -305,6 +306,7 @@ func (sess *cliSession) consume() {
 			resp.Err = nil
 			resp.Redirection = nil
 
+			var statusPartial bool
 			switch header.Status {
 			case xrdproto.Error:
 				resp.Err = header.Error(resp.Data)
@@ -315,6 +317,8 @@ func (sess *cliSession) consume() {
 				}
 			case xrdproto.Redirect:
 				resp.Redirection, resp.Err = mux.ParseRedirection(resp.Data)
+			case xrdproto.Status:
+				resp.Data, statusPartial, resp.Err = sess.readStatusTail(resp.Data)
 			}
 
 			if err := sess.mux.SendData(header.StreamID, resp); err != nil {
@@ -327,11 +331,33 @@ func (sess *cliSession) consume() {
 				// TODO: should we just ignore responses to unclaimed stream IDs?
 			}
 
-			if header.Status != xrdproto.OkSoFar {
+			if header.Status != xrdproto.OkSoFar && !statusPartial {
 				sess.cleanupRequest(header.StreamID)
 			}
 		}
 	}
+}
+
+// readStatusTail completes a kXR_status frame: it verifies the frame's CRC,
+// then drains the trailing data announced by StatusBody.DataLength — which
+// lives OUTSIDE the response header's data length — off the connection.
+// It returns the full frame (body+info+trailing), whether more frames follow
+// (kXR_PartialResult or kXR_ProgressInfo), and any error. On error the frame
+// is returned as-is so the caller can surface it.
+func (sess *cliSession) readStatusTail(frame []byte) ([]byte, bool, error) {
+	var body xrdproto.StatusBody
+	if err := body.UnmarshalVerifyXrd(frame); err != nil {
+		return frame, false, err
+	}
+	if body.DataLength > 0 {
+		tail := make([]byte, body.DataLength)
+		if _, err := io.ReadFull(sess.conn, tail); err != nil {
+			return frame, false, fmt.Errorf("xrootd: could not read kXR_status trailing data: %w", err)
+		}
+		frame = append(frame, tail...)
+	}
+	partial := body.RespType == xrdproto.PartialResult || body.RespType == xrdproto.ProgressInfo
+	return frame, partial, nil
 }
 
 func (sess *cliSession) cleanupRequest(streamID xrdproto.StreamID) {
