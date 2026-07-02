@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	stdpath "path"
+	"strings"
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
@@ -16,6 +17,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
+	"go-hep.org/x/hep/xrootd/xrdproto/query"
 	"go-hep.org/x/hep/xrootd/xrdproto/rm"
 	"go-hep.org/x/hep/xrootd/xrdproto/rmdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
@@ -216,7 +218,23 @@ func (fs *fileSystem) ListXAttr(ctx context.Context, path string) ([]string, err
 	return resp.Names()
 }
 
+// Checksum asks the server for the checksum of path (query kXR_Qcksum) and
+// returns the algorithm name and hexadecimal value the server reports.
+func (fs *fileSystem) Checksum(ctx context.Context, path string) (string, string, error) {
+	var resp query.Response
+	req := query.Request{Query: query.Checksum, Args: []byte(path)}
+	if _, err := fs.c.Send(ctx, &resp, &req); err != nil {
+		return "", "", err
+	}
+	fields := strings.Fields(strings.TrimRight(string(resp.Data), "\x00"))
+	if len(fields) != 2 {
+		return "", "", fmt.Errorf("xrootd: malformed checksum reply %q for %q", resp.Data, path)
+	}
+	return fields[0], fields[1], nil
+}
+
 var (
 	_ xrdfs.FileSystem = (*fileSystem)(nil)
 	_ xrdfs.XAttrFS    = (*fileSystem)(nil)
+	_ xrdfs.ChecksumFS = (*fileSystem)(nil)
 )
