@@ -325,13 +325,12 @@ func (sess *cliSession) consume() {
 			}
 
 			if err := sess.mux.SendData(header.StreamID, resp); err != nil {
-				if sess.ctx.Err() != nil {
-					// something happened to the context.
-					// ignore this error.
-					continue
-				}
-				panic(err)
-				// TODO: should we just ignore responses to unclaimed stream IDs?
+				// No waiter is registered for this stream ID. Because a request
+				// always claims its stream (registering the waiter) before it is
+				// sent, such a frame cannot be a response awaited by anyone: it
+				// is unsolicited (e.g. a late duplicate or a kXR_attn). Drop it
+				// rather than crashing the session.
+				continue
 			}
 
 			if header.Status != xrdproto.OkSoFar && !statusPartial {
@@ -585,12 +584,16 @@ func newSubSession(ctx context.Context, parent *cliSession) (*cliSession, error)
 		isSub:     true,
 	}
 
-	go sess.consume()
-
-	if err := sess.handshake(ctx); err != nil {
+	// The handshake runs synchronously before consume() so the fixed stream ID
+	// {0,0} it uses never reaches the shared mux (which the parent and all
+	// sub-sessions use); otherwise it would collide with a regular request's
+	// mux-claimed {0,0}.
+	if err := sess.handshakeBootstrap(ctx); err != nil {
 		sess.Close()
 		return nil, err
 	}
+
+	go sess.consume()
 
 	pathID, err := sess.bind(ctx, parent.loginID)
 	if err != nil {
