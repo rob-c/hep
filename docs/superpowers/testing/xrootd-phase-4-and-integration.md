@@ -30,7 +30,23 @@ Verified legs:
 |-----|--------|----------------|
 | `root-anon` | PASS | go-hep client stats and reads a file over root:// from a real server |
 | `xrdhttps-x509` | PASS | `xrdhttp` reads a file over HTTPS presenting an X.509 client cert (mutual TLS), server verified against the grid CA |
+| `copy-engine` | PASS | `xrdcopy` downloads (with checksum verify), uploads, and reads back |
+| `copy-resume` | PASS | `xrdcopy` resumes a partial download to full content; no-ops a complete file |
 | `root-gsi` | PASS | the pure-Go GSI client completes the two-round handshake against a GSI-configured xrootd and reads a file end-to-end |
+| `copy-tpc` | opt-in | native TPC (`XROOTD_IT_TPC=1`); client follows the stock protocol but the pgm-model pull does not yet complete — see Phase 2 note |
+
+## Phase 2 — copy engine (`xrootd/xrdcopy`)
+
+Working and verified: download, upload, local copy, recursive trees,
+post-transfer checksum verification, and **resumable transfers**. Native
+**TPC** is implemented per the stock client protocol (placement, source
+coordinator open with `tpc.dst`/`tpc.key`/`tpc.stage=copy`, destination puller
+open with the full `oss.asize`/`tpc.dlg`/`tpc.lfn` opaque) but the pgm-model
+pull does not yet complete against the test servers (the file arrives empty),
+so its harness leg is opt-in. Reference `xrdcp --tpc` succeeds against the same
+servers, so the gap is a client-protocol detail. Fixed along the way: a
+`mux.SendData` deadlock (blocking channel send under the mutex froze the whole
+mux) and `kXR_authmore`/`kXR_waitresp` handling.
 
 Note on the x509 leg: it verifies mutual-TLS access (the client presents its
 X.509 user cert and the server certificate is CA-verified). Enforced x509 →
