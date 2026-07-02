@@ -1,6 +1,6 @@
 # XRootD Phase 3 — Expanded Auth Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add three single-round authentication/credential mechanisms to go-hep's XRootD client — WLCG bearer tokens (`ztn`), Simple Shared Secret (`sss`), and S3 credential discovery (for the Phase 4 S3 backend) — each byte-compatible with the reference `libxrdc` client.
 
@@ -53,7 +53,7 @@ dedicated spec/plan (`brainstorming` → `writing-plans`) that begins by reading
   - `func Discover() (string, error)` — resolves a token via `$BEARER_TOKEN`, `$BEARER_TOKEN_FILE`, `$XDG_RUNTIME_DIR/bt_u<uid>`, `/tmp/bt_u<uid>` (in that order), trimming trailing whitespace/NULs; error if none found.
   - `var Default auth.Auther` — set by `init()` to `&Auth{Token: t}` when `Discover()` succeeds, else nil (mirrors `krb5.Default`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/xrdproto/auth/token/token_test.go`:
 
@@ -126,12 +126,12 @@ func TestDiscoverBearerTokenFile(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/auth/token/ -v`
 Expected: FAIL (package does not exist).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/xrdproto/auth/token/token.go`:
 
@@ -218,12 +218,12 @@ var _ auth.Auther = (*Auth)(nil)
 
 > `os.Geteuid()` returns -1 on Windows; the `/tmp/bt_u-1` path simply won't exist there, which is fine (discovery falls through to an error). No special-casing needed.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/auth/token/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/auth/token/ && go vet ./xrootd/xrdproto/auth/token/
@@ -250,7 +250,7 @@ Split from the auth module because the keytab parser is independently testable a
   - `func LoadKeytab() ([]Key, error)` — reads the file at `$XrdSecSSSKT`, else `$XrdSecsssKT`, else `~/.xrd/sss.keytab`; error if none exists.
   - `func FirstLiveKey(keys []Key, now time.Time) (Key, error)` — the first non-expired key; error if none.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/xrdproto/auth/sss/keytab_test.go`:
 
@@ -310,12 +310,12 @@ func TestFirstLiveKey(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/auth/sss/ -run 'TestParseKeytab|TestFirstLiveKey' -v`
 Expected: FAIL (package missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/xrdproto/auth/sss/keytab.go`:
 
@@ -442,12 +442,12 @@ func FirstLiveKey(keys []Key, now time.Time) (Key, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/auth/sss/ -run 'TestParseKeytab|TestFirstLiveKey' -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/auth/sss/ && go vet ./xrootd/xrdproto/auth/sss/
@@ -473,7 +473,7 @@ git commit -m "xrootd/xrdproto/auth/sss: add SSS keytab reader"
   - `func New() (*Auth, error)` — loads the keytab, picks the first live key, and uses the current OS user (falling back to `"xrd"`) as the NAME.
   - `var Default auth.Auther` — set by `init()` to `New()`'s result when it succeeds, else nil.
 
-- [ ] **Step 1: Write the failing test (round-trip against Blowfish decrypt)**
+- [x] **Step 1: Write the failing test (round-trip against Blowfish decrypt)**
 
 `xrootd/xrdproto/auth/sss/sss_test.go` — encrypt with `buildCredential`, then independently decrypt with `blowfish` + CFB64 and assert the exact cleartext layout and CRC:
 
@@ -572,12 +572,12 @@ func TestAuthProviderRequest(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/xrdproto/auth/sss/ -run 'TestBuildCredentialLayout|TestAuthProviderRequest' -v`
 Expected: FAIL (`buildCredential`/`Auth` undefined).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/xrdproto/auth/sss/sss.go`:
 
@@ -724,12 +724,12 @@ var _ auth.Auther = (*Auth)(nil)
 
 > `crypto/cipher.NewCFBEncrypter` with an 8-byte (block-size) zero IV over a Blowfish cipher reproduces OpenSSL's `EVP_bf_cfb64` (CFB64 == full-block CFB for a 64-bit block cipher). The go vet "CFB is unauthenticated" concern does not apply — this is the mandated SSS wire format, not a new protocol choice; note it in a comment if a linter flags it.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/xrdproto/auth/sss/ -v`
 Expected: PASS (both keytab and credential tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/xrdproto/auth/sss/ && go vet ./xrootd/xrdproto/auth/sss/
@@ -749,7 +749,7 @@ git commit -m "xrootd/xrdproto/auth/sss: add SSS credential builder and auth pro
 - Consumes: `token.Default`, `sss.Default` (Tasks 1, 3); the existing `defaultProviders` slice and `initSecurityProviders` (which skips nil entries — verified in `client.go`).
 - Produces: `defaultProviders` includes `token.Default` and `sss.Default`; a client built with no options exposes `"ztn"`/`"sss"` in `client.auths` when those Defaults are non-nil.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/auth_providers_test.go`:
 
@@ -816,7 +816,7 @@ func TestDefaultProvidersIncludeTokenAndSSS(t *testing.T) {
 
 > Use the real second snippet. The map value type in `Client.auths` is `auth.Auther`; import it as needed — check `client.go` (`auths map[string]auth.Auther`) and write `map[string]auth.Auther` with the `auth` import. Delete the first scaffold snippet entirely; it exists only to make the "write a failing test" contrast explicit and MUST NOT be committed.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/ -run TestDefaultProvidersIncludeTokenAndSSS -v`
 Expected: FAIL initially only if the imports/registration are absent; since `addAuth` already exists, the assertions on `addAuth` pass, but the test also documents intent. To make this a true red→green, first assert on `defaultProviders` membership (which is what Step 3 changes):
@@ -851,7 +851,7 @@ Expected: FAIL — `token`/`sss` not imported/added yet (compile error, then ass
 
 > Write only this final version of the test in the file.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `xrootd/auth.go`, add imports and the two providers:
 
@@ -883,12 +883,12 @@ var defaultProviders = []auth.Auther{
 
 > Ordering places credentialed providers (krb5, ztn, sss) before the weak host/unix identities, matching how a server typically prefers stronger auth; the actual selection is still driven by the server's offered list in `sess.auth`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/ -run TestDefaultProvidersIncludeTokenAndSSS -v && go test ./xrootd/...`
 Expected: PASS, no regressions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/auth.go xrootd/auth_providers_test.go && go vet ./xrootd/...
@@ -912,7 +912,7 @@ git commit -m "xrootd: register ztn and sss in default auth providers"
   - `func (p Provider) Resolve() (Credentials, error)` — precedence: explicit `p.AccessKey`+`p.Secret`, then `$AWS_ACCESS_KEY_ID`+`$AWS_SECRET_ACCESS_KEY`, then `~/.aws/credentials` `[default]`. Both parts required at a given level; error if none complete.
   - `func parseAWSCredentials(r io.Reader, profile string) (Credentials, error)` — minimal INI reader for the named profile's `aws_access_key_id`/`aws_secret_access_key`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `xrootd/internal/s3cred/s3cred_test.go`:
 
@@ -978,12 +978,12 @@ aws_secret_access_key = defaultsecret
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `go test ./xrootd/internal/s3cred/ -v`
 Expected: FAIL (package missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `xrootd/internal/s3cred/s3cred.go`:
 
@@ -1079,12 +1079,12 @@ func parseAWSCredentials(r io.Reader, profile string) (Credentials, error) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `go test ./xrootd/internal/s3cred/ -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 gofmt -w xrootd/internal/s3cred/ && go vet ./xrootd/...
@@ -1104,7 +1104,7 @@ git commit -m "xrootd/internal/s3cred: add S3 credential discovery for the S3 ba
 - Consumes: `Dial`/`WithAuth` (Phase 0), `token.Auth`, `sss.New`.
 - Produces: a gated test (skips without `XROOTD_P3_SERVER`) that stats a path using an explicitly chosen provider; a runbook naming the `libxrdc` cross-checks.
 
-- [ ] **Step 1: Write the gated test**
+- [x] **Step 1: Write the gated test**
 
 `xrootd/phase3_interop_test.go`:
 
@@ -1170,12 +1170,12 @@ func TestPhase3Interop(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Verify it skips cleanly**
+- [x] **Step 2: Verify it skips cleanly**
 
 Run: `go test ./xrootd/ -run TestPhase3Interop -v`
 Expected: PASS with `--- SKIP`.
 
-- [ ] **Step 3: Write the parity runbook**
+- [x] **Step 3: Write the parity runbook**
 
 Create `docs/superpowers/testing/xrootd-phase-3-parity.md`:
 
@@ -1224,11 +1224,11 @@ covered by unit tests and will be exercised end-to-end by the Phase 4 S3 backend
 are additive and selected only when the server offers them).
 ```
 
-- [ ] **Step 4: Final phase verification**
+- [x] **Step 4: Final phase verification**
 
 Run: `gofmt -l xrootd/` (empty), `go vet ./xrootd/...` (clean), `go test ./xrootd/...` (green), `go test -race ./xrootd/` (green).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add xrootd/phase3_interop_test.go docs/superpowers/testing/xrootd-phase-3-parity.md
