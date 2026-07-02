@@ -35,6 +35,9 @@ type Options struct {
 	// Verify, when true, compares the downloaded content against the server's
 	// checksum (when the server reports one); a mismatch fails the copy.
 	Verify bool
+	// Resume, when true, continues a partially transferred file from the size
+	// already present at the destination instead of starting over.
+	Resume bool
 	// Username is the XRootD login name (defaults to the URL user, then the OS user).
 	Username string
 }
@@ -153,14 +156,37 @@ func downloadFile(ctx context.Context, fs xrdfs.FileSystem, remotePath, localPat
 	}
 	defer f.Close()
 
+	rst, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("xrdcopy: could not stat %q: %w", remotePath, err)
+	}
+	remoteSize := rst.Size()
+
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return err
 	}
-	out, err := os.Create(localPath)
-	if err != nil {
-		return fmt.Errorf("xrdcopy: could not create %q: %w", localPath, err)
+
+	// Resume: continue from the bytes already present locally.
+	var offset int64
+	if opts.Resume {
+		var complete bool
+		if offset, complete = resumeOffset(localPath, remoteSize); complete {
+			return nil
+		}
 	}
-	if _, err := io.CopyBuffer(out, f, make([]byte, opts.chunk())); err != nil {
+
+	flags := os.O_WRONLY | os.O_CREATE
+	if offset > 0 {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	out, err := os.OpenFile(localPath, flags, 0o644)
+	if err != nil {
+		return fmt.Errorf("xrdcopy: could not open %q: %w", localPath, err)
+	}
+	src := io.NewSectionReader(f, offset, remoteSize-offset)
+	if _, err := io.CopyBuffer(out, src, make([]byte, opts.chunk())); err != nil {
 		out.Close()
 		return fmt.Errorf("xrdcopy: could not copy %q: %w", remotePath, err)
 	}
@@ -260,17 +286,40 @@ func uploadFile(ctx context.Context, fs xrdfs.FileSystem, localPath, remotePath 
 		return err
 	}
 	defer in.Close()
+	lst, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	// Resume: continue from the bytes already present at the destination.
+	var off int64
+	options := xrdfs.OpenOptionsNew | xrdfs.OpenOptionsDelete | xrdfs.OpenOptionsMkPath
+	if opts.Resume {
+		if rst, err := fs.Stat(ctx, remotePath); err == nil {
+			var complete bool
+			off, complete = resumeOffsetSize(rst.Size(), lst.Size())
+			if complete {
+				return nil
+			}
+			if off > 0 {
+				options = xrdfs.OpenOptionsOpenUpdate | xrdfs.OpenOptionsMkPath
+			}
+		}
+	}
+	if off > 0 {
+		if _, err := in.Seek(off, io.SeekStart); err != nil {
+			return err
+		}
+	}
 
 	f, err := fs.Open(ctx, remotePath,
-		xrdfs.OpenModeOwnerRead|xrdfs.OpenModeOwnerWrite,
-		xrdfs.OpenOptionsNew|xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsMkPath)
+		xrdfs.OpenModeOwnerRead|xrdfs.OpenModeOwnerWrite, options)
 	if err != nil {
 		return fmt.Errorf("xrdcopy: could not create %q: %w", remotePath, err)
 	}
 	defer f.Close(ctx)
 
 	buf := make([]byte, opts.chunk())
-	var off int64
 	for {
 		n, rerr := in.Read(buf)
 		if n > 0 {
@@ -287,6 +336,29 @@ func uploadFile(ctx context.Context, fs xrdfs.FileSystem, localPath, remotePath 
 		}
 	}
 	return f.Sync(ctx)
+}
+
+// resumeOffset reports the resume offset for a destination file at path given a
+// source of srcSize bytes: the destination's current size when it is a partial
+// prefix, and complete=true when it already matches srcSize.
+func resumeOffset(path string, srcSize int64) (offset int64, complete bool) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0, false
+	}
+	return resumeOffsetSize(fi.Size(), srcSize)
+}
+
+// resumeOffsetSize is resumeOffset for a known destination size.
+func resumeOffsetSize(dstSize, srcSize int64) (offset int64, complete bool) {
+	switch {
+	case dstSize == srcSize && srcSize > 0:
+		return 0, true
+	case dstSize > 0 && dstSize < srcSize:
+		return dstSize, false
+	default:
+		return 0, false
+	}
 }
 
 func localCopy(dst, src string, opts Options) error {

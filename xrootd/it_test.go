@@ -186,6 +186,35 @@ func TestIntegrationRealServer(t *testing.T) {
 		}
 	})
 
+	t.Run("copy-resume", func(t *testing.T) {
+		remote := fmt.Sprintf("root://localhost:%d//hello.txt", rootPort)
+		local := filepath.Join(dir, "resumed.txt")
+
+		// Seed a partial local file (a prefix of the remote content).
+		if err := os.WriteFile(local, []byte(payload[:8]), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := xrdcopy.Copy(context.Background(), local, remote, xrdcopy.Options{Resume: true}); err != nil {
+			t.Fatalf("resume download: %v", err)
+		}
+		got, err := os.ReadFile(local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != payload {
+			t.Fatalf("resumed content mismatch: %q", got)
+		}
+
+		// Resuming a complete file is a no-op that leaves it intact.
+		if err := xrdcopy.Copy(context.Background(), local, remote, xrdcopy.Options{Resume: true}); err != nil {
+			t.Fatalf("resume complete: %v", err)
+		}
+		got, _ = os.ReadFile(local)
+		if string(got) != payload {
+			t.Fatalf("content changed after no-op resume: %q", got)
+		}
+	})
+
 	t.Run("copy-tpc", func(t *testing.T) {
 		// The native-TPC client is implemented per the stock protocol
 		// (placement/coordinator/puller opaque), but the destination pull does
