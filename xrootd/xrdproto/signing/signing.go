@@ -15,6 +15,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
+	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
 	"go-hep.org/x/hep/xrootd/xrdproto/rm"
 	"go-hep.org/x/hep/xrootd/xrdproto/rmdir"
@@ -71,6 +72,7 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 	}
 	if level >= xrdproto.Intense {
 		// TODO: set requirements
+		sr.requirements[pgwrite.RequestID] = xrdproto.SignNeeded
 		sr.requirements[xrdclose.RequestID] = xrdproto.SignNeeded
 		sr.requirements[verifyw.RequestID] = xrdproto.SignNeeded
 		sr.requirements[write.RequestID] = xrdproto.SignNeeded
