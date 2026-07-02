@@ -305,6 +305,7 @@ func (sess *cliSession) consume() {
 			}
 			resp.Err = nil
 			resp.Redirection = nil
+			resp.AuthMore = false
 
 			var statusPartial bool
 			switch header.Status {
@@ -317,6 +318,8 @@ func (sess *cliSession) consume() {
 				}
 			case xrdproto.Redirect:
 				resp.Redirection, resp.Err = mux.ParseRedirection(resp.Data)
+			case xrdproto.AuthMore:
+				resp.AuthMore = true
 			case xrdproto.Status:
 				resp.Data, statusPartial, resp.Err = sess.readStatusTail(resp.Data)
 			}
@@ -390,7 +393,7 @@ func (sess *cliSession) writeRequest(request pendingRequest) error {
 	return nil
 }
 
-func (sess *cliSession) send(ctx context.Context, streamID xrdproto.StreamID, responseChannel mux.DataRecvChan, header, body []byte, pathID xrdproto.PathID) ([]byte, *mux.Redirection, error) {
+func (sess *cliSession) send(ctx context.Context, streamID xrdproto.StreamID, responseChannel mux.DataRecvChan, header, body []byte, pathID xrdproto.PathID) ([]byte, *mux.Redirection, bool, error) {
 	if pathID == 0 {
 		header = append(header, body...)
 	}
@@ -400,33 +403,58 @@ func (sess *cliSession) send(ctx context.Context, streamID xrdproto.StreamID, re
 	sess.mu.Unlock()
 
 	if err := sess.writeRequest(request); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	var data []byte
+	var authMore bool
 
 	for {
 		select {
 		case resp, more := <-responseChannel:
 			if !more {
-				return data, nil, nil
+				return data, nil, authMore, nil
 			}
 
 			if resp.Err != nil {
-				return nil, resp.Redirection, resp.Err
+				return nil, resp.Redirection, false, resp.Err
 			}
 
 			if resp.Redirection != nil {
-				return nil, resp.Redirection, nil
+				return nil, resp.Redirection, false, nil
 			}
 
+			if resp.AuthMore {
+				authMore = true
+			}
 			data = append(data, resp.Data...)
 		case <-ctx.Done():
 			if err := ctx.Err(); err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
 		}
 	}
+}
+
+// authRound performs one round of a (possibly multi-round) authentication
+// exchange: it sends req and returns the server's response payload along with
+// whether the server asked for more (kXR_authmore). Auth requests are never
+// signed and never carry a separate data socket.
+func (sess *cliSession) authRound(ctx context.Context, req xrdproto.Request) (more bool, data []byte, err error) {
+	streamID, responseChannel, err := sess.mux.Claim()
+	if err != nil {
+		return false, nil, err
+	}
+	var wBuffer xrdenc.WBuffer
+	header := xrdproto.RequestHeader{StreamID: streamID, RequestID: req.ReqID()}
+	if err = header.MarshalXrd(&wBuffer); err != nil {
+		return false, nil, err
+	}
+	if err = req.MarshalXrd(&wBuffer); err != nil {
+		return false, nil, err
+	}
+	data, _, more, err = sess.send(ctx, streamID, responseChannel, wBuffer.Bytes(), nil, 0)
+	return more, data, err
 }
 
 // Send sends the request to the server and stores the response inside the resp.
@@ -469,7 +497,7 @@ func (sess *cliSession) Send(ctx context.Context, resp xrdproto.Response, req xr
 		}
 	}
 
-	data, redirection, err := sess.send(ctx, streamID, responseChannel, data, pathData, pathID)
+	data, redirection, _, err := sess.send(ctx, streamID, responseChannel, data, pathData, pathID)
 	if err != nil || redirection != nil || resp == nil {
 		return redirection, err
 	}

@@ -69,6 +69,11 @@ const (
 	Error ResponseStatus = 4003
 	// Redirect indicates that the client must re-issue the request to another server.
 	Redirect ResponseStatus = 4004
+	// AuthMore indicates that the server needs more information to complete
+	// authentication; the response data carries a challenge and the client
+	// must send a follow-up auth request. Used by multi-round mechanisms such
+	// as GSI.
+	AuthMore ResponseStatus = 4002
 	// Wait indicates that the client must wait the indicated number of seconds and retry the request.
 	Wait ResponseStatus = 4005
 	// Status indicates that the request was processed and the response is a

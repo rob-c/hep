@@ -47,3 +47,12 @@ type Auther interface {
 	Provider() string                          // Provider returns the name of the security provider.
 	Request(params []string) (*Request, error) // Request forms an authorization Request according to passed parameters.
 }
+
+// Continuer is an optional interface implemented by multi-round security
+// providers (such as GSI). After the initial Request, when the server responds
+// with kXR_authmore carrying challenge, More is called with that challenge and
+// returns the next request to send. It returns a nil request when the exchange
+// is complete.
+type Continuer interface {
+	More(challenge []byte) (*Request, error)
+}
