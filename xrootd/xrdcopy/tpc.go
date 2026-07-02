@@ -129,7 +129,18 @@ func TPC(ctx context.Context, dst, src string, opts Options) error {
 	df, err := dstClient.FS().Open(pullCtx, du.Path+"?"+dstOpaque, mode0644,
 		xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsOpenUpdate|xrdfs.OpenOptionsReturnStatus|xrdfs.OpenOptionsAsync)
 	if err != nil {
+		return fmt.Errorf("xrdcopy: TPC open failed: %w", err)
+	}
+	defer df.Close(ctx)
+
+	// The transfer is driven by sync on the destination: the first sync starts
+	// the copy job, the second waits for it to complete (its reply is deferred
+	// until the transfer finishes). See XrdOfsFile::sync / XrdOfsTPCJob::Sync.
+	if err := df.Sync(ctx); err != nil {
+		return fmt.Errorf("xrdcopy: TPC start failed: %w", err)
+	}
+	if err := df.Sync(pullCtx); err != nil {
 		return fmt.Errorf("xrdcopy: TPC transfer failed: %w", err)
 	}
-	return df.Close(ctx)
+	return nil
 }

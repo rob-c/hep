@@ -216,13 +216,6 @@ func TestIntegrationRealServer(t *testing.T) {
 	})
 
 	t.Run("copy-tpc", func(t *testing.T) {
-		// The native-TPC client is implemented per the stock protocol
-		// (placement/coordinator/puller opaque), but the destination pull does
-		// not yet complete against this pgm-model harness; keep the leg opt-in
-		// so the suite stays green while the rendezvous is debugged.
-		if os.Getenv("XROOTD_IT_TPC") != "1" {
-			t.Skip("set XROOTD_IT_TPC=1 to run the (experimental) native-TPC leg")
-		}
 		xrdcp := firstExisting("/usr/bin/xrdcp", "/usr/local/bin/xrdcp", "/bin/xrdcp")
 		if xrdcp == "" {
 			t.Skip("xrdcp not found for native TPC (pgm model)")

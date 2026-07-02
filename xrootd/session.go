@@ -6,6 +6,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -320,6 +321,12 @@ func (sess *cliSession) consume() {
 				// The response is deferred; the real one follows on this stream.
 				// Keep the stream open and do not deliver this placeholder.
 				continue
+			case xrdproto.Attn:
+				// An asynchronous attention response. If it wraps a delayed
+				// reply (kXR_asynresp) for another stream, unwrap and dispatch
+				// it there; otherwise ignore it.
+				sess.handleAttn(resp.Data)
+				continue
 			case xrdproto.Redirect:
 				resp.Redirection, resp.Err = mux.ParseRedirection(resp.Data)
 			case xrdproto.AuthMore:
@@ -364,6 +371,46 @@ func (sess *cliSession) readStatusTail(frame []byte) ([]byte, bool, error) {
 	}
 	partial := body.RespType == xrdproto.PartialResult || body.RespType == xrdproto.ProgressInfo
 	return frame, partial, nil
+}
+
+// handleAttn processes a kXR_attn attention response. When the body carries an
+// asynchronous delayed response (action code kXR_asynresp), it unwraps the
+// embedded response header + data and dispatches it to the target stream, as
+// if it had arrived normally. The body layout is: action(int32),
+// reserved(int32), then a ServerResponseHeader followed by that many data
+// bytes. Non-asynresp attentions are ignored.
+func (sess *cliSession) handleAttn(body []byte) {
+	const prefix = 8 // action(4) + reserved(4)
+	if len(body) < prefix+xrdproto.ResponseHeaderLength {
+		return
+	}
+	if int32(binary.BigEndian.Uint32(body[:4])) != xrdproto.AsyncResp {
+		return
+	}
+
+	var hdr xrdproto.ResponseHeader
+	if err := hdr.UnmarshalXrd(xrdenc.NewRBuffer(body[prefix : prefix+xrdproto.ResponseHeaderLength])); err != nil {
+		return
+	}
+	data := body[prefix+xrdproto.ResponseHeaderLength:]
+	if int(hdr.DataLength) <= len(data) {
+		data = data[:hdr.DataLength]
+	}
+
+	var resp mux.ServerResponse
+	switch hdr.Status {
+	case xrdproto.Error:
+		resp.Err = hdr.Error(data)
+	case xrdproto.Redirect:
+		resp.Redirection, resp.Err = mux.ParseRedirection(data)
+	default:
+		resp.Data = data
+	}
+	// Deliver to the waiting stream (ignore if none is registered).
+	_ = sess.mux.SendData(hdr.StreamID, resp)
+	if hdr.Status != xrdproto.OkSoFar {
+		sess.cleanupRequest(hdr.StreamID)
+	}
 }
 
 func (sess *cliSession) cleanupRequest(streamID xrdproto.StreamID) {

@@ -33,12 +33,13 @@ Verified legs:
 | `copy-engine` | PASS | `xrdcopy` downloads (with checksum verify), uploads, and reads back |
 | `copy-resume` | PASS | `xrdcopy` resumes a partial download to full content; no-ops a complete file |
 | `root-gsi` | PASS | the pure-Go GSI client completes the two-round handshake against a GSI-configured xrootd and reads a file end-to-end |
-| `copy-tpc` | opt-in | native TPC (`XROOTD_IT_TPC=1`); client follows the stock protocol but the pgm-model pull does not yet complete — see Phase 2 note |
+| `copy-tpc` | PASS | native third-party copy: the destination server pulls a file directly from the source (no bytes through the client), driven by the go-hep client |
 
 ## Phase 2 — copy engine (`xrootd/xrdcopy`)
 
 Working and verified: download, upload, local copy, recursive trees,
-post-transfer checksum verification, and **resumable transfers**.
+post-transfer checksum verification, **resumable transfers**, and native
+**third-party copy** (`copy-tpc` leg passes against real stock XRootD).
 
 Native **TPC** (`xrdcopy.TPC`) reproduces the stock client protocol as traced
 from `xrdcp --tpc` byte-for-byte: the placement open, the source coordinator
@@ -47,30 +48,29 @@ and the destination puller open (full `oss.asize`/`tpc.dlg`/`tpc.lfn`/… opaque
 mode 0644, `delete|open_updt|retstat|async`). The opaque is byte-identical to
 stock and the open flags map to the correct `kXR_*` bits.
 
-Investigation findings (from tracing stock `xrdcp` and reading the nginx-xrootd
-server's `src/tpc/parse.c` + `src/protocols/root/read/open_request.c`):
+The full working sequence (confirmed by reading the XRootD C++ sources under
+`/tmp/xrootd-src`, not guessing):
 
-- The server's TPC role is decided by `is_write && tpc.has_src` (destination
-  pull) and `!is_write && tpc.has_key` (source coordinator) — both of which the
-  go-hep opens satisfy, so the request logic is correct.
-- Against a real stock server with `ofs.trace all`, stock's TPC opens **do not
-  produce a regular `ofs_open`** (they are routed through the TPC path early),
-  whereas go-hep's identically-crafted open **does** hit the regular open path
-  and the TPC job never fires (the destination file arrives empty). So stock's
-  `XrdXrootd`/`XrdOfs` is not recognising the go-hep open as TPC.
-- Matching stock's login capabilities (`kXR_asyncap` in capver, plus the
-  `kXR_fullurl|kXR_readrdok|kXR_hasipv64` ability byte) did not change this and
-  was reverted (advertising async without full `kXR_attn` handling would be an
-  incomplete claim).
+1. Placement open on the source (`tpc.stage=placement`), then close.
+2. Source coordinator open (read, `tpc.dst`/`tpc.key`/`tpc.stage=copy`) — kept
+   open so the key registration stays live (`XrdOfsTPC::Authorize`).
+3. Destination puller open (write, full opaque) — `XrdOfsTPC::Validate` sets up
+   the copy job but does **not** run it.
+4. **Two syncs on the destination**: `XrdOfsFile::sync` calls
+   `XrdOfsTPCJob::Sync`, whose first call starts the copy (pgm `xrdcp`) and whose
+   second waits for completion.
+5. The completion reply is delivered **asynchronously**: the server sends a
+   `kXR_attn` response (action `kXR_asynresp`) wrapping the real reply for the
+   sync's stream (`XrdXrootdResponse` / `XrdXrootdTransit::Attn`). The go-hep
+   session now unwraps this and dispatches it to the waiting stream.
 
-The recognition difference is below the ofs/protocol trace level available here;
-pinning it down needs `sudo tcpdump` (unavailable) or a debug XRootD build with
-TPC-path logging. The harness `copy-tpc` leg is therefore opt-in
-(`XROOTD_IT_TPC=1`) and this is the outstanding item.
+Missing any one of these (the placement, the correct flags, the double-sync, or
+the async-response unwrap) leaves the destination file empty or the sync hung —
+which is exactly the sequence of dead ends this took to work through.
 
 Fixed along the way: a `mux.SendData` deadlock (a blocking channel send under
-the mutex froze the whole mux when a reader went away), and
-`kXR_authmore`/`kXR_waitresp` handling.
+the mutex froze the whole mux when a reader went away), plus
+`kXR_authmore`/`kXR_waitresp`/`kXR_attn` handling.
 
 Note on the x509 leg: it verifies mutual-TLS access (the client presents its
 X.509 user cert and the server certificate is CA-verified). Enforced x509 →
