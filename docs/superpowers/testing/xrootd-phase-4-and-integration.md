@@ -45,11 +45,27 @@ from `xrdcp --tpc` byte-for-byte: the placement open, the source coordinator
 open (`tpc.dst`/`tpc.key`/`tpc.stage=copy`, mode 0, `open_read|retstat|async`),
 and the destination puller open (full `oss.asize`/`tpc.dlg`/`tpc.lfn`/… opaque,
 mode 0644, `delete|open_updt|retstat|async`). The opaque is byte-identical to
-stock and the open flags map to the correct `kXR_*` bits. Despite this, the
-destination server does not fire its TPC job for the go-hep open (the file
-arrives empty) whereas the identical stock open does — the difference is below
-the ofs/protocol trace level captured so far (a wire-level detail of the open
-request or the login identity). The harness `copy-tpc` leg is therefore opt-in
+stock and the open flags map to the correct `kXR_*` bits.
+
+Investigation findings (from tracing stock `xrdcp` and reading the nginx-xrootd
+server's `src/tpc/parse.c` + `src/protocols/root/read/open_request.c`):
+
+- The server's TPC role is decided by `is_write && tpc.has_src` (destination
+  pull) and `!is_write && tpc.has_key` (source coordinator) — both of which the
+  go-hep opens satisfy, so the request logic is correct.
+- Against a real stock server with `ofs.trace all`, stock's TPC opens **do not
+  produce a regular `ofs_open`** (they are routed through the TPC path early),
+  whereas go-hep's identically-crafted open **does** hit the regular open path
+  and the TPC job never fires (the destination file arrives empty). So stock's
+  `XrdXrootd`/`XrdOfs` is not recognising the go-hep open as TPC.
+- Matching stock's login capabilities (`kXR_asyncap` in capver, plus the
+  `kXR_fullurl|kXR_readrdok|kXR_hasipv64` ability byte) did not change this and
+  was reverted (advertising async without full `kXR_attn` handling would be an
+  incomplete claim).
+
+The recognition difference is below the ofs/protocol trace level available here;
+pinning it down needs `sudo tcpdump` (unavailable) or a debug XRootD build with
+TPC-path logging. The harness `copy-tpc` leg is therefore opt-in
 (`XROOTD_IT_TPC=1`) and this is the outstanding item.
 
 Fixed along the way: a `mux.SendData` deadlock (a blocking channel send under
