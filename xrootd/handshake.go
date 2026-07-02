@@ -50,33 +50,3 @@ func (sess *cliSession) handshakeBootstrap(ctx context.Context) error {
 	sess.protocolVersion = result.ProtocolVersion
 	return nil
 }
-
-func (sess *cliSession) handshake(ctx context.Context) error {
-	streamID := xrdproto.StreamID{0, 0}
-	responseChannel, err := sess.mux.ClaimWithID(streamID)
-	if err != nil {
-		return err
-	}
-
-	req := handshake.NewRequest()
-	var wBuffer xrdenc.WBuffer
-	err = req.MarshalXrd(&wBuffer)
-	if err != nil {
-		return err
-	}
-
-	resp, _, _, err := sess.send(ctx, streamID, responseChannel, wBuffer.Bytes(), nil, 0)
-	// TODO: should we react somehow to redirection?
-	if err != nil {
-		return err
-	}
-
-	var result handshake.Response
-	if err = result.UnmarshalXrd(xrdenc.NewRBuffer(resp)); err != nil {
-		return err
-	}
-
-	sess.protocolVersion = result.ProtocolVersion
-
-	return nil
-}

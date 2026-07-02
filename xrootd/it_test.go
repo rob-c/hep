@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package xrootd
+package xrootd_test
 
 import (
 	"context"
@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"go-hep.org/x/hep/xrootd"
+	"go-hep.org/x/hep/xrootd/xrdcopy"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdhttp"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth/gsi"
@@ -76,7 +78,7 @@ func TestIntegrationRealServer(t *testing.T) {
 	t.Run("root-anon", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		c, err := NewClient(ctx, fmt.Sprintf("localhost:%d", rootPort), "gopher")
+		c, err := xrootd.NewClient(ctx, fmt.Sprintf("localhost:%d", rootPort), "gopher")
 		if err != nil {
 			t.Fatalf("NewClient: %v", err)
 		}
@@ -136,6 +138,54 @@ func TestIntegrationRealServer(t *testing.T) {
 		}
 	})
 
+	t.Run("copy-engine", func(t *testing.T) {
+		remote := fmt.Sprintf("root://localhost:%d//hello.txt", rootPort)
+
+		// Download with checksum verification.
+		local := filepath.Join(dir, "downloaded.txt")
+		if err := xrdcopy.Copy(context.Background(), local, remote, xrdcopy.Options{Verify: true}); err != nil {
+			t.Fatalf("download copy: %v", err)
+		}
+		got, err := os.ReadFile(local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != payload {
+			t.Fatalf("downloaded content mismatch: %q", got)
+		}
+
+		// Upload a new local file, then read it back through the client.
+		srcLocal := filepath.Join(dir, "toupload.txt")
+		const up = "uploaded via xrdcopy\n"
+		if err := os.WriteFile(srcLocal, []byte(up), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		remoteDst := fmt.Sprintf("root://localhost:%d//uploaded.txt", rootPort)
+		if err := xrdcopy.Copy(context.Background(), remoteDst, srcLocal, xrdcopy.Options{}); err != nil {
+			t.Fatalf("upload copy: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		c, err := xrootd.NewClient(ctx, fmt.Sprintf("localhost:%d", rootPort), "gopher")
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		defer c.Close()
+		f, err := c.FS().Open(ctx, "/uploaded.txt", xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
+		if err != nil {
+			t.Fatalf("open uploaded: %v", err)
+		}
+		defer f.Close(ctx)
+		buf := make([]byte, len(up))
+		if _, err := f.ReadAt(buf, 0); err != nil {
+			t.Fatalf("read uploaded: %v", err)
+		}
+		if string(buf) != up {
+			t.Fatalf("uploaded content mismatch: %q", buf)
+		}
+	})
+
 	t.Run("root-gsi", func(t *testing.T) {
 		secLib := firstExisting(
 			"/usr/lib64/libXrdSec-5.so", "/usr/lib/libXrdSec-5.so",
@@ -167,7 +217,7 @@ func TestIntegrationRealServer(t *testing.T) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		c, err := NewClient(ctx, fmt.Sprintf("localhost:%d", gsiPort), "gopher", WithAuth(gsiAuth))
+		c, err := xrootd.NewClient(ctx, fmt.Sprintf("localhost:%d", gsiPort), "gopher", xrootd.WithAuth(gsiAuth))
 		if err != nil {
 			t.Fatalf("NewClient with gsi: %v", err)
 		}
@@ -254,11 +304,12 @@ type xrootdParams struct {
 func writeXrootdConfig(t *testing.T, dir string, p xrootdParams) string {
 	t.Helper()
 	cfg := fmt.Sprintf(`all.role server
-all.export /
+all.export / r/w
 oss.localroot %[1]s
 all.adminpath %[2]s
 all.pidpath %[3]s
 xrd.port %[4]d
+xrootd.chksum max 2 adler32
 xrd.protocol XrdHttp:%[5]d %[6]s
 http.cert %[7]s
 http.key %[8]s
