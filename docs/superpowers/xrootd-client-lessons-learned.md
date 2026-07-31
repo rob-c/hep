@@ -129,6 +129,31 @@ always claims its stream *before* sending), so it must be dropped — not panic 
 session. This surfaced only once timed-out requests and deferred replies were in
 play.
 
+### 3.4 A response length is untrusted input, and a per-frame cap is not enough
+
+Every length on the wire is chosen by the peer and is read *before* any of the
+body is validated, so each one is an allocation the server gets to size. Two
+distinct bounds are needed, and neither substitutes for the other:
+
+- **Per frame.** The response header's `dlen` (and, for `kXR_status`, the body's
+  own trailing `dlen`) is refused above `xrdproto.MaxResponseLength` (64 MiB)
+  rather than passed to `make`. A negative `dlen` must be rejected explicitly —
+  the field is a *signed* 32-bit integer, so a peer can announce one.
+- **Per request.** A frame cap alone still lets a server answer with an endless
+  stream of individually-small `kXR_oksofar` frames; the accumulating loop grows
+  the heap until the process dies, and it never terminates. So a request that
+  knows how much it asked for states it (`xrdproto.ResponseLimiter`) and the
+  session stops accumulating past that: a read cannot legitimately return more
+  than its own length, and a `pgread` cannot exceed its length plus one CRC and
+  one status header per page.
+
+The bound applies to data-bearing statuses only. An error body is a *message*,
+and truncating one hides the very failure the caller needs to see.
+
+- **Check against nginx-xrootd:** `client/lib/brix_ops.h` / `brix.h`
+  (`DLEN_MAX`, `VEC_MAXSEGS`, `VEC_MAXBYTES`) — libxrdc applies the same bounds
+  before touching the wire.
+
 ---
 
 ## 4. Paged I/O, fattr, checksums
@@ -160,6 +185,59 @@ count prefix.
 
 - **Check against nginx-xrootd:** `client/lib/fattr.c` (the nvec/vvec builder and
   response decoder) — the header comment spells out the exact layout.
+
+### 4.4 `kXR_pgwrite` reports corrupt pages; it does not reject them
+
+The obvious reading of a checksum-error reply — "the write failed, return an
+error" — is wrong, and wrong in the dangerous direction. The server **stores
+every page it receives**, including the ones whose CRC-32C did not match, then
+names them in a checksum-error (CSE) trailer. Those pages are corrupt *on disk*
+until the client resends them. Treating the reply as a plain failure leaves the
+file silently damaged even though the caller saw an error and may well retry the
+whole write elsewhere.
+
+The recovery flow is therefore part of the write, not an optional extra:
+
+- The trailer is `cseCRC[4] dlFirst[2] dlLast[2]`, then one big-endian `int64`
+  file offset per corrupt page. It arrives as the `kXR_status` body's trailing
+  data, i.e. *after* the 8-byte offset info tail.
+- Each named page is retransmitted **on its own** (sliced at file-offset page
+  boundaries, so the first page of an unaligned request is short) with
+  `kXR_pgRetry` set in the request flags.
+- Retries are bounded (3). Corruption that survives three independent attempts
+  is not a transient wire error, and retrying forever converts a broken link
+  into a hang.
+- A page offset outside the request is refused rather than sliced — otherwise a
+  hostile server picks the client's memory to read.
+
+Only once every page is accepted may the write return success; that is what
+makes a successful `PgWriteAt` mean "intact on the server" rather than merely
+"delivered".
+
+- **Check against nginx-xrootd:** `client/lib/ops_file_pg.c`
+  (`pgwrite_handle_cse`) and the `kXR_pgRetry` flag definition.
+
+### 4.5 Not implemented: vector I/O (`kXR_readv` / `kXR_writev`)
+
+Scatter-gather I/O is a real parity gap against both libxrdc and XRootD.jl. Two
+facts are worth recording now so they are not rediscovered:
+
+- `kXR_writev`'s header `dlen` covers **only** the descriptor block (16 bytes
+  per segment; stock servers enforce `dlen % 16 == 0` and answer
+  `kXR_ArgInvalid: "Write vector is invalid"` otherwise). The concatenated
+  segment data streams *after* the frame. libxrdc counted the data inside `dlen`
+  — which only its own server accepted — until this was confirmed against stock
+  xrootd 5.8; it now sends the descriptors-only form.
+- A `kXR_readv` reply interleaves a 16-byte echo header (carrying the **actual**
+  length) with the data, per segment. A reply that decodes to fewer segments
+  than were requested is a *stopped* transfer, not a short one, and must fail
+  rather than hand back partial data.
+
+When it is implemented, the segment count and aggregate payload need the same
+bounds libxrdc applies before touching the wire (`VEC_MAXSEGS` = 1024,
+`VEC_MAXBYTES` = 256 MiB), and the reply needs a
+[`ResponseLimiter`](#34-a-response-length-is-untrusted-input-and-a-per-frame-cap-is-not-enough)
+bound of `16 × nsegs + Σ rlen`.
 
 ---
 
@@ -294,6 +372,37 @@ inbound frame with no waiter cannot be an awaited reply — so dropping it is
 correct. State this invariant explicitly; it justifies the whole unsolicited-frame
 policy (§3.3).
 
+### 7.4 Unclaiming a waiter is not "delete from a map"; it closes a channel a sender may hold
+
+The fix in §7.1 moved the blocking send out from under the mux lock, which left a
+second hazard behind it: `Unclaim` closes the waiter's channel, and the reader
+goroutine can be parked inside exactly that send. Closing a channel a sender still
+holds is not a race-detector nicety — it is `panic: send on closed channel`, and it
+takes the process down.
+
+The window opens whenever a caller *abandons* a request while frames for it are
+still arriving: a context deadline, a response the client refused on size grounds,
+a session close. Those are precisely the fail-closed paths, which is why the bug
+survived a green happy-path suite and surfaced the day fail-closed tests existed.
+
+The fix is a per-stream handshake rather than a bare close:
+
+- the waiter owns a `done` channel and a `sending` counter alongside its data channel;
+- `SendData` increments `sending` **under the same lock** that removes the waiter,
+  then selects over `ch <- data`, `<-done` and `<-quit`;
+- `Unclaim` deletes the waiter, closes `done` to release a parked sender, waits for
+  `sending` to drain, and only then closes the channel.
+
+Registering under the lock is what makes it airtight: an `Unclaim` racing a delivery
+either fails to find the waiter at all (nothing in flight) or is guaranteed to see
+the in-flight count.
+
+- **General lesson:** in a multiplexer, the *close* side of a channel handoff needs
+  as much care as the send side. "Who is allowed to close, and how do they know no
+  one is sending?" should have a written answer.
+- **Check against nginx-xrootd:** `reqmap_*`/`areq_*` teardown — how a cancelled or
+  timed-out request is retired while the reader thread may still be completing it.
+
 ---
 
 ## 8. Alternative protocols and API shape
@@ -319,9 +428,137 @@ The canonical-request / string-to-sign / signing-key chain is easy to get subtly
 wrong; keep it in one file with a known-answer test (the empty-payload SHA-256 is
 a free checkpoint), and defer byte-exact validation to a real S3/MinIO endpoint.
 
+### 8.4 HTTP-TPC returns 2xx on *acceptance*; the outcome is in the body
+
+This is the single most dangerous trap in the HTTP family. A WLCG `COPY` returns
+`200`/`202` as soon as the active endpoint has **accepted** the transfer. The
+transfer then runs, emitting a stream of performance markers, and finishes with a
+terminal line:
+
+```
+Perf Marker
+	Timestamp: 1700000000
+	Stripe Index: 0
+	Stripe Bytes Transferred: 1048576
+	Total Stripe Count: 1
+End
+failure: unable to open destination
+```
+
+A client that returns success on the status code alone silently turns every
+failed copy into a successful one. Three outcomes must be distinguished, not two:
+
+- a terminal `success:` line — the copy completed;
+- a terminal `failure: <reason>` line — the exchange succeeded and the *copy*
+  failed; this is a distinct error type (`TPCError`), not a transport error;
+- **the stream ending with neither** — the connection was cut mid-copy and the
+  true state is unknown. It must be its own error (`ErrTPCNoOutcome`), because
+  reporting it as either success or failure is a guess.
+
+Prefer **pull** (COPY to the destination with a `Source:` header) over push where
+both work: the endpoint doing the writing is the one that knows whether the write
+succeeded.
+
+The remote credential travels in `TransferHeaderAuthorization: Bearer <tok>`,
+which the active endpoint strips the prefix from and replays as `Authorization`
+against its peer; `Credential: none` tells it not to look for a delegated X.509
+proxy instead. The client's own `Authorization` header authenticates the *active*
+endpoint and is a different credential.
+
+### 8.5 A bearer token is sent unprompted, so its handling differs from native auth
+
+In the native protocol the server names the providers it accepts before the
+client offers anything. HTTP has no such round: the request carries the
+credential outright. Two consequences:
+
+- **Never send a bearer token to a cleartext `http://` endpoint.** Refuse at dial
+  time and make the caller pass an explicit override for tests. A token is a
+  credential anyone who observes it can replay.
+- **Ambient discovery must be opt-in.** The WLCG search order
+  (`$BEARER_TOKEN`, `$BEARER_TOKEN_FILE`, `$XDG_RUNTIME_DIR/bt_u<uid>`,
+  `/tmp/bt_u<uid>`) is right for native `ztn`, where the server asked; for HTTP
+  it means shipping whatever token is lying around to whatever host was dialled,
+  which has to be the caller's decision.
+
+Route every request through one `do` helper that attaches the credential, so it
+cannot be present on `GET` and forgotten on `PROPFIND` or `COPY`. That is a
+one-line invariant with a cheap test: drive every verb and assert the header.
+
+X.509 is the mirror image. `gsi` was implemented but never listed in the default
+provider chain, so an ambient `/tmp/x509up_u<uid>` proxy was never offered — an
+implementation the chain never reaches is indistinguishable from no
+implementation at all. Discovery there *is* appropriate, because the server names
+`gsi` first.
+
+### 8.6 Emulated filesystem semantics must be refused, not faked
+
+Mapping `xrdfs` onto HTTP/WebDAV leaves gaps. Each one is a decision:
+
+- **No random-access write.** A file opened for writing buffers and is uploaded
+  by a single `PUT` on sync/close. Document that a write is not durable until
+  close and that the close error must be checked.
+- **`DELETE` on a collection is recursive in WebDAV**, but `RemoveDir` in XRootD
+  removes an *empty* directory. Check emptiness first, or a typo deletes a tree.
+- **`MKCOL` on an existing collection answers `405`/`409`.** `MkdirAll` must
+  treat that as success, and only that.
+- **Truncate to non-zero, chmod, virtual-FS stat have no equivalent.** Return a
+  distinguishable `ErrNotSupported` — a method that silently does nothing is
+  worse than one that says it cannot.
+- **A collection may not answer `HEAD`.** Fall back to a `Depth: 0` PROPFIND
+  before concluding the path is absent.
+
+### 8.7 The URL scheme is the transport selector; dropping it downgrades silently
+
+`xrdio.Open` parsed the URL and then handed only `host:port` to the native
+client. Two bugs fell out of the same line: an `https://` URL was dialled as if
+it were `root://`, and — worse — a `roots://` URL lost its scheme and so
+connected **in cleartext**, because the TLS decision is derived from the scheme.
+Pass the whole URL to the dispatcher and let one place decide the transport.
+
 ---
 
 ## 9. Test harness and environment (unglamorous but load-bearing)
+
+### 9.1 Conformance testing: a strict server, an independent decoder, and a fail-closed half
+
+Permissive mocks answer whatever the client asks and prove very little. What earns
+confidence is a *conformance server* built on three rules:
+
+- **Decode independently of the code under test.** Request fields are sliced out of
+  the raw frame by byte offset and page CRCs are re-derived from `hash/crc32`, never
+  by calling the encoder being tested. Otherwise a test passes by agreeing with the
+  encoder's own bug — the two-oracle lesson of §1.2, applied inside one repository.
+- **Assert on stored bytes and the operation sequence, not on status codes.** A write
+  path is verified by reading back what the server actually holds, and the server
+  records every request id it saw so a test can assert on ordering (a `kXR_sync`
+  before a `kXR_close`) and on counts (an initial `kXR_pgwrite` plus *exactly one*
+  retry — no blind resend of the whole request).
+- **Record violations rather than answering wrongly.** The server keeps a list of
+  every framing rule the client broke and answers normally; the test fails on a
+  non-empty list. This catches breaches that a lenient reply would hide.
+
+The second half is **fail-closed** testing: drive the same server into one specific
+misbehaviour per case — over-answering, announcing a body past the response limit and
+hanging up behind the lie, stalling forever, corrupting a page CRC, cutting a page
+unit short, reporting a page corrupt forever — and assert the client fails with a
+*diagnosable* error rather than returning plausible bytes. Every serious bug found
+late in this work lived on a fail-closed path (§3.4, §4.4, §7.4); none of them were
+reachable from a happy-path test.
+
+Two habits make the suite trustworthy rather than decorative:
+
+- **Test the oracle.** A test that asserts "the strict server recorded no violation"
+  is worthless if the server cannot detect one. Include cases that feed it a wrong
+  file handle and a deliberately mis-CRC'd page and assert it *does* flag them.
+- **Prove non-vacuity by breaking the fix.** After each guard landed, stub it out and
+  confirm the suite goes red. The unbounded-accumulation guard, the pgwrite retry
+  loop and the unclaim handshake were each verified this way; the last one turned a
+  silent `WARNING: DATA RACE` into a reproducible `panic: send on closed channel`.
+
+Finally, **run the suite under `-race`.** The concurrency bug in §7.4 is invisible
+without it and fatal with it.
+
+### 9.2 Environment: the setup costs that masquerade as client bugs
 
 - **Reuse the grid PKI layout the server expects.** A Globus CA needs the OpenSSL
   hash-dir symlinks (`<subject_hash>.0`) and a signing-policy file, a host cert
@@ -353,12 +590,20 @@ it deliberately differs):
 
 - [ ] TLS negotiated between `kXR_protocol` and login; no silent cleartext
   downgrade (`client/lib/conn.c`, `tls.c`).
+- [ ] A cancelled or timed-out request is retired without the reader thread
+  completing into freed/closed state (§7.4) — `reqmap_*`/`areq_*` teardown.
 - [ ] `kXR_status` trailing data drained via the body's own `dlen`
   (`client/lib/ops_file_pg.c`).
 - [ ] `kXR_waitresp` handled; deferred completion delivered as
   `kXR_attn`/`kXR_asynresp` and unwrapped (`client/lib/aio*.c`; server
   `XrdXrootdResponse.cc`).
 - [ ] pg page framing aligned to file offsets; per-page CRC-32C.
+- [ ] Response lengths bounded per frame *and* per request; negative `dlen`
+  rejected (`client/lib/brix_ops.h`: `DLEN_MAX`, `VEC_MAXSEGS`,
+  `VEC_MAXBYTES`).
+- [ ] `kXR_pgwrite` CSE trailer parsed and each named page resent with
+  `kXR_pgRetry` under a bounded budget (`client/lib/ops_file_pg.c`:
+  `pgwrite_handle_cse`).
 - [ ] `crc64` = CRC-64/XZ; `crc32c` = Castagnoli; SSS CRC = IEEE.
 - [ ] `fattr` nvec/vvec endianness and the count-prefixed vs NUL-list responses.
 - [ ] `sss` blob byte layout and Blowfish-CFB64 zero-IV encoding
@@ -369,3 +614,10 @@ it deliberately differs):
   triggers the transfer; completion is async (`XrdOfs*`, `src/tpc/*`).
 - [ ] No blocking send under the dispatch lock; fixed stream IDs never collide on
   a shared mux (`client/lib/aio*.c`).
+- [ ] HTTP-TPC: the `COPY` body is parsed and a `failure:` line under a 2xx
+  status is an error; a body with no terminal line is neither success nor
+  failure (§8.4).
+- [ ] Bearer tokens are refused on cleartext `http://`, attached to *every*
+  verb, and never discovered implicitly (§8.5).
+- [ ] The URL scheme selects the transport at one place; `roots://` cannot lose
+  its TLS by being reduced to `host:port` (§8.7).
