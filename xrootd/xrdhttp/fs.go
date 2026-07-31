@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"net/http"
 	"path"
 	"strings"
@@ -72,7 +73,7 @@ func (fs *davFS) Stat(ctx context.Context, name string) (xrdfs.EntryStat, error)
 		if es, derr := fs.statViaPropfind(ctx, name); derr == nil {
 			return es, nil
 		}
-		return xrdfs.EntryStat{}, fmt.Errorf("xrdhttp: %q does not exist", name)
+		return xrdfs.EntryStat{}, fmt.Errorf("xrdhttp: %q: %w", name, iofs.ErrNotExist)
 	}
 	return xrdfs.EntryStat{
 		EntryName:   path.Base(name),
@@ -120,8 +121,11 @@ func (fs *davFS) Statx(ctx context.Context, paths []string) ([]xrdfs.StatFlags, 
 	return out, nil
 }
 
+// RemoveFile removes a file, reporting one that is not there. That is the
+// XRootD contract — kXR_rm answers kXR_NotFound — and it is why this does not
+// go through Client.Remove, which is deliberately idempotent.
 func (fs *davFS) RemoveFile(ctx context.Context, name string) error {
-	return fs.c.Remove(ctx, name)
+	return fs.c.remove(ctx, name)
 }
 
 // RemoveDir removes an empty collection. WebDAV DELETE on a collection is
@@ -134,11 +138,12 @@ func (fs *davFS) RemoveDir(ctx context.Context, name string) error {
 	if len(ents) != 0 {
 		return fmt.Errorf("xrdhttp: directory %q is not empty", name)
 	}
-	return fs.c.Remove(ctx, name)
+	return fs.c.remove(ctx, name)
 }
 
 // RemoveAll removes a path and everything under it. A WebDAV DELETE on a
-// collection is already recursive.
+// collection is already recursive. A path that is not there is not an error,
+// which is both what os.RemoveAll does and what the name promises.
 func (fs *davFS) RemoveAll(ctx context.Context, name string) error {
 	return fs.c.Remove(ctx, name)
 }
@@ -157,7 +162,7 @@ func (fs *davFS) MkdirAll(ctx context.Context, name string, perm xrdfs.OpenMode)
 		cur += "/" + part
 		// A component that already exists answers 405; that is not an error
 		// for MkdirAll.
-		if err := fs.c.mkcol(ctx, cur); err != nil && !errors.Is(err, errCollectionExists) {
+		if err := fs.c.mkcol(ctx, cur); err != nil && !errors.Is(err, iofs.ErrExist) {
 			return err
 		}
 	}
@@ -362,10 +367,6 @@ func (f *davFile) VerifyWriteAt(ctx context.Context, p []byte, off int64) error 
 
 // ---- WebDAV verbs used only by the filesystem view ----
 
-// errCollectionExists reports a MKCOL refused because the collection is
-// already there, which MkdirAll must tolerate.
-var errCollectionExists = errors.New("xrdhttp: collection already exists")
-
 func (c *Client) mkcol(ctx context.Context, name string) error {
 	req, err := http.NewRequestWithContext(ctx, "MKCOL", c.urlFor(name), nil)
 	if err != nil {
@@ -380,10 +381,11 @@ func (c *Client) mkcol(ctx context.Context, name string) error {
 	switch {
 	case resp.StatusCode/100 == 2:
 		return nil
-	case resp.StatusCode == http.StatusMethodNotAllowed, resp.StatusCode == http.StatusConflict:
-		return errCollectionExists
 	default:
-		return fmt.Errorf("xrdhttp: MKCOL %q: unexpected status %s", name, resp.Status)
+		// 405 is "it already exists" and 409 is "a parent does not",
+		// which StatusError tells apart; both are ordinary outcomes of
+		// creating a directory rather than transport failures.
+		return statusError("MKCOL", name, resp)
 	}
 }
 
@@ -401,7 +403,7 @@ func (c *Client) move(ctx context.Context, oldpath, newpath string) error {
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("xrdhttp: MOVE %q to %q: unexpected status %s", oldpath, newpath, resp.Status)
+		return fmt.Errorf("xrdhttp: MOVE to %q: %w", newpath, statusError("MOVE", oldpath, resp))
 	}
 	return nil
 }

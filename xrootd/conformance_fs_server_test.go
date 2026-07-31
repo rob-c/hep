@@ -484,7 +484,7 @@ func (fs *confFS) serveOpen(conn net.Conn, r confRequest) error {
 	write := opts&(confOpenDelete|confOpenNew|confOpenUpdate|confOpenAppend) != 0
 	switch n := fs.node(name); {
 	case n != nil && opts&confOpenNew != 0:
-		return confErr(conn, r.sid(), 3006, "already exists")
+		return confErr(conn, r.sid(), 3018, "already exists")
 	case n == nil && !write:
 		return confErr(conn, r.sid(), 3011, "no such file")
 	case n == nil, opts&confOpenDelete != 0:
@@ -593,7 +593,7 @@ func (fs *confFS) serveMkdir(conn net.Conn, r confRequest) error {
 		fs.flag("kXR_mkdir: mode %#o has bits outside the permission mask", mode)
 	}
 	if fs.node(name) != nil {
-		return confErr(conn, r.sid(), 3006, "already exists")
+		return confErr(conn, r.sid(), 3018, "already exists")
 	}
 	if fs.node(path.Dir(name)) == nil {
 		// kXR_mkpath is what makes the missing parents legal; without it the

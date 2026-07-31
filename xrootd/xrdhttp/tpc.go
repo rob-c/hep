@@ -113,7 +113,7 @@ func (c *Client) tpc(ctx context.Context, name, remoteHdr, remoteURL string, opt
 
 	if resp.StatusCode/100 != 2 {
 		io.Copy(io.Discard, resp.Body)
-		return fmt.Errorf("xrdhttp: COPY %q: unexpected status %s", name, resp.Status)
+		return statusError("COPY", name, resp)
 	}
 
 	// A 2xx here means the endpoint ACCEPTED the copy, not that it completed:

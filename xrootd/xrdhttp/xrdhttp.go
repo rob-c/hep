@@ -13,8 +13,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"net/http"
 	"net/url"
 	"time"
@@ -158,7 +160,7 @@ func (c *Client) Stat(ctx context.Context, name string) (FileInfo, error) {
 		return FileInfo{Name: name, Exists: false}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return FileInfo{}, fmt.Errorf("xrdhttp: HEAD %q: unexpected status %s", name, resp.Status)
+		return FileInfo{}, statusError(http.MethodHead, name, resp)
 	}
 
 	fi := FileInfo{Name: name, Size: resp.ContentLength, Exists: true}
@@ -182,7 +184,7 @@ func (c *Client) ReadAll(ctx context.Context, name string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("xrdhttp: GET %q: unexpected status %s", name, resp.Status)
+		return nil, statusError(http.MethodGet, name, resp)
 	}
 	return io.ReadAll(resp.Body)
 }
@@ -225,7 +227,7 @@ func (c *Client) ReadAt(ctx context.Context, p []byte, name string, off int64) (
 	case http.StatusRequestedRangeNotSatisfiable:
 		return 0, io.EOF
 	default:
-		return 0, fmt.Errorf("xrdhttp: GET %q range: unexpected status %s", name, resp.Status)
+		return 0, statusError(http.MethodGet, name, resp)
 	}
 	n, err := io.ReadFull(body, p)
 	if err == io.ErrUnexpectedEOF || (err == nil && n < len(p)) {
@@ -251,13 +253,26 @@ func (c *Client) Create(ctx context.Context, name string, r io.Reader, size int6
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("xrdhttp: PUT %q: unexpected status %s", name, resp.Status)
+		return statusError(http.MethodPut, name, resp)
 	}
 	return nil
 }
 
-// Remove deletes the named path with an HTTP DELETE.
+// Remove deletes the named path with an HTTP DELETE. Deleting a path that is
+// not there is a success: the postcondition the caller asked for already holds.
 func (c *Client) Remove(ctx context.Context, name string) error {
+	err := c.remove(ctx, name)
+	if errors.Is(err, iofs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// remove is the DELETE itself, and unlike Remove it reports a path that was not
+// there. The filesystem view needs that case: XRootD's kXR_rm answers a missing
+// file with kXR_NotFound, and a caller that moves from root:// to https:// must
+// not silently stop being told.
+func (c *Client) remove(ctx context.Context, name string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.urlFor(name), nil)
 	if err != nil {
 		return err
@@ -268,8 +283,8 @@ func (c *Client) Remove(ctx context.Context, name string) error {
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode/100 != 2 && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("xrdhttp: DELETE %q: unexpected status %s", name, resp.Status)
+	if resp.StatusCode/100 != 2 {
+		return statusError(http.MethodDelete, name, resp)
 	}
 	return nil
 }
