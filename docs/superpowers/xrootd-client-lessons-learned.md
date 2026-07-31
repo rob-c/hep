@@ -558,7 +558,47 @@ Two habits make the suite trustworthy rather than decorative:
 Finally, **run the suite under `-race`.** The concurrency bug in §7.4 is invisible
 without it and fatal with it.
 
-### 9.2 Environment: the setup costs that masquerade as client bugs
+### 9.2 The namespace surface needs its own conformance server
+
+Data I/O is where the interesting framing lives, so it is where a conformance
+server gets built first — and then the *namespace* requests (dirlist, open,
+stat, statx, mkdir, mv, chmod, rm, rmdir, truncate, fattr, query, ping) keep
+being tested with permissive mocks that echo whatever the encoder produced.
+They deserve the same three rules, and applying them turns up a different class
+of rule to check:
+
+- **A field the client does not own.** Most of these requests are 16 bytes of
+  parameters of which 11–16 are reserved. A strict server rejects a non-zero
+  reserved byte, which is the only way to catch an encoder that writes an option
+  into the wrong offset and happens to be ignored by the server you tested
+  against. Blanking `wBuffer.Next(16)` down to `Next(15)` plus a stray byte is
+  the cheapest way to confirm the check is live.
+- **Requests where one field decides how another is read.** `kXR_mv` puts both
+  paths in one blob and separates them by a length the client computes; `kXR_stat`
+  and `kXR_truncate` each take *either* a path *or* a file handle and a server has
+  no rule for choosing when both arrive; `kXR_fattr` nests `[rc u16][name\0]` and
+  `[vlen i32][value]` vectors behind a NUL-terminated path. Each of these is a
+  place where a client can be self-consistently wrong.
+- **Option bits that change the meaning of success.** `kXR_mkpath` is the only
+  thing separating `Mkdir` from `MkdirAll`, so a client that always sets it
+  silently deepens the namespace instead of failing. The server has to refuse the
+  missing parent for the test to have anything to observe.
+- **Replies that are well-framed but not well-formed.** A directory listing with
+  stat info pairs its lines, a stat body has four fields, a checksum reply has
+  exactly two. Answering `kXR_ok` with a body that breaks one of those is a
+  distinct failure mode from a short read, and it needs its own knob — replace the
+  reply body — rather than the truncate-and-hang-up knob used for framing.
+- **Per-attribute status codes are not request status.** `kXR_fattr` reports a
+  missing attribute as `kXR_ok` carrying a non-zero `rc` inside the body. A client
+  that only checks the response status returns an empty value for an attribute
+  that does not exist.
+
+Assert on the sequence too where the operation has no request of its own:
+`RemoveAll` is a walk made of stat, dirlist and removals, and the only thing
+proving it is bottom-up is that every `kXR_rmdir` lands after the removals of
+that directory's members.
+
+### 9.3 Environment: the setup costs that masquerade as client bugs
 
 - **Reuse the grid PKI layout the server expects.** A Globus CA needs the OpenSSL
   hash-dir symlinks (`<subject_hash>.0`) and a signing-policy file, a host cert
