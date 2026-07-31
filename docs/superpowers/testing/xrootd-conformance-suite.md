@@ -48,6 +48,28 @@ namespace suite) check the oracle itself, so `srv.check(t)` cannot pass vacuousl
 | `xrootd/fshandler_test.go` | The in-process server's handler, including `TestHandler_OpenGrantsWriteAccess`: an option set that creates, truncates or appends must yield a writable descriptor even when `kXR_open_updt` is absent. |
 | `xrootd/cmd/xrd-ls/main_test.go` | The listing command offline: file, directory, `-l`, `-R`, and the three ways it can fail. Captures `os.Stdout` through a pipe. |
 | `xrootd/cmd/xrd-cp/main_test.go` | The copy command offline: a file, a tree with and without `-r`, and failures. (The pre-existing benchmarks and `TestXrdCp` still use public remote servers.) |
+| `xrootd/xrdio/conformance_openfrom_test.go` | `OpenFrom`, which borrows a filesystem handle instead of dialling one: reading through it, the borrowed session surviving the file's `Close`, a missing file reported at open, and `Write`/`WriteAt` refused on the read-only handle it returns. |
+| `xrootd/xrdcopy/conformance_identity_test.go` | Who the copy logs in as (option, then URL, then `$USER`, then `nobody`) and when it declares a transfer corrupt: silent for a server with no checksum, a refused query or an algorithm this client cannot compute, and failing only on a real digest mismatch. |
+| `xrootd/xrdfs/conformance_compression_test.go` | `FileCompression` on the wire: eight bytes, big-endian page size then a fixed four-byte algorithm name, and a short buffer reported rather than half-decoded. It shares the `kXR_open` response area with the file handle. |
+| `xrootd/xrdsum/conformance_test.go` | That `Supported()` and `Sum()` agree in both directions, and that digests are fixed-width lower-case hex — XRootD compares checksums as strings, so a dropped leading zero fails to match the server that produced it. |
+| `xrootd/conformance_client_options_test.go` | The client's security posture before it connects: the default providers registered under their protocol names, `WithAuth` adding and replacing by name, `WithTLS`/`WithInsecureTLS`/`WithTLSConfig` composing, and the effective TLS config naming the dialled host while leaving the caller's own config untouched. |
+
+## HTTP data access
+
+The HTTP transports are the same client surface reached over a different
+protocol, so they get the same treatment: an in-memory WebDAV server
+(`xrdhttp/fs_test.go`) plays the oracle, and the tests assert on the requests
+that arrived, not only on the values that came back.
+
+| File | Covers |
+|------|--------|
+| `xrootd/xrdhttp/fs_test.go` | The `xrdfs.FileSystem` view over WebDAV: the write/read round trip, an update starting from the existing content, the namespace surface, statx and missing files, truncate, and the operations HTTP cannot support — plus the in-memory DAV server the rest of the package is tested against. |
+| `xrootd/xrdhttp/webdav_test.go` | The PROPFIND parser, and `hrefPath` in `conformance_file_test.go`: servers answer with an absolute URL or a bare path, and a listing that fails to reduce them lists the collection as one of its own members. |
+| `xrootd/xrdhttp/conformance_file_test.go` | The file surface and the client options. A positional read is a ranged GET and not a download; a short read reports `io.EOF`; a buffered write reads back without touching the network; `Sync` uploads and a following `Close` does not upload again; `Truncate` grows and shrinks; a read-only file refuses writes; `Stat` refreshes `Info`; `CloseVerify` can fail. `RemoveDir` refuses a non-empty collection where `RemoveAll` does not. `WithTimeout` bounds a stalled server, and the TLS options decide who is trusted — including that the default trusts nobody it has no reason to. |
+| `xrootd/xrdhttp/mtls_test.go` | The x509 access path: a client certificate presented to a server that demands one, and the subject the server sees. |
+| `xrootd/xrdhttp/auth_test.go` | Bearer tokens, including the refusal to send one to a cleartext endpoint. |
+| `xrootd/xrdhttp/tpc_test.go` | Third-party copy over HTTP: the push handshake, the `TransferHeader` credentials, and a failure announced in the body of a 2xx response. |
+| `xrootd/xrds3/conformance_test.go` | The part of a SigV4 signature nobody can see: the canonical query string is sorted by name, then by value, and percent-encoded — it is hashed, not sent, so a disagreement surfaces only as a signature mismatch. Plus `WithRegion` reaching the credential scope and `WithHTTPClient` being what the request actually goes through. |
 
 ## What is still network-bound
 
@@ -67,5 +89,8 @@ the offline coverage for those surfaces — the conformance suites above are.
   server; `net.Pipe` harnesses cannot dial.
 - A new constant is transcribed from the specification into
   `conformance_constants_test.go`, not copied from the declaration it checks.
+- A new client option is tested for what it *changes*, at the place the change
+  is used — the effective TLS config, the provider map, the request that
+  arrived — not for the field it happens to set.
 - Keep the round-trip count in mind: sweep realistic sizes over a large fixture
   and pathological ones over a small fixture.
