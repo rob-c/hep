@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"time"
 
@@ -351,6 +352,37 @@ func Opaque(path string) string {
 		return ""
 	}
 	return path[pos+1:]
+}
+
+// SplitPath splits a path field into the file name and the opaque data (CGI)
+// that travels with it. The split is at the first "?", which is where a server
+// splits: everything past it is handed to the authorization layer unparsed, so
+// a "?" inside a token value belongs to the token rather than opening a further
+// field.
+//
+// This is not the same split as Opaque and SetOpaque, which read and replace
+// the last "?"-delimited field of a path — the convention the redirect handling
+// works to.
+func SplitPath(p string) (name, opaque string) {
+	name, opaque, _ = strings.Cut(p, "?")
+	return name, opaque
+}
+
+// JoinPath returns the child of dir named name, carrying over the opaque data
+// dir travels with.
+//
+// A client that walks a remote tree builds the name of a child from the name of
+// its parent, and joining onto a path that carries opaque data yields
+// "/dir?authz=t/child": a name no server holds, addressed with a token no
+// server can parse. Every level of a walk has to be authorized on its own, so
+// the opaque data is carried to the child rather than left behind.
+func JoinPath(dir, name string) string {
+	d, opaque := SplitPath(dir)
+	p := path.Join(d, name)
+	if opaque == "" {
+		return p
+	}
+	return p + "?" + opaque
 }
 
 // ReadRequest reads a XRootD request from r.

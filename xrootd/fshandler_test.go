@@ -1113,3 +1113,87 @@ func TestHandler_Ping(t *testing.T) {
 		t.Fatalf("could not call Ping: %v", err)
 	}
 }
+
+// TestHandler_OpaqueIsNotPartOfTheName covers the other half of the path field:
+// the opaque data (CGI) a request carries. A server splits it off at the first
+// "?" and hands it to its authorization layer — it is how a token reaches an
+// endpoint — so "/f?authz=t" and "/f" name the same file. A handler that joins
+// the whole field onto its base path can only serve a client that sends no
+// token at all, which is every client until one is configured with one.
+func TestHandler_OpaqueIsNotPartOfTheName(t *testing.T) {
+	const token = "?authz=tok&xrd.wantprot=unix"
+
+	srv, addr, baseDir, err := createServer(func(err error) { t.Error(err) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(baseDir)
+	defer func() { _ = srv.Shutdown(context.Background()) }()
+
+	if err := os.WriteFile(path.Join(baseDir, "f.txt"), []byte("payload"), 0644); err != nil {
+		t.Fatalf("could not create the test file: %v", err)
+	}
+
+	cli, err := createClient(addr)
+	if err != nil {
+		t.Fatalf("could not create client: %v", err)
+	}
+	defer cli.Close()
+
+	ctx := context.Background()
+	fs := cli.FS()
+
+	st, err := fs.Stat(ctx, "/f.txt"+token)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got, want := st.EntrySize, int64(len("payload")); got != want {
+		t.Errorf("Stat reported %d bytes, want %d", got, want)
+	}
+
+	ents, err := fs.Dirlist(ctx, "/"+token)
+	if err != nil {
+		t.Fatalf("Dirlist: %v", err)
+	}
+	if len(ents) != 1 || ents[0].Name() != "f.txt" {
+		t.Errorf("Dirlist returned %v, want just f.txt", ents)
+	}
+
+	mode := xrdfs.OpenModeOwnerRead | xrdfs.OpenModeOwnerWrite
+	f, err := fs.Open(ctx, "/f.txt"+token, mode, xrdfs.OpenOptionsOpenRead)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	buf := make([]byte, len("payload"))
+	if _, err := f.ReadAt(buf, 0); err != nil {
+		t.Fatalf("ReadAt: %v", err)
+	}
+	if got := string(buf); got != "payload" {
+		t.Errorf("read %q, want %q", got, "payload")
+	}
+	if err := f.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if err := fs.Mkdir(ctx, "/d"+token, mode|xrdfs.OpenModeOwnerExecute); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := fs.Rename(ctx, "/f.txt"+token, "/d/g.txt"+token); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if err := fs.RemoveFile(ctx, "/d/g.txt"+token); err != nil {
+		t.Fatalf("RemoveFile: %v", err)
+	}
+	if err := fs.RemoveDir(ctx, "/d"+token); err != nil {
+		t.Fatalf("RemoveDir: %v", err)
+	}
+
+	// Nothing may have been created under a name carrying the CGI.
+	left, err := os.ReadDir(baseDir)
+	if err != nil {
+		t.Fatalf("could not read the base directory: %v", err)
+	}
+	for _, e := range left {
+		t.Errorf("the server was left holding %q", e.Name())
+	}
+}

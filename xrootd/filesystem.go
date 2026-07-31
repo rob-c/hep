@@ -7,10 +7,10 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 import (
 	"context"
 	"fmt"
-	stdpath "path"
 	"strings"
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
+	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
@@ -126,7 +126,7 @@ func (fs *fileSystem) RemoveAll(ctx context.Context, path string) error {
 			return err
 		}
 		for _, e := range entries {
-			name := stdpath.Join(path, e.Name())
+			name := xrdproto.JoinPath(path, e.Name())
 			err := fs.RemoveAll(ctx, name)
 			if err != nil {
 				return err

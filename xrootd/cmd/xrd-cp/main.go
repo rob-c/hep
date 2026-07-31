@@ -36,7 +36,16 @@ import (
 	"go-hep.org/x/hep/xrootd"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdio"
+	"go-hep.org/x/hep/xrootd/xrdproto"
 )
+
+// localName is the name a remote path copies to on disk: its base name with the
+// opaque data left behind, so an authorization token does not end up as part of
+// a file name.
+func localName(src string) string {
+	name, _ := xrdproto.SplitPath(src)
+	return stdpath.Base(name)
+}
 
 func init() {
 	flag.Usage = func() {
@@ -118,7 +127,7 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 			if !recursive {
 				return fmt.Errorf("xrd-cp: -r not specified; omitting directory %q", src)
 			}
-			dst := stdpath.Join(root, stdpath.Base(src))
+			dst := stdpath.Join(root, localName(src))
 			err = os.MkdirAll(dst, 0755)
 			if err != nil {
 				return fmt.Errorf("could not create output directory: %w", err)
@@ -129,7 +138,7 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 				return fmt.Errorf("could not list directory: %w", err)
 			}
 			for _, e := range ents {
-				err = addDir(dst, stdpath.Join(src, e.Name()))
+				err = addDir(dst, xrdproto.JoinPath(src, e.Name()))
 				if err != nil {
 					return err
 				}
@@ -138,7 +147,7 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 			jobs.add(job{
 				fs:  fs,
 				src: src,
-				dst: stdpath.Join(root, stdpath.Base(src)),
+				dst: stdpath.Join(root, localName(src)),
 			})
 		}
 		return nil
@@ -163,7 +172,7 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 				return fmt.Errorf("could not list directory: %w", err)
 			}
 			for _, e := range ents {
-				err = addDir(dst, stdpath.Join(src, e.Name()))
+				err = addDir(dst, xrdproto.JoinPath(src, e.Name()))
 				if err != nil {
 					return err
 				}
@@ -185,7 +194,7 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 		case errDst != nil:
 			return fmt.Errorf("could not stat local dst: %w", errDst)
 		case fiDst.IsDir():
-			dst = stdpath.Join(dst, stdpath.Base(src))
+			dst = stdpath.Join(dst, localName(src))
 		}
 
 		jobs.add(job{
@@ -228,7 +237,7 @@ func (j job) run(ctx context.Context) (int, error) {
 	case "-", "":
 		o = os.Stdout
 	case ".":
-		j.dst = stdpath.Base(j.src)
+		j.dst = localName(j.src)
 		fallthrough
 	default:
 		o, err = os.Create(j.dst)

@@ -429,6 +429,29 @@ the in-flight count.
 - **Check against nginx-xrootd:** `reqmap_*`/`areq_*` teardown — how a cancelled or
   timed-out request is retired while the reader thread may still be completing it.
 
+### 7.5 A connection that goes away must fail its waiters, not the process
+
+The read loop's error path had two branches: a secondary session redirects its
+requests back to the initial one, and the initial session — which has nowhere to
+redirect to, since every other session is reached through it — **panicked**. A
+server closing its end of a socket is routine: an idle timeout, a restart, a
+network blip. Any of them took the caller's program down with it.
+
+The right answer is the one the caller can act on: answer every request still
+waiting on that session with an error naming the connection, then close it.
+Closing alone would release the waiters too, but with the multiplexer's own
+"close was called before the response was fully received" — which describes the
+client's own bookkeeping rather than what happened to the connection.
+
+Three things have to hold together, and each was its own test: a request in
+flight gets an error (not a hang, not a panic), a request issued *after* the
+loss is refused rather than parked, and an open file fails with the connection
+that carried it. A silent server — one that neither answers nor hangs up — is a
+fourth case, and only the caller's context can end it.
+
+- **Check against nginx-xrootd:** `client/lib/conn.c` teardown on read error, and
+  whether every outstanding `areq_*` is completed with an error.
+
 ---
 
 ## 8. Alternative protocols and API shape
@@ -543,6 +566,41 @@ Pass the whole URL to the dispatcher and let one place decide the transport.
 
 ---
 
+### 8.8 Opaque data is a credential attached to a path, not part of the name
+
+Everything past the *first* `?` in a path field is opaque data (CGI): the server
+splits it off and hands it to its authorization layer unparsed. That is how a
+bearer token or a TPC key reaches an endpoint, and it means the namespace the
+server addresses is the name alone.
+
+A client that treats the whole field as a name breaks in ways no status code
+reports. `path.Join("/dir?authz=t", "child")` yields `/dir?authz=t/child` — a
+name no server holds, addressed with a token no server can parse — and because
+the server strips the CGI back to `/dir`, a recursive walk over it never
+terminates: `RemoveAll` looped forever. The same join produced local files
+called `a.txt?authz=tok` in `xrd-cp`. Every level of a walk has to be authorized
+on its own, so the opaque data is *carried to the child*, not left behind:
+`xrdproto.JoinPath` joins the names and re-attaches the CGI, and
+`xrdproto.SplitPath` is the split a server performs.
+
+Two details are easy to get backwards. The split is at the **first** `?`, not
+the last — a `?` inside a token value belongs to the token. But
+`xrdproto.Opaque`/`SetOpaque`, which the redirect handling works to, read and
+replace the **last** `?`-delimited field; they are a different operation and
+keep their own semantics. And a path that carries no opaque data must arrive
+with none: a client that appends a bare `?` has invented a field.
+
+The server side is the mirror image. The in-process `fshandler` joined the whole
+path field onto its base path, so it could serve a client that authenticates
+nothing and no one else; it now maps a request through `SplitPath` first, which
+is what makes the token conformance tests meaningful at all.
+
+- **Check against nginx-xrootd:** `test_opaque_strict.py`, `test_conf_paths.py`
+  and `test_evil_paths.py` — where the CGI is split off and what the namespace
+  layer is handed.
+
+---
+
 ## 9. Test harness and environment (unglamorous but load-bearing)
 
 ### 9.1 Conformance testing: a strict server, an independent decoder, and a fail-closed half
@@ -570,6 +628,14 @@ unit short, reporting a page corrupt forever — and assert the client fails wit
 *diagnosable* error rather than returning plausible bytes. Every serious bug found
 late in this work lived on a fail-closed path (§3.4, §4.4, §7.4); none of them were
 reachable from a happy-path test.
+
+A third rule applies to the numbers rather than the behaviour: **transcribe
+constants from the specification**, in a test that does not read them back from
+the declaration it checks. A round-trip test cannot catch a mistyped request
+code or a flag bit read from its neighbour — both ends of the round trip use the
+same constant, so both ends agree and the wire is wrong in the same way. This is
+the only place in the suite that compares the implementation against the
+document instead of against itself.
 
 Two habits make the suite trustworthy rather than decorative:
 
@@ -788,3 +854,11 @@ it deliberately differs):
   count chosen by the server, so cap it client-side (§3.2).
 - [ ] A create/truncate/append open grants write access server-side, and an
   append open does not write through a positional call (§9.6).
+- [ ] Opaque data is split off at the *first* `?`, is never part of the name a
+  server addresses, and is carried onto every child of a walk; a path with none
+  arrives with no `?` at all (§8.8).
+- [ ] A server that hangs up, goes silent or half-writes a reply fails every
+  request waiting on that connection with an error that names it — in flight,
+  issued afterwards, or holding an open file (§7.5).
+- [ ] Protocol constants are transcribed from the specification in a test, not
+  only round-tripped through the code that defines them (§9.1).

@@ -65,9 +65,21 @@ func NewFSHandler(basePath string) Handler {
 	}
 }
 
+// realPath maps the path field of a request onto the backing filesystem.
+//
+// The opaque data a path carries is not part of the name: a server splits it
+// off and hands it to its authorization layer unparsed. A file whose request
+// arrived with a token is therefore the same file as one whose request did
+// not, and a handler that joins the whole field onto its base path serves a
+// client that authenticates nothing and no one else.
+func (h *fshandler) realPath(p string) string {
+	name, _ := xrdproto.SplitPath(p)
+	return path.Join(h.basePath, name)
+}
+
 // Dirlist implements server.Handler.Dirlist.
 func (h *fshandler) Dirlist(sessionID [16]byte, request *dirlist.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
-	files, err := os.ReadDir(path.Join(h.basePath, request.Path))
+	files, err := os.ReadDir(h.realPath(request.Path))
 	if err != nil {
 		return xrdproto.ServerError{
 			Code:    xrdproto.IOError,
@@ -125,7 +137,7 @@ func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Ma
 		}
 	}
 
-	filePath := path.Join(h.basePath, request.Path)
+	filePath := h.realPath(request.Path)
 	if request.Options&xrdfs.OpenOptionsMkPath != 0 {
 		if err := os.MkdirAll(path.Dir(filePath), os.FileMode(request.Mode)); err != nil {
 			return xrdproto.ServerError{
@@ -318,7 +330,7 @@ func (h *fshandler) Stat(sessionID [16]byte, request *stat.Request) (xrdproto.Ma
 		}
 		fi, err = file.Stat()
 	} else {
-		fi, err = os.Stat(path.Join(h.basePath, request.Path))
+		fi, err = os.Stat(h.realPath(request.Path))
 	}
 
 	if err != nil {
@@ -344,7 +356,7 @@ func (h *fshandler) Truncate(sessionID [16]byte, request *truncate.Request) (xrd
 		}
 		err = file.Truncate(request.Size)
 	} else {
-		err = os.Truncate(path.Join(h.basePath, request.Path), request.Size)
+		err = os.Truncate(h.realPath(request.Path), request.Size)
 	}
 
 	if err != nil {
@@ -379,7 +391,7 @@ func (h *fshandler) Sync(sessionID [16]byte, request *xrdsync.Request) (xrdproto
 
 // Rename implements server.Handler.Rename.
 func (h *fshandler) Rename(sessionID [16]byte, request *mv.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
-	if err := os.Rename(path.Join(h.basePath, request.OldPath), path.Join(h.basePath, request.NewPath)); err != nil {
+	if err := os.Rename(h.realPath(request.OldPath), h.realPath(request.NewPath)); err != nil {
 		return xrdproto.ServerError{
 			Code:    xrdproto.IOError,
 			Message: fmt.Sprintf("An IO error occurred: %v", err),
@@ -396,7 +408,7 @@ func (h *fshandler) Mkdir(sessionID [16]byte, request *mkdir.Request) (xrdproto.
 		mkdirFunc = os.MkdirAll
 	}
 
-	if err := mkdirFunc(path.Join(h.basePath, request.Path), os.FileMode(request.Mode)); err != nil {
+	if err := mkdirFunc(h.realPath(request.Path), os.FileMode(request.Mode)); err != nil {
 		return xrdproto.ServerError{
 			Code:    xrdproto.IOError,
 			Message: fmt.Sprintf("An IO error occurred: %v", err),
@@ -407,7 +419,7 @@ func (h *fshandler) Mkdir(sessionID [16]byte, request *mkdir.Request) (xrdproto.
 
 // Remove implements server.Handler.Remove.
 func (h *fshandler) Remove(sessionID [16]byte, request *rm.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
-	if err := os.Remove(path.Join(h.basePath, request.Path)); err != nil {
+	if err := os.Remove(h.realPath(request.Path)); err != nil {
 		return xrdproto.ServerError{
 			Code:    xrdproto.IOError,
 			Message: fmt.Sprintf("An IO error occurred: %v", err),
@@ -418,7 +430,7 @@ func (h *fshandler) Remove(sessionID [16]byte, request *rm.Request) (xrdproto.Ma
 
 // RemoveDir implements server.Handler.RemoveDir.
 func (h *fshandler) RemoveDir(sessionID [16]byte, request *rmdir.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
-	if err := os.Remove(path.Join(h.basePath, request.Path)); err != nil {
+	if err := os.Remove(h.realPath(request.Path)); err != nil {
 		return xrdproto.ServerError{
 			Code:    xrdproto.IOError,
 			Message: fmt.Sprintf("An IO error occurred: %v", err),

@@ -387,3 +387,53 @@ func TestSetOpaque(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitPath(t *testing.T) {
+	for _, tc := range []struct {
+		path   string
+		name   string
+		opaque string
+	}{
+		{"", "", ""},
+		{"/f", "/f", ""},
+		{"/f?", "/f", ""},
+		{"/f?authz=t", "/f", "authz=t"},
+		{"/f?authz=t&x=1", "/f", "authz=t&x=1"},
+		// The split is at the first "?": what follows is one opaque blob the
+		// server hands on unparsed, so a "?" inside a token stays in the token.
+		{"/f?authz=a?b", "/f", "authz=a?b"},
+		{"?authz=t", "", "authz=t"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			name, opaque := SplitPath(tc.path)
+			if name != tc.name || opaque != tc.opaque {
+				t.Fatalf("got=(%q, %q), want=(%q, %q)", name, opaque, tc.name, tc.opaque)
+			}
+		})
+	}
+}
+
+func TestJoinPath(t *testing.T) {
+	for _, tc := range []struct {
+		dir  string
+		name string
+		want string
+	}{
+		{"/d", "f", "/d/f"},
+		{"/d/", "f", "/d/f"},
+		{"/", "f", "/f"},
+		// The opaque data travels to the child: every level of a walk is
+		// authorized on its own.
+		{"/d?authz=t", "f", "/d/f?authz=t"},
+		{"/d?authz=t&x=1", "sub", "/d/sub?authz=t&x=1"},
+		// An empty opaque part is not carried over: a bare "?" reaches the
+		// server's authorization layer as an empty CGI.
+		{"/d?", "f", "/d/f"},
+	} {
+		t.Run(tc.dir+"+"+tc.name, func(t *testing.T) {
+			if got := JoinPath(tc.dir, tc.name); got != tc.want {
+				t.Fatalf("got=%q, want=%q", got, tc.want)
+			}
+		})
+	}
+}
