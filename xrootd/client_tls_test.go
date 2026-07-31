@@ -14,8 +14,12 @@ func TestAddressAndTLS(t *testing.T) {
 	}{
 		{in: "example.org:1094", addr: "example.org:1094", wants: false},
 		{in: "root://example.org:1094", addr: "example.org:1094", wants: false},
+		{in: "xroot://example.org:1094", addr: "example.org:1094", wants: false},
 		{in: "roots://example.org:1094", addr: "example.org:1094", wants: true},
 		{in: "xroots://example.org", addr: "example.org", wants: true},
+		// A URL scheme is case-insensitive, and the secure one must not stop
+		// being secure because the caller typed it in capitals.
+		{in: "ROOTS://example.org:1094", addr: "example.org:1094", wants: true},
 	} {
 		t.Run(tc.in, func(t *testing.T) {
 			addr, tls, err := addressAndTLS(tc.in)
