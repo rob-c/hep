@@ -645,6 +645,55 @@ a different kind of bug:
   `xrdhttp/conformance_transfer_test.go`, `conformance_target_test.go` and
   `conformance_hostile_test.go`.
 
+### 8.10 The error code is the only machine-readable part of a failure
+
+A server reports a failure twice: once as a number, once as free text. Only the
+number is a contract. The text is whatever the site put in its configuration —
+translated, decorated with an internal path, or replaced outright by a proxy —
+so a client that decides anything by matching on it works at the site it was
+written at and nowhere else. Every reference client maps the code instead, and a
+Go client that does not is the odd one out: `errors.Is(err, fs.ErrNotExist)`
+silently returns false and the caller falls back to reading the message.
+
+What that mapping needs, in order:
+
+- **All of the codes, transcribed rather than inferred.** There are 34
+  (`kXR_ArgInvalid` 3000 … `kXR_TooManyErrs` 3033), and declaring four of them
+  is not "the common cases" — it is a `String()` that renders the other thirty as
+  a bare number. A code this client is older than must still be reported as it
+  arrived: the number is the only thing anyone can look up.
+- **A deliberately small mapping onto the standard values.** `fs.ErrNotExist`,
+  `fs.ErrExist`, `fs.ErrPermission`, `fs.ErrInvalid` — and most codes map to
+  none of them. `kXR_NoSpace` as `fs.ErrInvalid` sends a caller looking for a bug
+  in its own arguments; `kXR_ChkSumErr` as `fs.ErrNotExist` makes it re-copy a
+  file that is there. The codes left out are the point, and they are worth
+  writing down as explicitly as the ones left in.
+- **`errors.As` all the way to the code.** The four standard values are not
+  enough for a client deciding between retry, another replica, and giving up —
+  that needs `kXR_Overloaded` vs `kXR_noReplicas` vs `kXR_NotAuthorized`. Which
+  means every layer between the socket and the caller wraps with `%w`; one
+  `fmt.Errorf("%v")` in the filesystem view undoes the whole thing, and nothing
+  fails to compile.
+- **The same answers over HTTP.** `404` and `410` are `fs.ErrNotExist`, `401`,
+  `403` and `407` are `fs.ErrPermission`, and — the two nobody gets right —
+  `405` on `MKCOL` is "the collection already exists" while `405` on anything
+  else is "this server does not speak WebDAV", and `409` on `MKCOL` is a missing
+  *parent* (RFC 4918 §9.3.1). `MkdirAll` has to continue on the first and stop on
+  the second, so the distinction is load-bearing rather than cosmetic.
+- **Idempotence belongs to the convenience call, not to the interface.** A
+  `DELETE` that answers `404` is a successful `Client.Remove` — the caller wanted
+  the path gone — but it is a failed `xrdfs.FileSystem.RemoveFile`, because
+  `kXR_rm` reports `kXR_NotFound` and the protocol-neutral view is what a caller
+  compares transports through. Keep both, with the unexported one underneath.
+
+- **Check against PyXRootDClient:** `errors.py`'s `_CODE_CLASSES` is the
+  reference mapping, and its `test_errors.py` the reference for the unknown-code
+  and wrapping cases. The Go equivalents are
+  `xrdproto/conformance_errors_test.go`, `xrdhttp/conformance_errors_test.go`
+  and `xrootd/conformance_errors_test.go` — the last of which asks the same
+  question over both transports and compares the answers, which is the only test
+  that fails when one of them drifts.
+
 ---
 
 ## 9. Test harness and environment (unglamorous but load-bearing)

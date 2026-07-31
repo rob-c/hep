@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"path"
 	"strings"
 	"time"
@@ -124,15 +125,131 @@ type ServerError struct {
 // ServerErrorCode is the code of the error returned by the XRootD server as part of response to the request.
 type ServerErrorCode int32
 
+// The error codes an XRootD server may return in a kXR_error response.
 const (
-	InvalidRequest ServerErrorCode = 3006 // InvalidRequest indicates that request is invalid.
-	IOError        ServerErrorCode = 3007 // IOError indicates that an IO error has occurred on the server side.
-	NotAuthorized  ServerErrorCode = 3010 // NotAuthorized indicates that user was not authorized for operation.
-	NotFound       ServerErrorCode = 3011 // NotFound indicates that path was not found on the remote server.
+	ArgInvalid          ServerErrorCode = 3000 // ArgInvalid indicates that an argument of the request is invalid.
+	ArgMissing          ServerErrorCode = 3001 // ArgMissing indicates that a required argument is absent.
+	ArgTooLong          ServerErrorCode = 3002 // ArgTooLong indicates that an argument exceeds the length the server accepts.
+	FileLocked          ServerErrorCode = 3003 // FileLocked indicates that the file is held by another client.
+	FileNotOpen         ServerErrorCode = 3004 // FileNotOpen indicates that the request names a handle that is not open.
+	FSError             ServerErrorCode = 3005 // FSError indicates that the server's filesystem reported an error.
+	InvalidRequest      ServerErrorCode = 3006 // InvalidRequest indicates that request is invalid.
+	IOError             ServerErrorCode = 3007 // IOError indicates that an IO error has occurred on the server side.
+	NoMemory            ServerErrorCode = 3008 // NoMemory indicates that the server could not allocate what the request needs.
+	NoSpace             ServerErrorCode = 3009 // NoSpace indicates that the server has no room for the data.
+	NotAuthorized       ServerErrorCode = 3010 // NotAuthorized indicates that user was not authorized for operation.
+	NotFound            ServerErrorCode = 3011 // NotFound indicates that path was not found on the remote server.
+	InternalServerError ServerErrorCode = 3012 // InternalServerError indicates that the server failed for a reason of its own.
+	Unsupported         ServerErrorCode = 3013 // Unsupported indicates that the server does not implement the request.
+	NoServer            ServerErrorCode = 3014 // NoServer indicates that no server able to handle the request was found.
+	NotFile             ServerErrorCode = 3015 // NotFile indicates that the path names something that is not a regular file.
+	IsDirectory         ServerErrorCode = 3016 // IsDirectory indicates that the path names a directory.
+	Cancelled           ServerErrorCode = 3017 // Cancelled indicates that the request was cancelled.
+	ItExists            ServerErrorCode = 3018 // ItExists indicates that the path already exists.
+	ChkSumErr           ServerErrorCode = 3019 // ChkSumErr indicates that a checksum did not match.
+	InProgress          ServerErrorCode = 3020 // InProgress indicates that the request is already being served.
+	OverQuota           ServerErrorCode = 3021 // OverQuota indicates that the user's quota is exhausted.
+	SigVerErr           ServerErrorCode = 3022 // SigVerErr indicates that a request signature did not verify.
+	DecryptErr          ServerErrorCode = 3023 // DecryptErr indicates that the server could not decrypt what it was sent.
+	Overloaded          ServerErrorCode = 3024 // Overloaded indicates that the server is too busy to serve the request.
+	FSReadOnly          ServerErrorCode = 3025 // FSReadOnly indicates that the server's filesystem does not accept writes.
+	BadPayload          ServerErrorCode = 3026 // BadPayload indicates that the request payload is malformed.
+	AttrNotFound        ServerErrorCode = 3027 // AttrNotFound indicates that an extended attribute does not exist.
+	TLSRequired         ServerErrorCode = 3028 // TLSRequired indicates that the server requires the request to be encrypted.
+	NoReplicas          ServerErrorCode = 3029 // NoReplicas indicates that no replica of the file is available.
+	AuthFailed          ServerErrorCode = 3030 // AuthFailed indicates that authentication did not succeed.
+	Impossible          ServerErrorCode = 3031 // Impossible indicates that the request cannot be satisfied as asked.
+	Conflict            ServerErrorCode = 3032 // Conflict indicates that the request conflicts with one already in flight.
+	TooManyErrs         ServerErrorCode = 3033 // TooManyErrs indicates that the server gave up after repeated failures.
 )
 
+// serverErrorNames holds the specification's name for each code, so an error
+// reads as something a server administrator can look up rather than a number.
+var serverErrorNames = map[ServerErrorCode]string{
+	ArgInvalid:          "kXR_ArgInvalid",
+	ArgMissing:          "kXR_ArgMissing",
+	ArgTooLong:          "kXR_ArgTooLong",
+	FileLocked:          "kXR_FileLocked",
+	FileNotOpen:         "kXR_FileNotOpen",
+	FSError:             "kXR_FSError",
+	InvalidRequest:      "kXR_InvalidRequest",
+	IOError:             "kXR_IOError",
+	NoMemory:            "kXR_NoMemory",
+	NoSpace:             "kXR_NoSpace",
+	NotAuthorized:       "kXR_NotAuthorized",
+	NotFound:            "kXR_NotFound",
+	InternalServerError: "kXR_ServerError",
+	Unsupported:         "kXR_Unsupported",
+	NoServer:            "kXR_noserver",
+	NotFile:             "kXR_NotFile",
+	IsDirectory:         "kXR_isDirectory",
+	Cancelled:           "kXR_Cancelled",
+	ItExists:            "kXR_ItExists",
+	ChkSumErr:           "kXR_ChkSumErr",
+	InProgress:          "kXR_inProgress",
+	OverQuota:           "kXR_overQuota",
+	SigVerErr:           "kXR_SigVerErr",
+	DecryptErr:          "kXR_DecryptErr",
+	Overloaded:          "kXR_Overloaded",
+	FSReadOnly:          "kXR_fsReadOnly",
+	BadPayload:          "kXR_BadPayload",
+	AttrNotFound:        "kXR_AttrNotFound",
+	TLSRequired:         "kXR_TLSRequired",
+	NoReplicas:          "kXR_noReplicas",
+	AuthFailed:          "kXR_AuthFailed",
+	Impossible:          "kXR_Impossible",
+	Conflict:            "kXR_Conflict",
+	TooManyErrs:         "kXR_TooManyErrs",
+}
+
+// String returns the specification's name for the code, with its numeric value.
+// A code this package does not know is rendered as its number alone: a server
+// may be newer than this client, and an unrecognised code is still worth
+// reporting exactly as it arrived.
+func (code ServerErrorCode) String() string {
+	if name, ok := serverErrorNames[code]; ok {
+		return fmt.Sprintf("%s (%d)", name, int32(code))
+	}
+	return fmt.Sprintf("error %d", int32(code))
+}
+
 func (err ServerError) Error() string {
-	return fmt.Sprintf("xrootd: error %d: %s", err.Code, err.Message)
+	return fmt.Sprintf("xrootd: %v: %s", err.Code, err.Message)
+}
+
+// Is reports whether the server's error means the same thing as one of the
+// standard library's error values, so that a caller can write
+//
+//	errors.Is(err, fs.ErrNotExist)
+//
+// without knowing which transport, or which XRootD server version, produced
+// the failure. The mapping is the same one the reference clients use.
+func (err ServerError) Is(target error) bool {
+	switch target {
+	case fs.ErrNotExist:
+		switch err.Code {
+		case NotFound, NoServer, NoReplicas:
+			// A manager answers kXR_noserver (and kXR_noReplicas) when nothing
+			// it knows of holds the file. The file may exist somewhere the
+			// cluster cannot see, but from the caller's side it is not there.
+			return true
+		}
+	case fs.ErrExist:
+		return err.Code == ItExists
+	case fs.ErrPermission:
+		switch err.Code {
+		case NotAuthorized, AuthFailed, TLSRequired:
+			// TLSRequired is a refusal to serve this caller as it connected,
+			// which is the same decision as a denied authorization.
+			return true
+		}
+	case fs.ErrInvalid:
+		switch err.Code {
+		case ArgInvalid, ArgMissing, ArgTooLong, InvalidRequest, FileNotOpen, BadPayload, Impossible:
+			return true
+		}
+	}
+	return false
 }
 
 // MarshalXrd implements Marshaler.

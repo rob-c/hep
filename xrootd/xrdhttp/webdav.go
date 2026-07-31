@@ -87,7 +87,7 @@ func (c *Client) propfind(ctx context.Context, name, depth string) ([]DirEntry, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusMultiStatus {
-		return nil, fmt.Errorf("xrdhttp: PROPFIND %q: unexpected status %s", name, resp.Status)
+		return nil, statusError("PROPFIND", name, resp)
 	}
 
 	// A multistatus document is whatever the server chooses to send, and it
