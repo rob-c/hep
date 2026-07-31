@@ -331,6 +331,95 @@ func TestHandler_Open(t *testing.T) {
 	}
 }
 
+// TestHandler_OpenGrantsWriteAccess covers the option sets that ask to create,
+// truncate or append to a file without also asking for kXR_open_updt. Every
+// case above pairs them with OpenOptionsOpenUpdate, which is what hid this:
+// os.O_RDONLY is zero, so an option set that only says "create it" used to
+// yield a read-only descriptor, and the transfer failed on its first kXR_write
+// rather than on the open — which is how xrd-cp uploads used to die halfway in
+// with "bad file descriptor".
+func TestHandler_OpenGrantsWriteAccess(t *testing.T) {
+	data := []byte("go-hep")
+
+	for _, tc := range []struct {
+		testName   string
+		options    xrdfs.OpenOptions
+		file       string
+		createFile bool
+	}{
+		{
+			testName: "New",
+			options:  xrdfs.OpenOptionsNew,
+			file:     "test1.txt",
+		},
+		{
+			testName:   "Delete",
+			options:    xrdfs.OpenOptionsDelete,
+			file:       "test1.txt",
+			createFile: true,
+		},
+		{
+			testName: "New | Delete | MkPath, as xrd-cp uploads",
+			options:  xrdfs.OpenOptionsNew | xrdfs.OpenOptionsDelete | xrdfs.OpenOptionsMkPath,
+			file:     path.Join("testdir", "test1.txt"),
+		},
+		{
+			testName:   "Append",
+			options:    xrdfs.OpenOptionsOpenAppend,
+			file:       "test1.txt",
+			createFile: true,
+		},
+	} {
+		t.Run(tc.testName, func(t *testing.T) {
+			srv, addr, baseDir, err := createServer(func(err error) {
+				t.Error(err)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(baseDir)
+			defer func() {
+				_ = srv.Shutdown(context.Background())
+			}()
+
+			if tc.createFile {
+				err = os.WriteFile(path.Join(baseDir, tc.file), nil, 0777)
+				if err != nil {
+					t.Fatalf("could not create test file: %v", err)
+				}
+			}
+
+			cli, err := createClient(addr)
+			if err != nil {
+				t.Fatalf("could not create client: %v", err)
+			}
+			defer cli.Close()
+
+			mode := xrdfs.OpenModeOwnerRead | xrdfs.OpenModeOwnerWrite | xrdfs.OpenModeOwnerExecute
+			f, err := cli.FS().Open(context.Background(), tc.file, mode, tc.options)
+			if err != nil {
+				t.Fatalf("could not call Open: %v", err)
+			}
+			defer f.Close(context.Background())
+
+			if _, err := f.WriteAt(data, 0); err != nil {
+				t.Fatalf("could not call WriteAt: %v", err)
+			}
+			if err := f.Sync(context.Background()); err != nil {
+				t.Fatalf("could not call Sync: %v", err)
+			}
+
+			got, err := os.ReadFile(path.Join(baseDir, tc.file))
+			if err != nil {
+				t.Fatalf("could not read written data: %v", err)
+			}
+			if !reflect.DeepEqual(got, data) {
+				t.Fatalf("wrong data:\ngot = %q\nwant = %q", got, data)
+			}
+		})
+	}
+}
+
 func TestHandler_Read(t *testing.T) {
 	bigData := make([]byte, 10*1024)
 	_, err := rand.Read(bigData)

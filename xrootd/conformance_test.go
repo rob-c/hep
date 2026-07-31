@@ -335,3 +335,52 @@ func TestConformance_ReadWriteRoundTrip(t *testing.T) {
 		t.Fatal("no kXR_read was issued")
 	}
 }
+
+// TestConformance_CloseVerify_CarriesTheExpectedSize: CloseVerify is the only
+// way a client states how long it believes the file is, and the statement
+// travels in the size field of kXR_close. A client that sends a plain close
+// instead reports a truncated upload as a successful one.
+func TestConformance_CloseVerify_CarriesTheExpectedSize(t *testing.T) {
+	srv := confClient(t, confContent, func(srv *confServer, f *file) {
+		if err := f.CloseVerify(context.Background(), int64(len(confContent))); err != nil {
+			t.Fatalf("CloseVerify: %v", err)
+		}
+	})
+	srv.check(t)
+
+	if got, want := srv.lastCloseSize(), int64(len(confContent)); got != want {
+		t.Fatalf("kXR_close carried size %d, want %d", got, want)
+	}
+}
+
+// TestConformance_Close_SendsNoSize: a plain Close must leave the size field
+// zero. A non-zero value there is a claim about the file, and a server that
+// honours it would reject the close of a file that is any other length.
+func TestConformance_Close_SendsNoSize(t *testing.T) {
+	srv := confClient(t, confContent, func(srv *confServer, f *file) {
+		if err := f.Close(context.Background()); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	})
+	srv.check(t)
+
+	if got := srv.lastCloseSize(); got != 0 {
+		t.Fatalf("a plain kXR_close carried size %d, want 0", got)
+	}
+}
+
+// TestConformance_CloseVerify_MismatchIsReported: the point of the size field
+// is that the server can disagree. That disagreement is the last chance to
+// notice a short upload, so it must reach the caller.
+func TestConformance_CloseVerify_MismatchIsReported(t *testing.T) {
+	srv := confClient(t, confContent, func(srv *confServer, f *file) {
+		srv.set(func(srv *confServer) { srv.verifyClose = true })
+		err := f.CloseVerify(context.Background(), int64(len(confContent))-1)
+		wantErr(t, err, "CloseVerify", "not")
+	})
+	srv.check(t)
+
+	if got, want := srv.lastCloseSize(), int64(len(confContent))-1; got != want {
+		t.Fatalf("kXR_close carried size %d, want %d", got, want)
+	}
+}

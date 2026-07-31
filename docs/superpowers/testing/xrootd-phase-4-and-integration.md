@@ -31,6 +31,11 @@
   `XROOTD_IT=1`): builds a Globus-style grid PKI with openssl, launches a real
   `xrootd` with root:// and XrdHttp-over-TLS, and verifies the go-hep client.
 
+The offline conformance suites that cover the client surfaces listed here — wire
+decoding, the data and namespace paths, redirects, `xrdio`, the copy engine and
+the commands — are inventoried in
+[`xrootd-conformance-suite.md`](xrootd-conformance-suite.md).
+
 ## Protocol and credential coverage
 
 `xrootd.Dial` is the single entry point: the URL scheme selects the transport and
