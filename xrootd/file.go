@@ -7,6 +7,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 import (
 	"context"
 	"fmt"
+	"math"
 	rsync "sync"
 
 	"go-hep.org/x/hep/xrootd/internal/pgbuf"
@@ -14,11 +15,13 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
+	"go-hep.org/x/hep/xrootd/xrdproto/readv"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
 	"go-hep.org/x/hep/xrootd/xrdproto/sync"
 	"go-hep.org/x/hep/xrootd/xrdproto/truncate"
 	"go-hep.org/x/hep/xrootd/xrdproto/verifyw"
 	"go-hep.org/x/hep/xrootd/xrdproto/write"
+	"go-hep.org/x/hep/xrootd/xrdproto/writev"
 	"go-hep.org/x/hep/xrootd/xrdproto/xrdclose"
 )
 
@@ -254,8 +257,84 @@ func (f *file) pgRetryPage(ctx context.Context, data []byte, base, pgoff int64) 
 	return fmt.Errorf("xrootd: pgwrite: page at offset %d still corrupt after %d retries", pgoff, maxPgRetries)
 }
 
+// ReadVAt implements xrdfs.VectorReader: it reads all of segs in a single
+// kXR_readv round trip and returns their data in the order requested.
+//
+// The reply interleaves an echo header with each segment's bytes, and the
+// length in that header is what was actually read. A server that stops early
+// simply sends fewer segments, so a reply that does not account for every
+// requested segment — with exactly the bytes asked for, at the offset asked
+// for — is an error rather than a short read: the caller has no way to tell
+// which of its ranges the returned data belongs to otherwise.
+func (f *file) ReadVAt(ctx context.Context, segs []xrdfs.ReadVSegment) ([][]byte, error) {
+	req := &readv.Request{Segments: make([]readv.Segment, len(segs))}
+	for i, seg := range segs {
+		if seg.Length < 0 || int64(seg.Length) > math.MaxInt32 {
+			return nil, fmt.Errorf("xrootd: readv segment %d has an invalid length of %d", i, seg.Length)
+		}
+		req.Segments[i] = readv.Segment{
+			Handle: f.handle,
+			Length: int32(seg.Length),
+			Offset: seg.Offset,
+		}
+	}
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	var resp readv.Response
+	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+		return f.fs.c.sendSession(ctx, sid, &resp, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(resp.Chunks) != len(segs) {
+		return nil, fmt.Errorf("xrootd: readv asked for %d segments and got %d back", len(segs), len(resp.Chunks))
+	}
+	out := make([][]byte, len(segs))
+	for i, c := range resp.Chunks {
+		switch {
+		case c.Handle != f.handle:
+			return nil, fmt.Errorf("xrootd: readv segment %d came back for handle %v, not %v", i, c.Handle, f.handle)
+		case c.Offset != segs[i].Offset:
+			return nil, fmt.Errorf("xrootd: readv segment %d came back for offset %d, not %d", i, c.Offset, segs[i].Offset)
+		case len(c.Data) != segs[i].Length:
+			return nil, fmt.Errorf("xrootd: readv segment %d came back with %d bytes, not the %d asked for", i, len(c.Data), segs[i].Length)
+		}
+		out[i] = c.Data
+	}
+	return out, nil
+}
+
+// WriteVAt implements xrdfs.VectorWriter: it writes all of segs in a single
+// kXR_writev round trip. The server applies every segment or none of them.
+func (f *file) WriteVAt(ctx context.Context, segs []xrdfs.WriteVSegment) error {
+	req := &writev.Request{Segments: make([]writev.Segment, len(segs))}
+	for i, seg := range segs {
+		if int64(len(seg.Data)) > math.MaxInt32 {
+			return fmt.Errorf("xrootd: writev segment %d of %d bytes is too large for one segment", i, len(seg.Data))
+		}
+		req.Segments[i] = writev.Segment{
+			Handle: f.handle,
+			Offset: seg.Offset,
+			Data:   seg.Data,
+		}
+	}
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
+	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+		return f.fs.c.sendSession(ctx, sid, nil, req)
+	})
+}
+
 var (
-	_ xrdfs.File     = (*file)(nil)
-	_ xrdfs.PgReader = (*file)(nil)
-	_ xrdfs.PgWriter = (*file)(nil)
+	_ xrdfs.File         = (*file)(nil)
+	_ xrdfs.PgReader     = (*file)(nil)
+	_ xrdfs.PgWriter     = (*file)(nil)
+	_ xrdfs.VectorReader = (*file)(nil)
+	_ xrdfs.VectorWriter = (*file)(nil)
 )

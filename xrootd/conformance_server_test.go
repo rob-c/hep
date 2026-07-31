@@ -19,6 +19,7 @@
 package xrootd
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -74,19 +75,21 @@ type confServer struct {
 	ops []uint16
 
 	// response shaping
-	readChunk   int            // >0: split read replies into OkSoFar chunks
-	waitOnce    bool           // answer the next read with kXR_wait 1, then normally
-	asyncRead   bool           // deliver the next read via kXR_attn/kXR_asynresp
-	unsolicited bool           // precede the next reply with a frame for no one
-	overAnswer  int            // >0: return this many bytes MORE than requested
-	hugeDlen    bool           // claim a body past MaxResponseLength, then hang up
-	stall       bool           // accept the request and never answer
-	corruptPage bool           // flip a bit in the next pgread reply's CRC
-	shortPgUnit bool           // announce a page unit that is cut off
-	badOnce     map[int64]bool // pgwrite pages reported corrupt on the first try
-	badAlways   map[int64]bool // pgwrite pages reported corrupt forever
-	failSync    bool
-	failClose   bool
+	readChunk     int            // >0: split read replies into OkSoFar chunks
+	waitOnce      bool           // answer the next read with kXR_wait 1, then normally
+	asyncRead     bool           // deliver the next read via kXR_attn/kXR_asynresp
+	unsolicited   bool           // precede the next reply with a frame for no one
+	overAnswer    int            // >0: return this many bytes MORE than requested
+	hugeDlen      bool           // claim a body past MaxResponseLength, then hang up
+	stall         bool           // accept the request and never answer
+	corruptPage   bool           // flip a bit in the next pgread reply's CRC
+	shortPgUnit   bool           // announce a page unit that is cut off
+	badOnce       map[int64]bool // pgwrite pages reported corrupt on the first try
+	badAlways     map[int64]bool // pgwrite pages reported corrupt forever
+	readvDropLast bool           // answer a readv without its last segment
+	readvShortSeg bool           // return one byte less than asked for in every segment
+	failSync      bool
+	failClose     bool
 }
 
 func newConfServer(data []byte) *confServer {
@@ -121,6 +124,8 @@ func (srv *confServer) reset() {
 	srv.shortPgUnit = false
 	clear(srv.badOnce)
 	clear(srv.badAlways)
+	srv.readvDropLast = false
+	srv.readvShortSeg = false
 	srv.failSync = false
 	srv.failClose = false
 }
@@ -396,6 +401,120 @@ func (srv *confServer) serveWrite(conn net.Conn, r confRequest) error {
 	return srv.writeOK(conn, r.sid(), nil)
 }
 
+// confVecSegs decodes the descriptor block shared by kXR_readv and kXR_writev:
+// one 16-byte entry of fhandle | length | offset per segment. A payload that is
+// not a whole number of entries is what a stock server answers kXR_ArgInvalid
+// to, and is the failure a client that counts data inside dlen produces.
+func (srv *confServer) confVecSegs(r confRequest, what string) []struct {
+	Length int32
+	Offset int64
+} {
+	if len(r.payload)%16 != 0 {
+		srv.flag("%s: payload of %d bytes is not a whole number of 16-byte descriptors", what, len(r.payload))
+		return nil
+	}
+	segs := make([]struct {
+		Length int32
+		Offset int64
+	}, len(r.payload)/16)
+	for i := range segs {
+		p := r.payload[i*16:]
+		var fh xrdfs.FileHandle
+		copy(fh[:], p[:4])
+		if fh != confHandle {
+			srv.flag("%s: segment %d has unknown fhandle %v", what, i, fh)
+		}
+		segs[i].Length = int32(binary.BigEndian.Uint32(p[4:8]))
+		segs[i].Offset = int64(binary.BigEndian.Uint64(p[8:16]))
+		if segs[i].Length < 0 {
+			srv.flag("%s: segment %d has negative length %d", what, i, segs[i].Length)
+		}
+		if segs[i].Offset < 0 {
+			srv.flag("%s: segment %d has negative offset %d", what, i, segs[i].Offset)
+		}
+	}
+	return segs
+}
+
+func (srv *confServer) serveReadV(conn net.Conn, r confRequest) error {
+	// params[0:15] are reserved and params[15] is the path id; a client on one
+	// connection owns none of them.
+	if !bytes.Equal(r.frame[4:20], make([]byte, 16)) {
+		srv.flag("kXR_readv: reserved params are not zero: % x", r.frame[4:20])
+	}
+	segs := srv.confVecSegs(r, "kXR_readv")
+	if segs == nil {
+		return srv.writeErr(conn, r.sid(), 3025, "Read vector is invalid")
+	}
+
+	srv.mu.Lock()
+	drop, short, chunk := srv.readvDropLast, srv.readvShortSeg, srv.readChunk
+	srv.readvDropLast, srv.readvShortSeg = false, false
+	srv.mu.Unlock()
+
+	if drop && len(segs) > 0 {
+		segs = segs[:len(segs)-1]
+	}
+
+	var body []byte
+	for _, seg := range segs {
+		data := srv.slice(seg.Offset, int(seg.Length))
+		if short && len(data) > 0 {
+			data = data[:len(data)-1]
+		}
+		hdr := make([]byte, 16)
+		copy(hdr, confHandle[:])
+		binary.BigEndian.PutUint32(hdr[4:], uint32(len(data)))
+		binary.BigEndian.PutUint64(hdr[8:], uint64(seg.Offset))
+		body = append(append(body, hdr...), data...)
+	}
+
+	if chunk > 0 && len(body) > chunk {
+		// The reply is a byte stream: an OkSoFar boundary may fall anywhere,
+		// including inside a segment header.
+		pos := 0
+		for pos+chunk <= len(body) {
+			if _, err := conn.Write(append(confRespHdr(r.sid(), uint16(xrdproto.OkSoFar), chunk), body[pos:pos+chunk]...)); err != nil {
+				return err
+			}
+			pos += chunk
+		}
+		return srv.writeOK(conn, r.sid(), body[pos:])
+	}
+	return srv.writeOK(conn, r.sid(), body)
+}
+
+// serveWriteV reads the segment data itself: a vector write's dlen covers only
+// the descriptors, so the bytes are still on the connection when the framing
+// read returns.
+func (srv *confServer) serveWriteV(conn net.Conn, r confRequest) error {
+	if !bytes.Equal(r.frame[5:20], make([]byte, 15)) {
+		srv.flag("kXR_writev: reserved params are not zero: % x", r.frame[5:20])
+	}
+	segs := srv.confVecSegs(r, "kXR_writev")
+	if segs == nil {
+		return srv.writeErr(conn, r.sid(), 3031, "Write vector is invalid")
+	}
+	if opts := r.frame[4]; opts&^0x01 != 0 {
+		srv.flag("kXR_writev: unknown option bits %#x", opts)
+	}
+
+	// All-or-nothing: everything is read and staged before anything is stored.
+	staged := make([][]byte, len(segs))
+	for i, seg := range segs {
+		buf := make([]byte, seg.Length)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			srv.flag("kXR_writev: segment %d promised %d bytes: %v", i, seg.Length, err)
+			return err
+		}
+		staged[i] = buf
+	}
+	for i, seg := range segs {
+		srv.apply(seg.Offset, staged[i])
+	}
+	return srv.writeOK(conn, r.sid(), nil)
+}
+
 func (srv *confServer) servePgRead(conn net.Conn, r confRequest) error {
 	srv.checkHandle(r, "kXR_pgread", 4)
 	offset, rlen := r.i64(8), r.i32(16)
@@ -541,6 +660,10 @@ func (srv *confServer) serve(conn net.Conn) {
 			err = srv.servePgRead(conn, r)
 		case 3026: // kXR_pgwrite
 			err = srv.servePgWrite(conn, r)
+		case 3025: // kXR_readv
+			err = srv.serveReadV(conn, r)
+		case 3031: // kXR_writev
+			err = srv.serveWriteV(conn, r)
 		case 3016: // kXR_sync
 			srv.checkHandle(r, "kXR_sync", 4)
 			srv.mu.Lock()

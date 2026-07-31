@@ -94,3 +94,37 @@ type PgReader interface {
 type PgWriter interface {
 	PgWriteAt(ctx context.Context, p []byte, off int64) error
 }
+
+// ReadVSegment is one element of a vector read: where to start and how many
+// bytes to read.
+type ReadVSegment struct {
+	Offset int64
+	Length int
+}
+
+// WriteVSegment is one element of a vector write: where to start and the bytes
+// to write.
+type WriteVSegment struct {
+	Offset int64
+	Data   []byte
+}
+
+// VectorReader is implemented by files that support scatter-gather reads
+// (kXR_readv): a single round trip serving a whole list of disjoint ranges,
+// which is what makes reading a scattered set of branches from a remote file
+// affordable.
+type VectorReader interface {
+	// ReadVAt reads the requested segments and returns their data in the
+	// order they were asked for.
+	//
+	// A vector read is all-or-nothing: if the server stops short of the last
+	// segment, ReadVAt reports an error instead of returning the prefix.
+	ReadVAt(ctx context.Context, segs []ReadVSegment) ([][]byte, error)
+}
+
+// VectorWriter is implemented by files that support scatter-gather writes
+// (kXR_writev).
+type VectorWriter interface {
+	// WriteVAt writes every segment, or none of them.
+	WriteVAt(ctx context.Context, segs []WriteVSegment) error
+}
