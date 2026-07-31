@@ -63,7 +63,7 @@ func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.Offset = r.ReadI64()
 	o.ReadLength = r.ReadI32()
 	r.Skip(4)
-	return nil
+	return r.Err()
 }
 
 // Response is a response for the pgread request: the CRC-verified data and
@@ -126,5 +126,5 @@ func (resp *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 		}
 		wire = wire[n:]
 	}
-	return nil
+	return r.Err()
 }

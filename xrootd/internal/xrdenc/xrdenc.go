@@ -4,7 +4,10 @@
 
 package xrdenc // import "go-hep.org/x/hep/xrootd/internal/xrdenc"
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"errors"
+)
 
 // WBuffer encodes values to a buffer according to the XRootD protocol.
 type WBuffer struct {
@@ -66,20 +69,54 @@ func (w *WBuffer) Next(n int) {
 	w.buf = append(w.buf, make([]byte, n)...)
 }
 
+// ErrShortBuffer is reported by RBuffer.Err when a read asked for more bytes
+// than the buffer holds. The buffer is filled from the wire, so a server that
+// sends a truncated or malformed message must not be able to do worse than
+// this to the client.
+var ErrShortBuffer = errors.New("xrdenc: unexpected end of buffer")
+
 // RBuffer decodes values from a buffer according to the XRootD protocol.
+//
+// Reads never panic: a read that runs past the end of the buffer consumes what
+// is left, yields the zero value for the missing part and latches an error that
+// Err reports. Decoders may therefore read a whole message and check once at
+// the end instead of guarding every field.
 type RBuffer struct {
 	buf []byte
 	pos int
+	err error
 }
 
 func NewRBuffer(data []byte) *RBuffer {
 	return &RBuffer{buf: data}
 }
 
+// Err reports whether any read ran past the end of the buffer.
+func (r *RBuffer) Err() error {
+	return r.err
+}
+
+// grab consumes the next n bytes. It returns nil, and latches ErrShortBuffer,
+// if fewer than n bytes are left.
+func (r *RBuffer) grab(n int) []byte {
+	if n < 0 || n > r.Len() {
+		r.pos = len(r.buf)
+		if r.err == nil {
+			r.err = ErrShortBuffer
+		}
+		return nil
+	}
+	beg := r.pos
+	r.pos += n
+	return r.buf[beg:r.pos]
+}
+
 func (r *RBuffer) ReadU8() uint8 {
-	o := r.buf[r.pos]
-	r.pos++
-	return o
+	buf := r.grab(1)
+	if buf == nil {
+		return 0
+	}
+	return buf[0]
 }
 
 func (r *RBuffer) Len() int {
@@ -87,32 +124,31 @@ func (r *RBuffer) Len() int {
 }
 
 func (r *RBuffer) ReadU16() uint16 {
-	beg := r.pos
-	end := r.pos + 2
-	r.pos += 2
-	o := binary.BigEndian.Uint16(r.buf[beg:end])
-	return o
+	buf := r.grab(2)
+	if buf == nil {
+		return 0
+	}
+	return binary.BigEndian.Uint16(buf)
 }
 
 func (r *RBuffer) ReadI32() int32 {
-	beg := r.pos
-	end := r.pos + 4
-	r.pos += 4
-	o := binary.BigEndian.Uint32(r.buf[beg:end])
-	return int32(o)
+	buf := r.grab(4)
+	if buf == nil {
+		return 0
+	}
+	return int32(binary.BigEndian.Uint32(buf))
 }
 
 func (r *RBuffer) ReadI64() int64 {
-	beg := r.pos
-	end := r.pos + 8
-	r.pos += 8
-	o := binary.BigEndian.Uint64(r.buf[beg:end])
-	return int64(o)
+	buf := r.grab(8)
+	if buf == nil {
+		return 0
+	}
+	return int64(binary.BigEndian.Uint64(buf))
 }
 
 func (r *RBuffer) ReadBool() bool {
-	r.pos += 1
-	return r.buf[r.pos] != 0
+	return r.ReadU8() != 0
 }
 
 func (r *RBuffer) ReadLen() int {
@@ -120,23 +156,35 @@ func (r *RBuffer) ReadLen() int {
 }
 
 func (r *RBuffer) ReadBytes(data []byte) {
-	n := len(data)
-	beg := r.pos
-	end := r.pos + n
-	copy(data, r.buf[beg:end])
-	r.pos += n
+	buf := r.grab(len(data))
+	if buf == nil {
+		clear(data)
+		return
+	}
+	copy(data, buf)
 }
 
 func (r *RBuffer) ReadStr() string {
-	n := r.ReadLen()
-	beg := r.pos
-	end := r.pos + n
-	r.pos += n
-	return string(r.buf[beg:end])
+	return string(r.grab(r.ReadLen()))
+}
+
+// ReadLenBytes reads a 32-bit length and returns a copy of that many bytes.
+//
+// The length comes off the wire, so it is not trusted to size an allocation:
+// a length that is negative or larger than what is left latches ErrShortBuffer
+// and yields nil.
+func (r *RBuffer) ReadLenBytes() []byte {
+	buf := r.grab(r.ReadLen())
+	if len(buf) == 0 {
+		return nil
+	}
+	out := make([]byte, len(buf))
+	copy(out, buf)
+	return out
 }
 
 func (r *RBuffer) Skip(n int) {
-	r.pos += n
+	r.grab(n)
 }
 
 func (r *RBuffer) Bytes() []byte {

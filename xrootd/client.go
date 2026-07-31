@@ -165,7 +165,7 @@ func (client *Client) sendSession(ctx context.Context, sessionID string, resp xr
 			return sessionID, err
 		}
 		if fp, ok := req.(xrdproto.FilepathRequest); ok {
-			fp.SetOpaque(redirection.Opaque)
+			addOpaque(fp, redirection.Opaque)
 		}
 		// TODO: we should check if the request contains file handle and re-issue open request in that case.
 		redirection, err = session.Send(ctx, resp, req)
@@ -179,6 +179,23 @@ func (client *Client) sendSession(ctx context.Context, sessionID string, resp xr
 	}
 
 	return sessionID, err
+}
+
+// addOpaque adds the opaque data a redirect carried to the request that is
+// being re-issued. The protocol says that data is added to the file name, so it
+// is appended rather than assigned: overwriting would drop the caller's own
+// opaque data — the authorization token an open usually travels with — the
+// moment a namespace server redirected the request. A redirect with no opaque
+// data leaves the path alone, down to the "?" that would otherwise be appended
+// to it.
+func addOpaque(req xrdproto.FilepathRequest, opaque string) {
+	if opaque == "" {
+		return
+	}
+	if cur := req.Opaque(); cur != "" {
+		opaque = cur + "&" + opaque
+	}
+	req.SetOpaque(opaque)
 }
 
 func (client *Client) getSession(ctx context.Context, address, token string) (*cliSession, error) {

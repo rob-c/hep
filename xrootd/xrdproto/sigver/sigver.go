@@ -63,9 +63,8 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.SeqID = rBuffer.ReadI64()
 	o.Crypto = rBuffer.ReadU8()
 	rBuffer.Skip(3)
-	o.Signature = make([]byte, rBuffer.ReadLen())
-	rBuffer.ReadBytes(o.Signature)
-	return nil
+	o.Signature = rBuffer.ReadLenBytes()
+	return rBuffer.Err()
 }
 
 func NewRequest(requestID uint16, seqID int64, data []byte) Request {

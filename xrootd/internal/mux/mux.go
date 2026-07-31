@@ -82,6 +82,12 @@ type Redirection struct {
 // ParseRedirection parses the Redirection from the XRootD redirect response format.
 // See http://xrootd.org/doc/dev45/XRdv310.pdf, p. 33 for details.
 func ParseRedirection(raw []byte) (*Redirection, error) {
+	// The body is read straight off the connection, before any of it is
+	// trusted: a redirect is answered by connecting somewhere, so a server
+	// that has not authenticated itself can send one.
+	if len(raw) < 4 {
+		return nil, fmt.Errorf("xrootd: redirect response is %d bytes, want at least the 4-byte port", len(raw))
+	}
 	port := binary.BigEndian.Uint32(raw)
 	parts := strings.Split(string(raw[4:]), "?")
 	if len(parts) == 0 {

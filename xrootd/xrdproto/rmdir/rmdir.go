@@ -32,7 +32,7 @@ func (req Request) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (req *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.Skip(16)
 	req.Path = rBuffer.ReadStr()
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

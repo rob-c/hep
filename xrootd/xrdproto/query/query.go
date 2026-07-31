@@ -62,12 +62,8 @@ func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	r.Skip(2)
 	r.ReadBytes(o.Handle[:])
 	r.Skip(8)
-	n := r.ReadI32()
-	if n > 0 {
-		o.Args = make([]byte, n)
-		r.ReadBytes(o.Args)
-	}
-	return nil
+	o.Args = r.ReadLenBytes()
+	return r.Err()
 }
 
 // Response is the response issued by the server to a query request.
@@ -88,5 +84,5 @@ func (o Response) MarshalXrd(w *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.Data = make([]byte, r.Len())
 	r.ReadBytes(o.Data)
-	return nil
+	return r.Err()
 }

@@ -80,10 +80,8 @@ func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.NumAttr = r.ReadU8()
 	o.Options = r.ReadU8()
 	r.Skip(9)
-	n := int(r.ReadI32())
-	o.Body = make([]byte, n)
-	r.ReadBytes(o.Body)
-	return nil
+	o.Body = r.ReadLenBytes()
+	return r.Err()
 }
 
 func pathNameBody(path, name string) []byte {
@@ -149,7 +147,7 @@ func (resp *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 		resp.ErrCount = resp.Raw[0]
 		resp.NumAttr = resp.Raw[1]
 	}
-	return nil
+	return r.Err()
 }
 
 // Attr decodes a get/set/del reply for a single attribute: the per-attribute

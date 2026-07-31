@@ -29,7 +29,7 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.ProtocolVersion = rBuffer.ReadI32()
 	o.ServerType = xrdproto.ServerType(rBuffer.ReadI32())
-	return nil
+	return rBuffer.Err()
 }
 
 // RequestLength is the length of the Request in bytes.
@@ -60,5 +60,5 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o[2] = rBuffer.ReadI32()
 	o[3] = rBuffer.ReadI32()
 	o[4] = rBuffer.ReadI32()
-	return nil
+	return rBuffer.Err()
 }

@@ -37,5 +37,5 @@ func (o Request) MarshalXrd(w *xrdenc.WBuffer) error {
 func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	r.Skip(16)
 	_ = r.ReadI32()
-	return nil
+	return r.Err()
 }

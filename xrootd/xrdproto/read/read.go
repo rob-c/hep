@@ -38,7 +38,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	}
 	n := copy(o.Data, rBuffer.Bytes())
 	o.Data = o.Data[:n]
-	return nil
+	return rBuffer.Err()
 }
 
 // RespID implements xrdproto.Response.RespID.
@@ -87,7 +87,13 @@ func (o *OptionalArgs) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 			"and (alen - 8) should be dividable by 16, got: %v", alen)
 	}
 	if alen <= 8 {
-		return nil
+		return rBuffer.Err()
+	}
+	// alen comes off the wire, so it is checked against what is actually
+	// there before it sizes an allocation: each pre-read is 16 bytes.
+	if alen-8 > rBuffer.Len() {
+		return fmt.Errorf("xrootd: alen of %d declares %d bytes of pre-reads, but only %d are left",
+			alen, alen-8, rBuffer.Len())
 	}
 	o.ReadAheads = make([]ReadAhead, (alen-8)/16)
 	for i := range o.ReadAheads {
@@ -96,7 +102,7 @@ func (o *OptionalArgs) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 			return err
 		}
 	}
-	return nil
+	return rBuffer.Err()
 }
 
 // ReadAhead is the pre-read request. It is considered only a hint
@@ -121,7 +127,7 @@ func (o *ReadAhead) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.Handle[:])
 	o.Length = rBuffer.ReadI32()
 	o.Offset = rBuffer.ReadI64()
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.
@@ -158,7 +164,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	}
 	alen := rBuffer.ReadLen()
 	if alen == 0 {
-		return nil
+		return rBuffer.Err()
 	}
 	return fmt.Errorf("xrootd: no data is passed after alen of %d", alen)
 }

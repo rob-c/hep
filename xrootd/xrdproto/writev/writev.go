@@ -128,7 +128,7 @@ func (req *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	for i := range req.Segments {
 		req.Segments[i].Data = make([]byte, lengths[i])
 	}
-	return nil
+	return r.Err()
 }
 
 var _ xrdproto.Request = (*Request)(nil)

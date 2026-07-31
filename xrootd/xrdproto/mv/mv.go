@@ -53,7 +53,7 @@ func (req *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	}
 	req.OldPath = string(paths[:fromLen])
 	req.NewPath = string(paths[fromLen+1:])
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

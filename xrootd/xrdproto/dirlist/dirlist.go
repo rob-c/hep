@@ -98,7 +98,7 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 // See xrootd protocol specification, page 45 for further details.
 func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	if rBuffer.Len() == 0 {
-		return nil
+		return rBuffer.Err()
 	}
 
 	data := bytes.TrimRight(rBuffer.Bytes(), "\x00")
@@ -114,7 +114,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 		for i, v := range lines {
 			o.Entries[i] = xrdfs.EntryStat{EntryName: string(v)}
 		}
-		return nil
+		return rBuffer.Err()
 	}
 
 	if len(lines)%2 != 0 {
@@ -134,7 +134,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 		o.Entries[i/2].EntryName = string(lines[i])
 	}
 
-	return nil
+	return rBuffer.Err()
 }
 
 // Request holds the dirlist request parameters.
@@ -176,7 +176,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.Skip(15)
 	o.Options = RequestOptions(rBuffer.ReadU8())
 	o.Path = rBuffer.ReadStr()
-	return nil
+	return rBuffer.Err()
 }
 
 // Opaque implements xrdproto.FilepathRequest.Opaque.

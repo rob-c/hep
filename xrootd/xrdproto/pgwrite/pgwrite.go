@@ -78,15 +78,16 @@ func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	r.Skip(1) // pathid
 	o.Flags = r.ReadU8()
 	r.Skip(2) // reserved
-	n := int(r.ReadI32())
-	pages := make([]byte, n)
-	r.ReadBytes(pages)
+	pages := r.ReadLenBytes()
+	if err := r.Err(); err != nil {
+		return err
+	}
 	data, err := pgbuf.Decode(o.Offset, pages)
 	if err != nil {
 		return err
 	}
 	o.Data = data
-	return nil
+	return r.Err()
 }
 
 // Response is a response for the pgwrite request: the file offset the
@@ -134,14 +135,14 @@ func (resp *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	// by the session from the trailing data the status body announced.
 	cse := frame[xrdproto.StatusBodyLength+8:]
 	if len(cse) == 0 {
-		return nil
+		return r.Err()
 	}
 	corrupt, err := ParseCSE(cse)
 	if err != nil {
 		return err
 	}
 	resp.Corrupt = corrupt
-	return nil
+	return r.Err()
 }
 
 // ParseCSE decodes a pgwrite checksum-error trailer: an 8-byte header

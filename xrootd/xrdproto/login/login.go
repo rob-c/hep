@@ -45,7 +45,7 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.SessionID[:])
 	o.SecurityInformation = append(o.SecurityInformation, rBuffer.Bytes()...)
-	return nil
+	return rBuffer.Err()
 }
 
 // Request holds the login request parameters.
@@ -102,7 +102,6 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.Ability = rBuffer.ReadU8()
 	o.Capabilities = rBuffer.ReadU8()
 	o.Role = rBuffer.ReadU8()
-	o.Token = make([]byte, rBuffer.ReadLen())
-	rBuffer.ReadBytes(o.Token)
-	return nil
+	o.Token = rBuffer.ReadLenBytes()
+	return rBuffer.Err()
 }

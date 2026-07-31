@@ -217,7 +217,7 @@ func (o *%[1]s) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 		g.genUnmarshalType(ft.Type(), "o."+ft.Name())
 	}
 
-	g.printf("return nil\n}\n\n")
+	g.printf("return rBuffer.Err()\n}\n\n")
 }
 
 func (g *Generator) downcasted(t types.Type, expression string) string {

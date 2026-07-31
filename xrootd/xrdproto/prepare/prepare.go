@@ -66,16 +66,14 @@ func (req *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	req.Priority = r.ReadU8()
 	req.Port = r.ReadU16()
 	r.Skip(12)
-	n := r.ReadI32()
-	raw := make([]byte, n)
-	r.ReadBytes(raw)
-	switch n {
+	raw := r.ReadLenBytes()
+	switch len(raw) {
 	case 0:
 		req.Paths = []string{}
 	default:
 		req.Paths = strings.Split(string(raw), "\n")
 	}
-	return nil
+	return r.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.
@@ -102,5 +100,5 @@ func (o Response) MarshalXrd(w *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.Data = make([]byte, r.Len())
 	r.ReadBytes(o.Data)
-	return nil
+	return r.Err()
 }

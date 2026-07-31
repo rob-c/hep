@@ -80,7 +80,7 @@ func (o FileCompression) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *FileCompression) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.PageSize = rBuffer.ReadI32()
 	rBuffer.ReadBytes(o.Type[:])
-	return nil
+	return rBuffer.Err()
 }
 
 // PgReader is implemented by files that support paged reads with

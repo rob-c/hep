@@ -164,20 +164,28 @@ func (f *File) WriteAt(data []byte, offset int64) (int, error) {
 
 // Seek implements io.Seeker
 func (f *File) Seek(offset int64, whence int) (int64, error) {
-	var err error
+	var pos int64
 	switch whence {
 	case io.SeekStart:
-		f.pos = offset
+		pos = offset
 	case io.SeekEnd:
+		// io.Seeker counts SeekEnd from the end going forward, so a
+		// negative offset is what walks back into the file.
 		st, err := f.Stat()
 		if err != nil {
 			return 0, fmt.Errorf("xrdio: could not xrootd-stat %q: %w", f.Name(), err)
 		}
-		f.pos = st.Size() - offset
+		pos = st.Size() + offset
 	case io.SeekCurrent:
-		f.pos += offset
+		pos = f.pos + offset
+	default:
+		return 0, fmt.Errorf("xrdio: invalid whence %d for %q", whence, f.Name())
 	}
-	return f.pos, err
+	if pos < 0 {
+		return 0, fmt.Errorf("xrdio: negative position %d for %q", pos, f.Name())
+	}
+	f.pos = pos
+	return f.pos, nil
 }
 
 func (f *File) Stat() (os.FileInfo, error) {

@@ -194,7 +194,7 @@ func (o *EntryStat) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.Mtime = int64(mtime)
 	o.Flags = StatFlags(flags)
 
-	return nil
+	return rBuffer.Err()
 }
 
 // VirtualFSStat holds the virtual file system information.
@@ -267,7 +267,7 @@ func (o *VirtualFSStat) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.FreeStaging = fstg
 	o.UtilizationStaging = ustg
 
-	return nil
+	return rBuffer.Err()
 }
 
 var (

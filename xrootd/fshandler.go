@@ -41,7 +41,19 @@ type fshandler struct {
 
 type srvSession struct {
 	mu      sync.Mutex
-	handles map[xrdfs.FileHandle]*os.File
+	handles map[xrdfs.FileHandle]*srvFile
+}
+
+// srvFile is an open file together with the part of how it was opened that the
+// request handlers still need afterwards.
+type srvFile struct {
+	*os.File
+
+	// appending records a kXR_open_apnd open. Such a file is written to with
+	// Write rather than WriteAt: os refuses WriteAt on an O_APPEND
+	// descriptor, and the protocol says a write on a file opened for append
+	// lands at the end whatever offset the request carries.
+	appending bool
 }
 
 // NewFSHandler creates a Handler that passes requests to the backing filesystem at basePath.
@@ -86,12 +98,20 @@ func (h *fshandler) Dirlist(sessionID [16]byte, request *dirlist.Request) (xrdpr
 
 // Open implements server.Handler.Open.
 func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+	// kXR_open_updt, kXR_new, kXR_delete and kXR_open_apnd all write to the
+	// file. The protocol has no write-only mode and os.O_RDONLY is zero, so
+	// an option set that asks for any of them but not for kXR_open_updt has
+	// to be widened here: otherwise the file is opened read-only and the
+	// first kXR_write fails with EBADF, halfway into the transfer.
+	const writes = xrdfs.OpenOptionsOpenUpdate | xrdfs.OpenOptionsOpenAppend |
+		xrdfs.OpenOptionsNew | xrdfs.OpenOptionsDelete
+
 	var flag int
-	if request.Options&xrdfs.OpenOptionsOpenRead != 0 {
-		flag |= os.O_RDONLY
-	}
-	if request.Options&xrdfs.OpenOptionsOpenUpdate != 0 {
+	switch {
+	case request.Options&writes != 0:
 		flag |= os.O_RDWR
+	default:
+		flag |= os.O_RDONLY
 	}
 	if request.Options&xrdfs.OpenOptionsOpenAppend != 0 {
 		flag |= os.O_APPEND
@@ -131,7 +151,7 @@ func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Ma
 		// Check that there was no change in state during h.mu.RUnlock and h.mu.Lock.
 		sess, ok = h.sessions[sessionID]
 		if !ok {
-			sess = &srvSession{handles: make(map[xrdfs.FileHandle]*os.File)}
+			sess = &srvSession{handles: make(map[xrdfs.FileHandle]*srvFile)}
 			h.sessions[sessionID] = sess
 		}
 		h.mu.Unlock()
@@ -164,7 +184,10 @@ func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Ma
 				}
 			}
 			// TODO: return compression info if requested.
-			sess.handles[handle] = file
+			sess.handles[handle] = &srvFile{
+				File:      file,
+				appending: request.Options&xrdfs.OpenOptionsOpenAppend != 0,
+			}
 
 			return resp, xrdproto.Ok
 		}
@@ -240,7 +263,13 @@ func (h *fshandler) Write(sessionID [16]byte, request *write.Request) (xrdproto.
 		}, xrdproto.Error
 	}
 
-	_, err := file.WriteAt(request.Data, request.Offset)
+	var err error
+	switch {
+	case file.appending:
+		_, err = file.Write(request.Data)
+	default:
+		_, err = file.WriteAt(request.Data, request.Offset)
+	}
 	if err != nil {
 		return xrdproto.ServerError{
 			Code:    xrdproto.IOError,
@@ -251,7 +280,7 @@ func (h *fshandler) Write(sessionID [16]byte, request *write.Request) (xrdproto.
 	return nil, xrdproto.Ok
 }
 
-func (h *fshandler) getFile(sessionID [16]byte, handle xrdfs.FileHandle) *os.File {
+func (h *fshandler) getFile(sessionID [16]byte, handle xrdfs.FileHandle) *srvFile {
 	h.mu.RLock()
 	sess, ok := h.sessions[sessionID]
 	h.mu.RUnlock()
