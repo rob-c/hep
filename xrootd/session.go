@@ -362,6 +362,9 @@ func (sess *cliSession) readStatusTail(frame []byte) ([]byte, bool, error) {
 	if err := body.UnmarshalVerifyXrd(frame); err != nil {
 		return frame, false, err
 	}
+	if body.DataLength > xrdproto.MaxResponseLength {
+		return frame, false, fmt.Errorf("xrootd: kXR_status trailing data of %d bytes exceeds the %d-byte limit", body.DataLength, xrdproto.MaxResponseLength)
+	}
 	if body.DataLength > 0 {
 		tail := make([]byte, body.DataLength)
 		if _, err := io.ReadFull(sess.conn, tail); err != nil {
@@ -443,7 +446,16 @@ func (sess *cliSession) writeRequest(request pendingRequest) error {
 	return nil
 }
 
-func (sess *cliSession) send(ctx context.Context, streamID xrdproto.StreamID, responseChannel mux.DataRecvChan, header, body []byte, pathID xrdproto.PathID) ([]byte, *mux.Redirection, bool, error) {
+// send writes a request and accumulates the frames of its response until a
+// terminal one arrives.
+//
+// maxBytes bounds the accumulated body; 0 means unbounded. The bound matters
+// because the loop below is driven by the server: a peer that answers with an
+// endless stream of OkSoFar frames — each one individually small enough to
+// pass the per-frame limit — otherwise grows the client's heap until the
+// process dies. Requests that know how much data they asked for state it via
+// xrdproto.ResponseLimiter.
+func (sess *cliSession) send(ctx context.Context, streamID xrdproto.StreamID, responseChannel mux.DataRecvChan, header, body []byte, pathID xrdproto.PathID, maxBytes int64) ([]byte, *mux.Redirection, bool, error) {
 	if pathID == 0 {
 		header = append(header, body...)
 	}
@@ -477,6 +489,9 @@ func (sess *cliSession) send(ctx context.Context, streamID xrdproto.StreamID, re
 			if resp.AuthMore {
 				authMore = true
 			}
+			if maxBytes > 0 && int64(len(data))+int64(len(resp.Data)) > maxBytes {
+				return nil, nil, false, fmt.Errorf("xrootd: response exceeds the %d-byte limit for this request", maxBytes)
+			}
 			data = append(data, resp.Data...)
 		case <-ctx.Done():
 			if err := ctx.Err(); err != nil {
@@ -503,7 +518,7 @@ func (sess *cliSession) authRound(ctx context.Context, req xrdproto.Request) (mo
 	if err = req.MarshalXrd(&wBuffer); err != nil {
 		return false, nil, err
 	}
-	data, _, more, err = sess.send(ctx, streamID, responseChannel, wBuffer.Bytes(), nil, 0)
+	data, _, more, err = sess.send(ctx, streamID, responseChannel, wBuffer.Bytes(), nil, 0, 0)
 	return more, data, err
 }
 
@@ -547,7 +562,12 @@ func (sess *cliSession) Send(ctx context.Context, resp xrdproto.Response, req xr
 		}
 	}
 
-	data, redirection, _, err := sess.send(ctx, streamID, responseChannel, data, pathData, pathID)
+	var maxBytes int64
+	if lim, ok := req.(xrdproto.ResponseLimiter); ok {
+		maxBytes = lim.MaxResponseLength()
+	}
+
+	data, redirection, _, err := sess.send(ctx, streamID, responseChannel, data, pathData, pathID, maxBytes)
 	if err != nil || redirection != nil || resp == nil {
 		return redirection, err
 	}

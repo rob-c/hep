@@ -34,6 +34,20 @@ func (req *Request) ReqID() uint16 { return RequestID }
 // ShouldSign implements xrdproto.Request.ShouldSign.
 func (req *Request) ShouldSign() bool { return false }
 
+// MaxResponseLength implements xrdproto.ResponseLimiter: the requested bytes,
+// plus a 4-byte CRC-32C per page, plus a kXR_status header per frame in the
+// worst case of one frame per page. Bounding it this way also bounds a server
+// that answers with an unending stream of empty partial frames.
+func (req *Request) MaxResponseLength() int64 {
+	if req.ReadLength <= 0 {
+		return 0
+	}
+	// +2 pages of slack: the first page is short when the offset is not page
+	// aligned, and the server may close with an empty final frame.
+	pages := int64(req.ReadLength)/pgbuf.PageSize + 3
+	return int64(req.ReadLength) + pages*(4+xrdproto.StatusBodyLength+8)
+}
+
 // MarshalXrd implements xrdproto.Marshaler.
 func (o Request) MarshalXrd(w *xrdenc.WBuffer) error {
 	w.WriteBytes(o.Handle[:])

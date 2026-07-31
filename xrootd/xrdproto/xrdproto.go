@@ -428,6 +428,12 @@ func ReadResponseWithReuse(r io.Reader, headerBytes []byte, header *ResponseHead
 	if header.DataLength == 0 {
 		return nil, nil
 	}
+	if header.DataLength < 0 {
+		return nil, fmt.Errorf("xrootd: response announces a negative data length (%d)", header.DataLength)
+	}
+	if header.DataLength > MaxResponseLength {
+		return nil, fmt.Errorf("xrootd: response body of %d bytes exceeds the %d-byte limit", header.DataLength, MaxResponseLength)
+	}
 	var data = make([]byte, header.DataLength)
 	if _, err := io.ReadFull(r, data); err != nil {
 		return nil, err
