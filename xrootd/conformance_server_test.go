@@ -88,8 +88,17 @@ type confServer struct {
 	badAlways     map[int64]bool // pgwrite pages reported corrupt forever
 	readvDropLast bool           // answer a readv without its last segment
 	readvShortSeg bool           // return one byte less than asked for in every segment
+	reorder       int            // >1: hold back this many requests, then answer them last-first
 	failSync      bool
 	failClose     bool
+
+	// closeSize is the size field of the last kXR_close, which is what
+	// carries the "the file should be this long" assertion of CloseVerify.
+	// -1 means no close has been served yet.
+	closeSize int64
+	// verifyClose makes a kXR_close whose size field disagrees with the file
+	// an error, the way a data server that honours the field behaves.
+	verifyClose bool
 }
 
 func newConfServer(data []byte) *confServer {
@@ -97,6 +106,7 @@ func newConfServer(data []byte) *confServer {
 		data:      append([]byte(nil), data...),
 		badOnce:   make(map[int64]bool),
 		badAlways: make(map[int64]bool),
+		closeSize: -1,
 	}
 }
 
@@ -126,8 +136,11 @@ func (srv *confServer) reset() {
 	clear(srv.badAlways)
 	srv.readvDropLast = false
 	srv.readvShortSeg = false
+	srv.reorder = 0
 	srv.failSync = false
 	srv.failClose = false
+	srv.closeSize = -1
+	srv.verifyClose = false
 }
 
 // check fails t when the client committed a protocol breach.
@@ -156,6 +169,14 @@ func (srv *confServer) breaches() []string {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	return append([]string(nil), srv.violations...)
+}
+
+// lastCloseSize returns the size field of the last kXR_close served, or -1 if
+// the client has not closed anything.
+func (srv *confServer) lastCloseSize() int64 {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	return srv.closeSize
 }
 
 // opCount returns how many times the client sent the given request id.
@@ -636,10 +657,19 @@ func (srv *confServer) servePgWrite(conn net.Conn, r confRequest) error {
 }
 
 // serve runs the request loop until the client hangs up.
+//
+// With reorder set, requests are held back and answered last-first once a
+// batch has arrived, which is what a server with several workers looks like
+// from the client end: nothing but the stream id says which reply is whose.
+// It cannot be combined with kXR_writev, whose segment data is read off the
+// connection by the handler rather than by the intake.
 func (srv *confServer) serve(conn net.Conn) {
+	var held []confRequest
 	for {
 		r, err := confTake(conn)
 		if err != nil {
+			// Whatever is still held back has no reply coming; the client is
+			// gone, so there is nobody left to answer.
 			return
 		}
 		// Note: a stream id of 0 is NOT flagged. The id is opaque and
@@ -649,61 +679,89 @@ func (srv *confServer) serve(conn net.Conn) {
 		// a house rule, not a protocol one.)
 		srv.mu.Lock()
 		srv.ops = append(srv.ops, r.reqID())
+		batch := srv.reorder
 		srv.mu.Unlock()
 
-		switch id := r.reqID(); id {
-		case 3013: // kXR_read
-			err = srv.serveRead(conn, r)
-		case 3019: // kXR_write
-			err = srv.serveWrite(conn, r)
-		case 3030: // kXR_pgread
-			err = srv.servePgRead(conn, r)
-		case 3026: // kXR_pgwrite
-			err = srv.servePgWrite(conn, r)
-		case 3025: // kXR_readv
-			err = srv.serveReadV(conn, r)
-		case 3031: // kXR_writev
-			err = srv.serveWriteV(conn, r)
-		case 3016: // kXR_sync
-			srv.checkHandle(r, "kXR_sync", 4)
-			srv.mu.Lock()
-			fail := srv.failSync
-			srv.mu.Unlock()
-			if fail {
-				err = srv.writeErr(conn, r.sid(), 3016, "sync failed")
-			} else {
-				err = srv.writeOK(conn, r.sid(), nil)
+		if batch > 1 {
+			held = append(held, r)
+			if len(held) < batch {
+				continue
 			}
-		case 3003: // kXR_close
-			srv.checkHandle(r, "kXR_close", 4)
-			srv.mu.Lock()
-			fail := srv.failClose
-			srv.mu.Unlock()
-			if fail {
-				err = srv.writeErr(conn, r.sid(), 3003, "close failed")
-			} else {
-				err = srv.writeOK(conn, r.sid(), nil)
+			for i := len(held) - 1; i >= 0; i-- {
+				if err := srv.dispatch(conn, held[i]); err != nil {
+					return
+				}
 			}
-		case 3028: // kXR_truncate
-			srv.checkHandle(r, "kXR_truncate", 4)
-			size := r.i64(8)
-			if size < 0 {
-				srv.flag("kXR_truncate: negative size %d", size)
-			}
-			srv.mu.Lock()
-			if size < int64(len(srv.data)) {
-				srv.data = srv.data[:size]
-			}
-			srv.mu.Unlock()
-			err = srv.writeOK(conn, r.sid(), nil)
-		default:
-			srv.flag("unexpected request id %d", id)
-			err = srv.writeErr(conn, r.sid(), 3000, "unsupported")
+			held = held[:0]
+			continue
 		}
-		if err != nil {
+		if err := srv.dispatch(conn, r); err != nil {
 			return
 		}
 	}
+}
+
+// dispatch answers one request.
+func (srv *confServer) dispatch(conn net.Conn, r confRequest) error {
+	var err error
+	switch id := r.reqID(); id {
+	case 3013: // kXR_read
+		err = srv.serveRead(conn, r)
+	case 3019: // kXR_write
+		err = srv.serveWrite(conn, r)
+	case 3030: // kXR_pgread
+		err = srv.servePgRead(conn, r)
+	case 3026: // kXR_pgwrite
+		err = srv.servePgWrite(conn, r)
+	case 3025: // kXR_readv
+		err = srv.serveReadV(conn, r)
+	case 3031: // kXR_writev
+		err = srv.serveWriteV(conn, r)
+	case 3016: // kXR_sync
+		srv.checkHandle(r, "kXR_sync", 4)
+		srv.mu.Lock()
+		fail := srv.failSync
+		srv.mu.Unlock()
+		if fail {
+			err = srv.writeErr(conn, r.sid(), 3016, "sync failed")
+		} else {
+			err = srv.writeOK(conn, r.sid(), nil)
+		}
+	case 3003: // kXR_close
+		srv.checkHandle(r, "kXR_close", 4)
+		size := r.i64(8)
+		srv.mu.Lock()
+		srv.closeSize = size
+		fail := srv.failClose
+		mismatch := srv.verifyClose && size != int64(len(srv.data))
+		have := len(srv.data)
+		srv.mu.Unlock()
+		switch {
+		case fail:
+			err = srv.writeErr(conn, r.sid(), 3003, "close failed")
+		case mismatch:
+			err = srv.writeErr(conn, r.sid(), 3011,
+				fmt.Sprintf("file has %d bytes, not %d", have, size))
+		default:
+			err = srv.writeOK(conn, r.sid(), nil)
+		}
+	case 3028: // kXR_truncate
+		srv.checkHandle(r, "kXR_truncate", 4)
+		size := r.i64(8)
+		if size < 0 {
+			srv.flag("kXR_truncate: negative size %d", size)
+		}
+		srv.mu.Lock()
+		if size < int64(len(srv.data)) {
+			srv.data = srv.data[:size]
+		}
+		srv.mu.Unlock()
+		err = srv.writeOK(conn, r.sid(), nil)
+	default:
+		srv.flag("unexpected request id %d", id)
+		err = srv.writeErr(conn, r.sid(), 3000, "unsupported")
+	}
+	return err
 }
 
 // confClient runs fn against a client wired to a conformance server holding

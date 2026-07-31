@@ -624,7 +624,98 @@ Assert on the sequence too where the operation has no request of its own:
 proving it is bottom-up is that every `kXR_rmdir` lands after the removals of
 that directory's members.
 
-### 9.3 Environment: the setup costs that masquerade as client bugs
+### 9.3 The decode layer is one primitive, so harden it once and prove it everywhere
+
+Every `UnmarshalXrd` in the client reads through a single `xrdenc.RBuffer`. That
+buffer had no bounds checks: it sliced `buf[pos:pos+n]` and let the runtime
+panic on a short body. Fifty-odd decoders each guarding their own reads is the
+wrong fix — the primitive is the fix:
+
+- `grab(n)` is the only way to consume bytes. Out of range, it consumes the rest,
+  latches a sticky `ErrShortBuffer`, and returns nil; the typed readers yield
+  zero values. Nothing downstream has to test each read.
+- Every `UnmarshalXrd` ends `return <buf>.Err()` instead of `return nil`,
+  including the generated ones (`xrdproto/gen-marshal.go`). Without that, a
+  decoder happily returns a zero-valued struct built from a truncated body.
+- **A length read off the wire must be checked against what is left before it
+  sizes an allocation.** `ReadLenBytes` does the check and copies; six request
+  decoders used to `make([]byte, r.ReadI32())`. `read.OptionalArgs` was worse:
+  `make([]ReadAhead, (alen-8)/16)` from an unchecked `alen` allocates gigabytes
+  and hangs rather than panics, which is the failure mode that does not show up
+  as a crash in a test log.
+
+Proving it needs a decoder table, not per-type tests: one entry per wire struct
+(58 of them) with a valid fixture and the minimum body length, then drive every
+prefix of every fixture, several fill patterns of every length, and negative /
+huge values into each length-prefixed field. Two details decide whether that
+suite finds anything:
+
+- **Vary the fill pattern.** The first pass used `byte(200+i)` and found nothing.
+  `protocol.Response` keys its security block on `body[8] == 'S'`, which that
+  pattern never produces. Zeros, `0xff`, `'S'`, `byte(i)` and a small PRNG each
+  reach different branches.
+- **A hang is a finding.** Run the table under a real `-timeout`; the
+  `read.OptionalArgs` allocation showed up only as a test that never finished.
+
+### 9.4 Some client surfaces need two servers, and that is where the bugs were
+
+A redirect is the one reply that makes a client do something a single-server
+test cannot observe: dial an address the server chose, re-issue the request
+there, carry opaque data onto the path and a token into the *new* login. Mock
+harnesses built on `net.Pipe` cannot test it at all — following a redirect means
+dialling. Two real TCP servers, a redirector that answers everything with
+`kXR_redirect` and a target that records what arrived, is a ~200-line harness
+and it found two defects:
+
+- **Opaque data was assigned, not added.** The protocol says the redirect's
+  opaque data is added to the file name. Overwriting it drops the caller's own
+  data — the authorization token an open normally carries — precisely when a
+  namespace server redirects to a data server, which is the deployment where
+  tokens matter.
+- **An empty opaque still rewrote the path.** `SetOpaque("")` appends a bare `?`
+  *and* truncates whatever followed the last `?`. A redirect carrying nothing
+  therefore corrupted a path that carried something. Guard the call, not the
+  encoder.
+- Related, found by the same test: `xrdproto.Opaque` returned the whole path
+  when the path had no `?` at all, so "does this request already carry opaque
+  data" could not be asked.
+
+Also worth two servers: a redirect cycle. A client-side limit is the only thing
+that ends it, so point two redirectors at each other and assert the chain stops
+with the limit error rather than with a dial failure — a chain that ends in a
+dead port tests nothing about the limit.
+
+### 9.5 Test the surfaces the CLI reaches, and keep them offline
+
+`xrd-cp` and `xrd-ls` had tests that copied from a public server in Lyon: they
+are the only coverage of the command layer and they need the network, so they
+give nothing on a laptop or in a sealed CI. An in-process server
+(`xrootd.NewServer(xrootd.NewFSHandler(dir), …)` on `localhost:0`) covers the
+same paths in milliseconds, and it is what turned up the write-access bug below.
+Two shapes are worth the trouble: capture `os.Stdout` through a pipe for the
+listing commands, and check the *server's* directory on disk rather than reading
+back through the client, so a symmetric bug in both directions cannot hide.
+
+Watch the cost of chunk-size sweeps: `ChunkSize: 1` over a 64 KiB file is 65k
+round trips and took 190 s of a 193 s suite. Sweep realistic chunk sizes over the
+big file and put the byte-at-a-time case on a six-byte one.
+
+### 9.6 An option set that implies write access is not the same as asking for it
+
+`os.O_RDONLY` is `0`. A server that maps `kXR_open` options with
+`if opts&kXR_new != 0 { flag |= os.O_CREATE }` and only sets a write bit for
+`kXR_open_updt` opens a *newly created* file read-only, and the failure surfaces
+several requests later as `EBADF` on the first `kXR_write` — halfway into an
+upload, with the file already created. `kXR_new`, `kXR_delete` and
+`kXR_open_apnd` all imply write access and have to widen the flag.
+
+`kXR_open_apnd` has a second trap: Go's `os.File.WriteAt` refuses to run on an
+`O_APPEND` descriptor, and every XRootD write carries an offset. Record the
+append open per handle and write with `Write`, which is also what the protocol
+asks for — a write on a file opened for append lands at the end whatever offset
+the request names.
+
+### 9.7 Environment: the setup costs that masquerade as client bugs
 
 - **Reuse the grid PKI layout the server expects.** A Globus CA needs the OpenSSL
   hash-dir symlinks (`<subject_hash>.0`) and a signing-policy file, a host cert
@@ -687,3 +778,13 @@ it deliberately differs):
   verb, and never discovered implicitly (§8.5).
 - [ ] The URL scheme selects the transport at one place; `roots://` cannot lose
   its TLS by being reduced to `host:port` (§8.7).
+- [ ] Every decode path is bounds-checked in one primitive, every unmarshal
+  propagates its error, and no length read off the wire sizes an allocation
+  before it is compared with what is left (§9.3).
+- [ ] A redirect's opaque data is *added* to the path, an empty one leaves the
+  path alone, and the token goes into the new login; a redirect cycle ends on
+  the client's own limit (§9.4).
+- [ ] `kXR_wait` cannot park a request forever: the duration is a 32-bit second
+  count chosen by the server, so cap it client-side (§3.2).
+- [ ] A create/truncate/append open grants write access server-side, and an
+  append open does not write through a positional call (§9.6).

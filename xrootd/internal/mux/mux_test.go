@@ -321,3 +321,57 @@ func TestCloseWithDeliveryInFlight(t *testing.T) {
 	m.Close()
 	wg.Wait()
 }
+
+// TestParseRedirection pins the redirect body format: a 4-byte port followed by
+// the host, with the opaque data and the login token appended after '?'.
+func TestParseRedirection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  []byte
+		want Redirection
+	}{
+		{
+			name: "host and port",
+			raw:  append([]byte{0, 0, 0x04, 0x46}, "example.org"...),
+			want: Redirection{Addr: "example.org:1094"},
+		},
+		{
+			name: "with opaque data",
+			raw:  append([]byte{0, 0, 0x04, 0x46}, "example.org?xrd.k=v"...),
+			want: Redirection{Addr: "example.org:1094", Opaque: "xrd.k=v"},
+		},
+		{
+			name: "with opaque data and token",
+			raw:  append([]byte{0, 0, 0x04, 0x46}, "example.org?xrd.k=v?tok"...),
+			want: Redirection{Addr: "example.org:1094", Opaque: "xrd.k=v", Token: "tok"},
+		},
+		{
+			name: "no host",
+			raw:  []byte{0, 0, 0x04, 0x46},
+			want: Redirection{Addr: ":1094"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseRedirection(tc.raw)
+			if err != nil {
+				t.Fatalf("could not parse a well-formed redirect: %v", err)
+			}
+			if *got != tc.want {
+				t.Fatalf("redirect is %+v, want %+v", *got, tc.want)
+			}
+		})
+	}
+}
+
+// TestParseRedirectionRefusesShortBodies: a redirect is answered by connecting
+// to whatever it names, and it is parsed on the connection-reading goroutine
+// before the peer has authenticated itself. A body too short to hold the port
+// must be refused rather than read past.
+func TestParseRedirectionRefusesShortBodies(t *testing.T) {
+	for n := range 4 {
+		got, err := ParseRedirection(make([]byte, n))
+		if err == nil {
+			t.Errorf("a %d-byte redirect body was parsed into %+v", n, got)
+		}
+	}
+}
