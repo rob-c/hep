@@ -7,13 +7,46 @@
   `WithInsecureTLS`). Unit-tested against `httptest`, including a mutual-TLS test
   that generates a CA/server/client cert chain and asserts the server sees the
   client subject.
-- **WebDAV listing** (`xrootd/xrdhttp`): PROPFIND `Depth: 1` with multistatus
-  XML parsing (`Dirlist`).
+- **WebDAV** (`xrootd/xrdhttp`): PROPFIND at `Depth: 0` and `Depth: 1` with
+  multistatus XML parsing, plus MKCOL and MOVE. Exposed as a full
+  `xrdfs.FileSystem` through `(*xrdhttp.Client).FS()`.
+- **HTTP bearer tokens** (`xrootd/xrdhttp`): `WithBearerToken`,
+  `WithDiscoveredBearerToken` (WLCG search order, opt-in), attached to every
+  verb. Dial refuses to pair a token with a cleartext `http://` endpoint unless
+  `WithInsecureBearerToken` is passed.
+- **HTTP third-party copy** (`xrootd/xrdhttp`): WLCG `COPY` in both push and
+  pull mode, with `TransferHeaderAuthorization` for the remote credential,
+  performance-marker progress, and outcome parsing — a `failure:` line under a
+  2xx status is an error, and a body with no terminal line is
+  `ErrTPCNoOutcome`.
 - **S3 backend** (`xrootd/xrds3`): AWS SigV4-signed GET (ranged), HEAD, PUT,
   DELETE; credentials from `xrootd/internal/s3cred`.
 - **Real-XRootD integration harness** (`xrootd/it_test.go`, gated by
   `XROOTD_IT=1`): builds a Globus-style grid PKI with openssl, launches a real
   `xrootd` with root:// and XrdHttp-over-TLS, and verifies the go-hep client.
+
+## Protocol and credential coverage
+
+`xrootd.Dial` is the single entry point: the URL scheme selects the transport and
+returns a protocol-neutral `Backend`. `xrdio.Open` goes through it, so the same
+schemes work there.
+
+| Ask | Scheme / mechanism | Status |
+|-----|--------------------|--------|
+| `root://`, `xroot://` | native XRootD, cleartext | supported |
+| `roots://`, `xroots://` | native XRootD with in-protocol TLS (`kXR_protocol` → TLS → login) | supported |
+| XrdHttp | `http://`, `https://` — ranged GET, HEAD, PUT, DELETE | supported |
+| WebDAV | `dav://`, `davs://` (rewritten to `http`/`https`); PROPFIND, MKCOL, MOVE, DELETE | supported |
+| token auth | native `ztn` (ambient discovery) and HTTP `Authorization: Bearer` | supported |
+| X.509 auth | native `gsi` (unsigned-DH; ambient `/tmp/x509up_u<uid>` proxy) and HTTPS mutual TLS | supported |
+| TPC | native (`xrootd/xrdcopy`, `tpc.dst`/`tpc.src` opaque) and HTTP-TPC (`COPY`, push and pull) | supported |
+| vector I/O | `kXR_readv` / `kXR_writev` | **not implemented** (see lessons-learned §4.5) |
+
+Operations with no HTTP equivalent return `xrdhttp.ErrNotSupported` rather than
+silently doing nothing: chmod, virtual-filesystem stat, checksum-verified write,
+and truncation to a non-zero size. A file opened for writing over HTTP buffers in
+memory and is uploaded by a single PUT on sync/close, so a write is not durable
+until close and the close error must be checked.
 
 ## Running the integration test
 
