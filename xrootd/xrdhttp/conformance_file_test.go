@@ -530,9 +530,14 @@ func TestConformance_AnHrefIsReducedToItsPath(t *testing.T) {
 		{href: "https://dav.example.org/data/f.txt", want: "/data/f.txt"},
 		{href: "http://dav.example.org:1094/data/f.txt", want: "/data/f.txt"},
 		{href: "https://dav.example.org/data/", want: "/data/"},
-		// A percent-encoded path is left as it is: it is compared against a
-		// path that went through the same encoding.
-		{href: "https://dav.example.org/data/a%20b.txt", want: "/data/a%20b.txt"},
+		// An href is a URI reference, so its path is percent-encoded; what it
+		// is compared against, and what the caller opens, is a plain path.
+		{href: "https://dav.example.org/data/a%20b.txt", want: "/data/a b.txt"},
+		{href: "/data/a%2Bb%23c.txt", want: "/data/a+b#c.txt"},
+		{href: "/data/donn%C3%A9es/", want: "/data/données/"},
+		// An href the server escaped badly is left alone rather than guessed
+		// at: an entry that matches nothing beats an entry named wrongly.
+		{href: "/data/100%.txt", want: "/data/100%.txt"},
 		// An authority with no path at all has nothing to reduce.
 		{href: "https://dav.example.org", want: "https://dav.example.org"},
 	} {

@@ -10,10 +10,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
 )
+
+// maxPropfindBody bounds the multistatus document a PROPFIND will parse. It is
+// far above any real listing — a directory of a million entries is a few
+// hundred megabytes of XML only if every entry carries a long name — and far
+// below what an unbounded read costs when the server is wrong or hostile.
+//
+// It is a variable only so the tests can lower it; nothing changes it at run
+// time.
+var maxPropfindBody int64 = 64 << 20
 
 // DirEntry is one member of a WebDAV collection.
 type DirEntry struct {
@@ -80,12 +90,19 @@ func (c *Client) propfind(ctx context.Context, name, depth string) ([]DirEntry, 
 		return nil, fmt.Errorf("xrdhttp: PROPFIND %q: unexpected status %s", name, resp.Status)
 	}
 
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
+	// A multistatus document is whatever the server chooses to send, and it
+	// arrives before anything in it has been validated. Reading it whole would
+	// let an endpoint that answers a one-directory listing with an endless body
+	// exhaust this process's memory, so the parse is bounded and streamed: the
+	// document is never held twice, and a server that runs past the bound is
+	// reported rather than followed.
+	lr := &io.LimitedReader{R: resp.Body, N: maxPropfindBody + 1}
 	var ms davMultistatus
-	if err := xml.Unmarshal(raw, &ms); err != nil {
+	err = xml.NewDecoder(lr).Decode(&ms)
+	if lr.N <= 0 {
+		return nil, fmt.Errorf("xrdhttp: PROPFIND %q: response exceeds %d bytes", name, maxPropfindBody)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("xrdhttp: could not parse PROPFIND response: %w", err)
 	}
 
@@ -122,15 +139,24 @@ func (c *Client) propfind(ctx context.Context, name, depth string) ([]DirEntry, 
 	return out, nil
 }
 
-// hrefPath reduces a multistatus href to its path component. An href may be an
-// absolute URL or an absolute path, and both forms appear in the wild.
+// hrefPath reduces a multistatus href to its path component, decoded. An href
+// is a URI reference (RFC 4918 §8.3), so it may be an absolute URL or an
+// absolute path — both forms appear in the wild — and either way its path is
+// percent-encoded. Everything downstream works in plain paths: the name handed
+// back to the caller has to be openable, and Dirlist compares the href against
+// the path it asked for to drop the collection's own entry. Leaving the
+// encoding on makes a directory a member of itself, which is an infinite
+// recursive walk.
+//
+// An href that does not parse is returned unchanged: it is not this function's
+// job to decide what a server meant, and an unmatched entry is better than a
+// mangled one.
 func hrefPath(href string) string {
-	if i := strings.Index(href, "://"); i >= 0 {
-		if j := strings.Index(href[i+3:], "/"); j >= 0 {
-			return href[i+3+j:]
-		}
+	u, err := url.Parse(href)
+	if err != nil || u.Path == "" {
+		return href
 	}
-	return href
+	return u.Path
 }
 
 // Dirlist lists the immediate members of a WebDAV collection at name using a

@@ -69,6 +69,9 @@ that arrived, not only on the values that came back.
 | `xrootd/xrdhttp/mtls_test.go` | The x509 access path: a client certificate presented to a server that demands one, and the subject the server sees. |
 | `xrootd/xrdhttp/auth_test.go` | Bearer tokens, including the refusal to send one to a cleartext endpoint. |
 | `xrootd/xrdhttp/tpc_test.go` | Third-party copy over HTTP: the push handshake, the `TransferHeader` credentials, and a failure announced in the body of a 2xx response. |
+| `xrootd/xrdhttp/conformance_transfer_test.go` | What the client does with the answers an endpoint gives it. A server that ignores `Range` answers 200 with the whole object, so the bytes are right but start at zero — the client skips forward rather than returning the head of the file for every offset; a `Content-Range` on a 200 means the range was honoured after all. Plus a zero-length read making no request, a known size declared as `Content-Length` against an unknown one streaming chunked, a redirect to the data node followed and a redirect loop bounded, a bearer token not following a redirect to another host, and the five error statuses reported rather than returned as data — with 404 an answer for HEAD and DELETE and a failure for everything else. |
+| `xrootd/xrdhttp/conformance_target_test.go` | Which URL each operation is addressed to. Nine awkward names — spaces, `+`, `%`, `?`, `#`, `&`, `:`, unicode — through HEAD, GET, ranged GET, PUT, DELETE, PROPFIND, MKCOL and MOVE, asserted on the path the server decoded and on the escaping in the request line, with MOVE's `Destination` parsed back as a URL. Plus resolution against a base URL with a path prefix, and the listing side: an href is a URI reference, so it is decoded before it is compared to the requested path or handed back as a name. |
+| `xrootd/xrdhttp/conformance_hostile_test.go` | The PROPFIND parser against a server that answers badly: thirteen malformed documents, an entity-expansion bomb, an external entity naming a local file and a URL, an endless well-formed body, and a parseable document under the wrong status. Nothing may panic, hang, allocate without bound or fetch what the document points at. |
 | `xrootd/xrds3/conformance_test.go` | The part of a SigV4 signature nobody can see: the canonical query string is sorted by name, then by value, and percent-encoded — it is hashed, not sent, so a disagreement surfaces only as a signature mismatch. Plus `WithRegion` reaching the credential scope and `WithHTTPClient` being what the request actually goes through. |
 
 ## What is still network-bound
@@ -94,3 +97,11 @@ the offline coverage for those surfaces — the conformance suites above are.
   arrived — not for the field it happens to set.
 - Keep the round-trip count in mind: sweep realistic sizes over a large fixture
   and pathological ones over a small fixture.
+- An HTTP behaviour is tested against more than one *shape* of server. The
+  endpoints in this ecosystem disagree — about ranges, about hrefs, about which
+  status carries a failure — and a test written against one cooperative handler
+  passes on a client that only works with that handler.
+- Anything parsed from the network gets a bound and a hostile case. The size
+  limit belongs to the package, not the test; where a test has to lower it to
+  stay fast, it also asserts the shipped value is still large enough for real
+  data.

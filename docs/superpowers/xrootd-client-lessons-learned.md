@@ -601,6 +601,52 @@ is what makes the token conformance tests meaningful at all.
 
 ---
 
+### 8.9 Over HTTP, the wrong bytes arrive with a success status
+
+The native protocol answers a read with the bytes for the request it was given.
+HTTP answers with a *representation*, and the status says which one. A server
+with no range support answers a ranged `GET` with `200` and the whole object —
+a perfectly correct response — and a client that reads `len(p)` bytes off the
+front of that body returns the head of the file for **every** offset, with
+`err == nil`. Nothing distinguishes it from a working read except the data.
+
+So the status has to be branched on, not just checked for success: `206` starts
+where it was asked, `200` starts at zero and the client skips forward itself,
+`416` is `io.EOF`. And the header outranks the status — some endpoints send only
+the requested range under a `200`, declaring it in `Content-Range`, so the
+presence of that header means the range was honoured whatever the status line
+says.
+
+The same asymmetry runs through the rest of the HTTP surface, and each half is
+a different kind of bug:
+
+- **An href is a URI reference, not a path.** A `PROPFIND` returns
+  percent-encoded hrefs (RFC 4918 §8.3). Comparing one against the path that was
+  requested — which never went through that encoding — fails for any name with a
+  space in it, so the collection does not match its own entry and is listed as
+  one of its own members: a recursive walk over `/store/my data/` never
+  terminates. The same undecoded string, handed back as a name, is a name no
+  later request can open. Decode once, in the one function that reduces an href.
+- **A parsed body is an allocation the other end chooses.** The multistatus
+  document is read before anything in it has been validated, so an unbounded
+  `io.ReadAll` is a memory-exhaustion primitive: a server that never stops
+  writing a well-formed listing takes the process with it. Stream the parse
+  through an `io.LimitedReader` — bounded *and* never holding the document
+  twice — and report the bound rather than following it.
+- **A credential is scoped to a host, and a redirect crosses hosts.** Following
+  a redirect is the whole point of a manager/data-node deployment; carrying the
+  bearer token along to whatever host answered is how it leaks. Go's
+  `http.Client` strips `Authorization` across hosts by default — which is only
+  true while the token is set on the request rather than injected by a custom
+  `RoundTripper`, and that is worth a test rather than an assumption.
+
+- **Check against PyXRootDClient:** its range, redirect and PROPFIND tests are
+  the reference for all four; the Go equivalents are
+  `xrdhttp/conformance_transfer_test.go`, `conformance_target_test.go` and
+  `conformance_hostile_test.go`.
+
+---
+
 ## 9. Test harness and environment (unglamorous but load-bearing)
 
 ### 9.1 Conformance testing: a strict server, an independent decoder, and a fail-closed half

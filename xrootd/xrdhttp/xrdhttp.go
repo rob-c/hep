@@ -204,14 +204,30 @@ func (c *Client) ReadAt(ctx context.Context, p []byte, name string, off int64) (
 		return 0, fmt.Errorf("xrdhttp: GET %q range: %w", name, err)
 	}
 	defer resp.Body.Close()
+
+	body := io.Reader(resp.Body)
 	switch resp.StatusCode {
-	case http.StatusPartialContent, http.StatusOK:
+	case http.StatusPartialContent:
+		// The server answered the range; the body starts where we asked.
+	case http.StatusOK:
+		// 200 means the whole representation (RFC 9110 §15.3.1), so a server
+		// that does not implement ranges answers with the entire object. Its
+		// bytes are still the right ones, they just start at zero: skipping
+		// forward is the difference between a correct read and a silently
+		// wrong one. A Content-Range header means the range was honoured
+		// after all, whatever the status says.
+		if resp.Header.Get("Content-Range") == "" && off > 0 {
+			if _, err := io.CopyN(io.Discard, body, off); err != nil {
+				// The object ends before the offset we were asked for.
+				return 0, io.EOF
+			}
+		}
 	case http.StatusRequestedRangeNotSatisfiable:
 		return 0, io.EOF
 	default:
 		return 0, fmt.Errorf("xrdhttp: GET %q range: unexpected status %s", name, resp.Status)
 	}
-	n, err := io.ReadFull(resp.Body, p)
+	n, err := io.ReadFull(body, p)
 	if err == io.ErrUnexpectedEOF || (err == nil && n < len(p)) {
 		return n, io.EOF
 	}
