@@ -18,7 +18,7 @@ import (
 )
 
 func TestDialUnsupportedScheme(t *testing.T) {
-	for _, scheme := range []string{"http", "https", "s3", "dav", "gopher"} {
+	for _, scheme := range []string{"s3", "ftp", "gopher"} {
 		t.Run(scheme, func(t *testing.T) {
 			_, err := Dial(context.Background(), scheme+"://example.org/some/path", "gopher")
 			if !errors.Is(err, ErrUnsupportedScheme) {

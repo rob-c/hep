@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
+	"go-hep.org/x/hep/xrootd/xrdproto/auth/gsi"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth/host"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth/krb5"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth/sss"
@@ -18,12 +19,13 @@ import (
 )
 
 // defaultProviders is the list of authentication providers a xrootd client will
-// use by default. Credentialed providers (krb5, ztn, sss) precede the weaker
+// use by default. Credentialed providers (krb5, gsi, ztn, sss) precede the weaker
 // host/unix identities; nil entries (a provider whose ambient discovery failed)
 // are skipped by initSecurityProviders. The actual choice is still driven by
 // the server's offered list in cliSession.auth.
 var defaultProviders = []auth.Auther{
 	krb5.Default,
+	gsi.Default,
 	token.Default,
 	sss.Default,
 	unix.Default,

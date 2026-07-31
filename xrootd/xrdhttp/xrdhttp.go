@@ -23,17 +23,24 @@ import (
 // Client accesses files over HTTP or HTTPS against an XRootD (or any
 // standards-compliant) HTTP server.
 type Client struct {
-	base *url.URL
-	http *http.Client
+	base  *url.URL
+	http  *http.Client
+	token string // bearer token, or "" when unauthenticated
 }
 
 // Option configures a Client.
 type Option func(*config)
 
 type config struct {
-	tls     *tls.Config
-	timeout time.Duration
-	rt      http.RoundTripper
+	tls           *tls.Config
+	timeout       time.Duration
+	rt            http.RoundTripper
+	token         string
+	insecureToken bool
+	// err records the first option that failed, so Dial can report it rather
+	// than silently building a client with a credential the caller asked for
+	// and did not get.
+	err error
 }
 
 // WithTLSConfig sets the TLS configuration (server CAs, client certificate).
@@ -95,6 +102,12 @@ func Dial(rawurl string, opts ...Option) (*Client, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	if cfg.err != nil {
+		return nil, cfg.err
+	}
+	if cfg.token != "" && u.Scheme != "https" && !cfg.insecureToken {
+		return nil, fmt.Errorf("xrdhttp: refusing to send a bearer token to the cleartext endpoint %q; use https, or WithInsecureBearerToken to override", rawurl)
+	}
 
 	rt := cfg.rt
 	if rt == nil {
@@ -106,8 +119,9 @@ func Dial(rawurl string, opts ...Option) (*Client, error) {
 	}
 
 	return &Client{
-		base: u,
-		http: &http.Client{Transport: rt, Timeout: cfg.timeout},
+		base:  u,
+		http:  &http.Client{Transport: rt, Timeout: cfg.timeout},
+		token: cfg.token,
 	}, nil
 }
 
@@ -133,7 +147,7 @@ func (c *Client) Stat(ctx context.Context, name string) (FileInfo, error) {
 	if err != nil {
 		return FileInfo{}, err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return FileInfo{}, fmt.Errorf("xrdhttp: HEAD %q: %w", name, err)
 	}
@@ -162,7 +176,7 @@ func (c *Client) ReadAll(ctx context.Context, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("xrdhttp: GET %q: %w", name, err)
 	}
@@ -185,7 +199,7 @@ func (c *Client) ReadAt(ctx context.Context, p []byte, name string, off int64) (
 		return 0, err
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, off+int64(len(p))-1))
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return 0, fmt.Errorf("xrdhttp: GET %q range: %w", name, err)
 	}
@@ -214,7 +228,7 @@ func (c *Client) Create(ctx context.Context, name string, r io.Reader, size int6
 	if size >= 0 {
 		req.ContentLength = size
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("xrdhttp: PUT %q: %w", name, err)
 	}
@@ -232,7 +246,7 @@ func (c *Client) Remove(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("xrdhttp: DELETE %q: %w", name, err)
 	}

@@ -28,6 +28,21 @@ const unsignedVersion = 10300
 // clntOptsDefault matches a stock client's default options (delegated proxy off).
 const clntOptsDefault = 0x80
 
+// Default is a GSI provider configured from the ambient X.509 proxy found at
+// DefaultProxyPath. If no usable proxy is present, Default is nil and the
+// client simply never offers gsi.
+//
+// Discovery mirrors krb5, ztn and sss: a credential that happens to be sitting
+// in the conventional place is usable without the caller wiring it by hand,
+// which is what a stock client does.
+var Default auth.Auther
+
+func init() {
+	if a, err := LoadProxy(DefaultProxyPath()); err == nil {
+		Default = a
+	}
+}
+
 // Auth is the GSI (X.509 proxy) security provider. It drives the two client
 // rounds of the handshake: the initial certificate request and, after the
 // server's kXGS_cert challenge, the certificate response carrying the proxy
