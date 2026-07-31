@@ -4,6 +4,8 @@
 
 package xrdproto // import "go-hep.org/x/hep/xrootd/xrdproto"
 
+import "fmt"
+
 // MaxResponseLength is the largest body, in bytes, that a client accepts in a
 // single response frame.
 //
@@ -14,6 +16,37 @@ package xrdproto // import "go-hep.org/x/hep/xrootd/xrdproto"
 // with more data than fits in one frame splits it across several OkSoFar
 // frames — so a body beyond this bound is refused rather than allocated.
 const MaxResponseLength = 64 << 20 // 64 MiB
+
+// MaxVectorSegments and MaxVectorBytes bound a vector request (kXR_readv,
+// kXR_writev) before it reaches the wire.
+//
+// A server is free to refuse an over-long vector, but discovering that after
+// the request has been assembled costs a round trip and, for a vector built
+// from user input, an arbitrarily large buffer on this side first. These are
+// the bounds the reference clients apply.
+const (
+	// MaxVectorSegments is the largest number of segments in one vector request.
+	MaxVectorSegments = 1024
+	// MaxVectorBytes is the largest aggregate payload of one vector request.
+	MaxVectorBytes = 256 << 20 // 256 MiB
+)
+
+// ValidateVector reports whether a vector request of nsegs segments carrying
+// total bytes in all is within MaxVectorSegments and MaxVectorBytes. what
+// names the operation in the error message.
+func ValidateVector(nsegs int, total int64, what string) error {
+	switch {
+	case nsegs < 1:
+		return fmt.Errorf("xrootd: %s with no segments", what)
+	case nsegs > MaxVectorSegments:
+		return fmt.Errorf("xrootd: %s of %d segments exceeds the %d-segment limit", what, nsegs, MaxVectorSegments)
+	case total < 0:
+		return fmt.Errorf("xrootd: %s with a negative segment length", what)
+	case total > MaxVectorBytes:
+		return fmt.Errorf("xrootd: %s of %d bytes exceeds the %d-byte limit", what, total, MaxVectorBytes)
+	}
+	return nil
+}
 
 // ResponseLimiter is the interface implemented by requests that can state an
 // upper bound on the response they may legitimately receive.

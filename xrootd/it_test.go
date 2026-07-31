@@ -5,6 +5,7 @@
 package xrootd_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -102,6 +103,61 @@ func TestIntegrationRealServer(t *testing.T) {
 		}
 		if string(buf) != payload {
 			t.Fatalf("root:// content mismatch: %q", buf)
+		}
+	})
+
+	// root-vector exercises kXR_readv and kXR_writev against a stock server,
+	// which is the only way to confirm the framing they disagree with clients
+	// about: a writev whose dlen counts the segment data is answered
+	// kXR_ArgInvalid ("Write vector is invalid") rather than misread.
+	t.Run("root-vector", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		c, err := xrootd.NewClient(ctx, fmt.Sprintf("localhost:%d", rootPort), "gopher")
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		defer c.Close()
+
+		f, err := c.FS().Open(ctx, "/vector.bin", xrdfs.OpenModeOwnerRead|xrdfs.OpenModeOwnerWrite,
+			xrdfs.OpenOptionsDelete|xrdfs.OpenOptionsOpenUpdate)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer f.Close(ctx)
+
+		wv, ok := f.(xrdfs.VectorWriter)
+		if !ok {
+			t.Fatal("the file does not implement xrdfs.VectorWriter")
+		}
+		writes := []xrdfs.WriteVSegment{
+			{Offset: 0, Data: []byte("first")},
+			{Offset: 4096, Data: bytes.Repeat([]byte{0x5a}, 300)},
+			{Offset: 9000, Data: []byte("last")},
+		}
+		if err := wv.WriteVAt(ctx, writes); err != nil {
+			t.Fatalf("WriteVAt: %v", err)
+		}
+		if err := f.Sync(ctx); err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+
+		rv, ok := f.(xrdfs.VectorReader)
+		if !ok {
+			t.Fatal("the file does not implement xrdfs.VectorReader")
+		}
+		segs := make([]xrdfs.ReadVSegment, len(writes))
+		for i, w := range writes {
+			segs[i] = xrdfs.ReadVSegment{Offset: w.Offset, Length: len(w.Data)}
+		}
+		got, err := rv.ReadVAt(ctx, segs)
+		if err != nil {
+			t.Fatalf("ReadVAt: %v", err)
+		}
+		for i := range writes {
+			if !bytes.Equal(got[i], writes[i].Data) {
+				t.Fatalf("vector segment %d did not survive the round trip: got %q", i, got[i])
+			}
 		}
 	})
 

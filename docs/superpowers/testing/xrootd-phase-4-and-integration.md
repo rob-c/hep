@@ -21,6 +21,12 @@
   `ErrTPCNoOutcome`.
 - **S3 backend** (`xrootd/xrds3`): AWS SigV4-signed GET (ranged), HEAD, PUT,
   DELETE; credentials from `xrootd/internal/s3cred`.
+- **Vector I/O** (`xrootd/xrdproto/readv`, `xrootd/xrdproto/writev`):
+  scatter-gather read and write in one round trip, exposed through the optional
+  `xrdfs.VectorReader` / `xrdfs.VectorWriter` interfaces on an open file.
+  Segment count and aggregate payload are bounded before the request is
+  assembled; a `readv` reply that does not account for every requested segment
+  is refused rather than returned as a prefix.
 - **Real-XRootD integration harness** (`xrootd/it_test.go`, gated by
   `XROOTD_IT=1`): builds a Globus-style grid PKI with openssl, launches a real
   `xrootd` with root:// and XrdHttp-over-TLS, and verifies the go-hep client.
@@ -40,7 +46,7 @@ schemes work there.
 | token auth | native `ztn` (ambient discovery) and HTTP `Authorization: Bearer` | supported |
 | X.509 auth | native `gsi` (unsigned-DH; ambient `/tmp/x509up_u<uid>` proxy) and HTTPS mutual TLS | supported |
 | TPC | native (`xrootd/xrdcopy`, `tpc.dst`/`tpc.src` opaque) and HTTP-TPC (`COPY`, push and pull) | supported |
-| vector I/O | `kXR_readv` / `kXR_writev` | **not implemented** (see lessons-learned §4.5) |
+| vector I/O | `kXR_readv` / `kXR_writev` via `xrdfs.VectorReader` / `xrdfs.VectorWriter` | supported (see lessons-learned §4.5) |
 
 Operations with no HTTP equivalent return `xrdhttp.ErrNotSupported` rather than
 silently doing nothing: chmod, virtual-filesystem stat, checksum-verified write,
@@ -62,6 +68,7 @@ Verified legs:
 | Leg | Status | What it proves |
 |-----|--------|----------------|
 | `root-anon` | PASS | go-hep client stats and reads a file over root:// from a real server |
+| `root-vector` | PASS | `kXR_writev` then `kXR_readv` round-trip disjoint ranges; confirms the descriptors-only `dlen` framing a mock cannot distinguish |
 | `xrdhttps-x509` | PASS | `xrdhttp` reads a file over HTTPS presenting an X.509 client cert (mutual TLS), server verified against the grid CA |
 | `copy-engine` | PASS | `xrdcopy` downloads (with checksum verify), uploads, and reads back |
 | `copy-resume` | PASS | `xrdcopy` resumes a partial download to full content; no-ops a complete file |

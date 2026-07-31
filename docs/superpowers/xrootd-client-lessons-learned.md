@@ -217,27 +217,53 @@ makes a successful `PgWriteAt` mean "intact on the server" rather than merely
 - **Check against nginx-xrootd:** `client/lib/ops_file_pg.c`
   (`pgwrite_handle_cse`) and the `kXR_pgRetry` flag definition.
 
-### 4.5 Not implemented: vector I/O (`kXR_readv` / `kXR_writev`)
+### 4.5 Vector I/O (`kXR_readv` / `kXR_writev`): the length field that is not in the frame
 
-Scatter-gather I/O is a real parity gap against both libxrdc and XRootD.jl. Two
-facts are worth recording now so they are not rediscovered:
+Scatter-gather I/O is what makes reading a scattered set of branches from a
+remote file affordable — one round trip for a whole list of disjoint ranges
+instead of one per range. It is implemented in `xrootd/xrdproto/readv` and
+`xrootd/xrdproto/writev`, reached through the optional `xrdfs.VectorReader` and
+`xrdfs.VectorWriter` interfaces. Both request kinds share a 16-byte descriptor,
+`fhandle[4] | length[4] | offset[8]`, and both hide something in it.
 
-- `kXR_writev`'s header `dlen` covers **only** the descriptor block (16 bytes
-  per segment; stock servers enforce `dlen % 16 == 0` and answer
-  `kXR_ArgInvalid: "Write vector is invalid"` otherwise). The concatenated
-  segment data streams *after* the frame. libxrdc counted the data inside `dlen`
-  — which only its own server accepted — until this was confirmed against stock
-  xrootd 5.8; it now sends the descriptors-only form.
-- A `kXR_readv` reply interleaves a 16-byte echo header (carrying the **actual**
-  length) with the data, per segment. A reply that decodes to fewer segments
-  than were requested is a *stopped* transfer, not a short one, and must fail
-  rather than hand back partial data.
+- **`kXR_writev`'s `dlen` covers only the descriptor block.** The concatenated
+  segment data streams *after* the frame, outside the length the header
+  declares. Stock servers enforce `dlen % 16 == 0` and answer `kXR_ArgInvalid:
+  "Write vector is invalid"` to a request that counts the data in, so the wrong
+  framing fails loudly rather than corrupting a file — but only against a stock
+  server. libxrdc counted the data inside `dlen` (which only its own server
+  accepted) until this was confirmed against stock xrootd 5.8. A mock that
+  reads `dlen` bytes and stops will happily accept either form, which is why
+  the conformance server here reads the trailer off the connection itself and
+  the `root-vector` integration leg runs against real xrootd.
+- **This also puts `kXR_writev` out of reach of `kXR_sigver`.** A signature
+  covers the request frame and its `dlen` bytes; a vector write's data is not
+  in either. Signing one produces a hash the server cannot reproduce, so the
+  request is deliberately absent from the signing requirements table.
+- **A `kXR_readv` reply interleaves a 16-byte echo header with the data, per
+  segment,** and the length in that header is what was *actually* read. The
+  reply carries no request-side index, so a server that stops early simply
+  sends fewer segments and every later segment shifts onto the wrong range: a
+  reply that does not account for every requested segment — with exactly the
+  bytes asked for, at the offset asked for — is a *stopped* transfer, not a
+  short one, and must fail rather than hand back a prefix. The same reasoning
+  rules out accepting a short segment in the middle.
+- **The reply is a byte stream, not a sequence of segments.** An `OkSoFar`
+  boundary can fall inside an echo header, so decoding frame by frame loses the
+  segment that straddles one; the frames are concatenated first and walked
+  after.
+- **The bounds belong on this side of the wire.** Segment count and aggregate
+  payload are checked before the request is assembled (`xrdproto.ValidateVector`,
+  1024 segments and 256 MiB, the bounds libxrdc applies), and the reply carries
+  a [`ResponseLimiter`](#34-a-response-length-is-untrusted-input-and-a-per-frame-cap-is-not-enough)
+  bound of `16 × nsegs + Σ rlen`. The decode side needs the same bound for a
+  different reason: a `writev` frame's declared lengths decide how much is read
+  from the connection *next*, so they are bounded before anything is reserved
+  for them.
 
-When it is implemented, the segment count and aggregate payload need the same
-bounds libxrdc applies before touching the wire (`VEC_MAXSEGS` = 1024,
-`VEC_MAXBYTES` = 256 MiB), and the reply needs a
-[`ResponseLimiter`](#34-a-response-length-is-untrusted-input-and-a-per-frame-cap-is-not-enough)
-bound of `16 × nsegs + Σ rlen`.
+- **Check against nginx-xrootd:** `src/protocols/root/protocol/readv_seg.h`
+  (the pack/unpack pair) and the `readahead_list` / `write_list` structs in
+  `src/protocols/root/protocol/wire_write_extended_requests.h`.
 
 ---
 
