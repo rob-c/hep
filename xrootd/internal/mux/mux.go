@@ -99,8 +99,26 @@ func ParseRedirection(raw []byte) (*Redirection, error) {
 	return &Redirection{Addr: addr, Opaque: opaque, Token: token}, nil
 }
 
-type dataSendChan chan<- ServerResponse
 type DataRecvChan <-chan ServerResponse
+
+// waiter is one claimed stream: the channel its caller reads from, plus the
+// bookkeeping that lets Unclaim close that channel while a delivery may still
+// be in flight on the reader goroutine.
+type waiter struct {
+	ch chan ServerResponse
+	// done is closed by Unclaim to release a delivery that is parked on a
+	// send nobody will ever receive.
+	done chan struct{}
+	// sending counts the deliveries currently inside the select below.
+	sending sync.WaitGroup
+}
+
+func newWaiter() *waiter {
+	return &waiter{
+		ch:   make(chan ServerResponse),
+		done: make(chan struct{}),
+	}
+}
 
 const streamIDPartSize = math.MaxUint8
 const streamIDPoolSize = streamIDPartSize * streamIDPartSize
@@ -110,7 +128,7 @@ const streamIDPoolSize = streamIDPartSize * streamIDPartSize
 // with methods to claim, free and pass data to a specific channel by id.
 type Mux struct {
 	mu          sync.Mutex
-	dataWaiters map[xrdproto.StreamID]dataSendChan
+	dataWaiters map[xrdproto.StreamID]*waiter
 	freeIDs     chan uint16
 	quit        chan struct{}
 	closed      bool
@@ -121,7 +139,7 @@ func New() *Mux {
 	const freeIDsBufferSize = 32 // 32 is completely arbitrary ATM and should be refined based on real use cases.
 
 	m := Mux{
-		dataWaiters: make(map[xrdproto.StreamID]dataSendChan),
+		dataWaiters: make(map[xrdproto.StreamID]*waiter),
 		freeIDs:     make(chan uint16, freeIDsBufferSize),
 		quit:        make(chan struct{}),
 	}
@@ -150,11 +168,18 @@ func (m *Mux) Close() {
 		return
 	}
 	m.closed = true
+	// Snapshot the claimed ids: the loop below calls back into SendData and
+	// Unclaim, which both take this mutex, and ranging over the live map while
+	// they mutate it is a race in its own right.
+	ids := make([]xrdproto.StreamID, 0, len(m.dataWaiters))
+	for id := range m.dataWaiters {
+		ids = append(ids, id)
+	}
 	m.mu.Unlock()
 	close(m.quit)
 
 	response := ServerResponse{Err: errors.New("xrootd: close was called before response was fully received")}
-	for streamID := range m.dataWaiters {
+	for _, streamID := range ids {
 		_ = m.SendData(streamID, response)
 		m.Unclaim(streamID)
 	}
@@ -162,7 +187,7 @@ func (m *Mux) Close() {
 
 // Claim searches for unclaimed id and returns corresponding channel.
 func (m *Mux) Claim() (xrdproto.StreamID, DataRecvChan, error) {
-	ch := make(chan ServerResponse)
+	w := newWaiter()
 
 	for {
 		id := <-m.freeIDs
@@ -178,9 +203,9 @@ func (m *Mux) Claim() (xrdproto.StreamID, DataRecvChan, error) {
 			continue
 		}
 
-		m.dataWaiters[streamId] = ch
+		m.dataWaiters[streamId] = w
 		m.mu.Unlock()
-		return streamId, ch, nil
+		return streamId, w.ch, nil
 	}
 }
 
@@ -191,45 +216,62 @@ func (m *Mux) ClaimWithID(id xrdproto.StreamID) (DataRecvChan, error) {
 	if m.closed {
 		return nil, errors.New("mux: ClaimWithID was called on closed Mux")
 	}
-	ch := make(chan ServerResponse)
-
 	if _, claimed := m.dataWaiters[id]; claimed {
 		return nil, fmt.Errorf("mux: channel with id %v is already claimed", id)
 	}
 
-	m.dataWaiters[id] = ch
+	w := newWaiter()
+	m.dataWaiters[id] = w
 
-	return ch, nil
+	return w.ch, nil
 }
 
 // Unclaim marks channel with specified id as unclaimed.
 func (m *Mux) Unclaim(id xrdproto.StreamID) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	w, ok := m.dataWaiters[id]
+	delete(m.dataWaiters, id)
+	m.mu.Unlock()
 
-	if _, ok := m.dataWaiters[id]; ok {
-		close(m.dataWaiters[id])
-		delete(m.dataWaiters, id)
+	if !ok {
+		return
 	}
+
+	// A caller that gave up on its request — a deadline, a refused response —
+	// leaves SendData parked on a send nobody will receive. Releasing it and
+	// waiting for it to leave the select is what makes the close below safe:
+	// closing a channel a sender still holds panics.
+	close(w.done)
+	w.sending.Wait()
+	close(w.ch)
 }
 
 // SendData sends data to channel with specific id.
 //
 // The channel send is done without holding the mutex: a blocking send (the
 // waiting caller is slow or has gone away) must not freeze the whole mux, which
-// would deadlock every other stream. If the mux is closed while the send is
-// pending, the quit signal unblocks it.
+// would deadlock every other stream. An unclaim of this stream, or a close of
+// the whole mux, unblocks a pending send.
+//
+// The delivery is registered under the mutex, before the send, so that an
+// Unclaim racing with it either fails to find the waiter at all or waits for
+// this send to finish before closing the channel.
 func (m *Mux) SendData(id xrdproto.StreamID, data ServerResponse) error {
 	m.mu.Lock()
-	ch, ok := m.dataWaiters[id]
+	w, ok := m.dataWaiters[id]
+	if ok {
+		w.sending.Add(1)
+	}
 	m.mu.Unlock()
 
 	if !ok {
 		return fmt.Errorf("mux: cannot find data waiter for id %v", id)
 	}
+	defer w.sending.Done()
 
 	select {
-	case ch <- data:
+	case w.ch <- data:
+	case <-w.done:
 	case <-m.quit:
 	}
 

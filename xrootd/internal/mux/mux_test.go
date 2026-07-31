@@ -7,6 +7,7 @@ package mux // import "go-hep.org/x/hep/xrootd/internal/mux"
 import (
 	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 
 	"go-hep.org/x/hep/xrootd/xrdproto"
@@ -261,4 +262,62 @@ func BenchmarkMux_SendData(b *testing.B) {
 
 	m.Unclaim(id)
 	close(done)
+}
+
+// TestUnclaimWithDeliveryInFlight covers the case a caller creates by giving up
+// on a request — a context deadline, a response the client refused — while the
+// reader goroutine is still delivering a frame for that stream. Unclaim must
+// wait for the delivery to leave the select before closing the channel;
+// closing it underneath the sender panics with "send on closed channel".
+func TestUnclaimWithDeliveryInFlight(t *testing.T) {
+	m := New()
+	defer m.Close()
+
+	for range 200 {
+		id, _, err := m.Claim()
+		if err != nil {
+			t.Fatalf("Claim: %v", err)
+		}
+
+		// Nobody ever reads this channel, so the send parks. Whether SendData
+		// finds the waiter at all depends on which side wins the race, and both
+		// outcomes are fine; what must not happen is a panic or a hang.
+		started, sent := make(chan struct{}), make(chan struct{})
+		go func() {
+			defer close(sent)
+			close(started)
+			_ = m.SendData(id, ServerResponse{Data: []byte{1, 2, 3}})
+		}()
+
+		<-started
+		m.Unclaim(id)
+		<-sent
+	}
+}
+
+// TestCloseWithDeliveryInFlight is the same hazard reached through Close,
+// which unclaims every outstanding stream at once.
+func TestCloseWithDeliveryInFlight(t *testing.T) {
+	m := New()
+
+	var ids []xrdproto.StreamID
+	for range 16 {
+		id, _, err := m.Claim()
+		if err != nil {
+			t.Fatalf("Claim: %v", err)
+		}
+		ids = append(ids, id)
+	}
+
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = m.SendData(id, ServerResponse{Data: []byte{1}})
+		}()
+	}
+
+	m.Close()
+	wg.Wait()
 }
