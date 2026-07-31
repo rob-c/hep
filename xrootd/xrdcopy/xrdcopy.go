@@ -13,13 +13,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	stdpath "path"
 	"path/filepath"
 	"time"
 
 	"go-hep.org/x/hep/xrootd"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdio"
+	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdsum"
 )
 
@@ -134,7 +134,7 @@ func downloadDir(ctx context.Context, fs xrdfs.FileSystem, remoteDir, localDir s
 		return fmt.Errorf("xrdcopy: could not list %q: %w", remoteDir, err)
 	}
 	for _, e := range entries {
-		rpath := stdpath.Join(remoteDir, e.Name())
+		rpath := xrdproto.JoinPath(remoteDir, e.Name())
 		lpath := filepath.Join(localDir, e.Name())
 		if e.IsDir() {
 			if err := downloadDir(ctx, fs, rpath, lpath, opts); err != nil {
@@ -266,7 +266,7 @@ func uploadDir(ctx context.Context, fs xrdfs.FileSystem, localDir, remoteDir str
 	}
 	for _, e := range entries {
 		lpath := filepath.Join(localDir, e.Name())
-		rpath := stdpath.Join(remoteDir, e.Name())
+		rpath := xrdproto.JoinPath(remoteDir, e.Name())
 		if e.IsDir() {
 			if err := uploadDir(ctx, fs, lpath, rpath, opts); err != nil {
 				return err

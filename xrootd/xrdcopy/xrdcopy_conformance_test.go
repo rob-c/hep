@@ -368,3 +368,90 @@ func TestCopyHonoursContext(t *testing.T) {
 		t.Fatal("a copy on a cancelled context reported success")
 	}
 }
+
+// TestCopyCarriesOpaqueDataThroughTheWalk: a remote URL usually carries a
+// bearer token as opaque data, and a recursive copy has to hand it to every
+// request it makes — each level of the tree is authorized on its own. The
+// names it builds from a listing therefore have to inherit the CGI of the path
+// the caller named, without it leaking into a file name at either end: a walk
+// that string-joins onto "/tree?authz=tok" asks for "/tree?authz=tok/a.txt",
+// which no server holds, and writes a local file called "a.txt?authz=tok".
+func TestCopyCarriesOpaqueDataThroughTheWalk(t *testing.T) {
+	const token = "?authz=tok&xrd.wantprot=unix"
+
+	dir, url := copyServer(t)
+
+	files := map[string][]byte{
+		"a.txt":       []byte("a"),
+		"sub/b.txt":   []byte("bb"),
+		"sub/c/d.txt": []byte("ddd"),
+	}
+	for name, data := range files {
+		path := filepath.Join(dir, "tree", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("could not create %q: %v", path, err)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatalf("could not write %q: %v", path, err)
+		}
+	}
+
+	t.Run("single file", func(t *testing.T) {
+		dst := filepath.Join(t.TempDir(), "a.txt")
+		err := xrdcopy.Copy(context.Background(), dst, url+"/tree/a.txt"+token, xrdcopy.Options{
+			Username: "gopher",
+		})
+		if err != nil {
+			t.Fatalf("could not download: %v", err)
+		}
+		got, err := os.ReadFile(dst)
+		if err != nil {
+			t.Fatalf("could not read the downloaded file: %v", err)
+		}
+		if want := files["a.txt"]; !bytes.Equal(got, want) {
+			t.Fatalf("downloaded %q, want %q", got, want)
+		}
+	})
+
+	t.Run("download", func(t *testing.T) {
+		dst := filepath.Join(t.TempDir(), "tree")
+		err := xrdcopy.Copy(context.Background(), dst, url+"/tree"+token, xrdcopy.Options{
+			Recursive: true,
+			Username:  "gopher",
+		})
+		if err != nil {
+			t.Fatalf("could not download the tree: %v", err)
+		}
+		for name, want := range files {
+			got, err := os.ReadFile(filepath.Join(dst, name))
+			if err != nil {
+				t.Errorf("could not read %q: %v", name, err)
+				continue
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%q is %q, want %q", name, got, want)
+			}
+		}
+	})
+
+	t.Run("upload", func(t *testing.T) {
+		src := filepath.Join(dir, "tree")
+		err := xrdcopy.Copy(context.Background(), url+"/tokened"+token, src, xrdcopy.Options{
+			Recursive: true,
+			Username:  "gopher",
+		})
+		if err != nil {
+			t.Fatalf("could not upload the tree: %v", err)
+		}
+		for name, want := range files {
+			got, err := os.ReadFile(filepath.Join(dir, "tokened", name))
+			if err != nil {
+				t.Errorf("could not read %q: %v", name, err)
+				continue
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%q is %q, want %q", name, got, want)
+			}
+		}
+	})
+}

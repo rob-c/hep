@@ -232,14 +232,21 @@ func (sess *cliSession) Close() error {
 }
 
 // handleReadError handles an error encountered while reading and parsing a response.
-// If the current session is equal to the initial, the error is considered critical and handleReadError panics.
-// Otherwise, the current session is closed and all requests are redirected to the initial session.
+// If the current session is the initial one, its connection is gone and every
+// request waiting on it is failed. Otherwise, the current session is closed and
+// all requests are redirected to the initial session.
 // See http://xrootd.org/doc/dev45/XRdv310.pdf, p. 11 for details.
 func (sess *cliSession) handleReadError(err error) {
 	if sess.sessionID == sess.client.initialSessionID {
-		// TODO: what should we do in case initial session is aborted?
-		// Should we try to reconnect to the server and re-issue all requests?
-		panic(err)
+		// There is nowhere to redirect these requests to: every other
+		// session is reached through this one. Failing the callers is the
+		// only honest answer, and it is the one thing that must not be got
+		// wrong — a server closing its end of a socket is routine (an idle
+		// timeout, a restart, a network blip), and it used to panic and
+		// take the caller's program down with it.
+		sess.failPending(err)
+		sess.Close()
+		return
 	}
 	sess.mu.RLock()
 	resp := mux.ServerResponse{Redirection: &mux.Redirection{Addr: sess.client.initialSessionID}}
@@ -250,6 +257,29 @@ func (sess *cliSession) handleReadError(err error) {
 	}
 	sess.mu.RUnlock()
 	sess.Close()
+}
+
+// failPending answers every request still waiting on this session with err.
+//
+// Closing the session would release them too, but with the mux's own "close was
+// called" message: the error the caller sees should say what actually happened
+// to the connection.
+func (sess *cliSession) failPending(err error) {
+	sess.mu.RLock()
+	ids := make([]xrdproto.StreamID, 0, len(sess.requests))
+	for streamID := range sess.requests {
+		ids = append(ids, streamID)
+	}
+	sess.mu.RUnlock()
+
+	resp := mux.ServerResponse{Err: fmt.Errorf(
+		"xrootd: connection to %q was lost: %w", sess.conn.RemoteAddr(), err,
+	)}
+	for _, streamID := range ids {
+		// Nothing to do about a failure here: the caller this was meant for
+		// is exactly who we would have reported it to.
+		_ = sess.mux.SendData(streamID, resp)
+	}
 }
 
 // maxWaitDuration caps how long a "kXR_wait" may park a request. The delay is
@@ -321,6 +351,12 @@ func (sess *cliSession) consume() {
 					return
 				}
 				sess.handleReadError(err)
+				// The read failed, so the header and the payload hold
+				// whatever the previous response left in them: there is
+				// nothing here to dispatch, and the session that would
+				// have carried the next one is either closed or being
+				// redirected.
+				return
 			}
 			resp.Err = nil
 			resp.Redirection = nil

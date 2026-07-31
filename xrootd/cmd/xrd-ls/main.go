@@ -28,12 +28,12 @@ import (
 	"io"
 	"log"
 	"os"
-	"path"
 	"text/tabwriter"
 
 	"go-hep.org/x/hep/xrootd"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdio"
+	"go-hep.org/x/hep/xrootd/xrdproto"
 )
 
 func init() {
@@ -126,7 +126,7 @@ func display(ctx context.Context, fs xrdfs.FileSystem, root string, fi os.FileIn
 		end = ":"
 	}
 
-	dir := path.Join(root, fi.Name())
+	dir := xrdproto.JoinPath(root, fi.Name())
 	fmt.Printf("%s%s\n", dir, end)
 	if long {
 		fmt.Printf("total %d\n", fi.Size())
@@ -159,7 +159,7 @@ func display(ctx context.Context, fs xrdfs.FileSystem, root string, fi os.FileIn
 
 func format(o io.Writer, root string, fi os.FileInfo, long bool) {
 	if !long {
-		fmt.Fprintf(o, "%s\n", path.Join(root, fi.Name()))
+		fmt.Fprintf(o, "%s\n", xrdproto.JoinPath(root, fi.Name()))
 		return
 	}
 

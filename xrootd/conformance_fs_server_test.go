@@ -103,6 +103,14 @@ type confFS struct {
 	violations []string
 	ops        []uint16
 
+	// paths and opaque record, in order, the namespace name and the CGI of
+	// every path field that arrived. They are what the URL/token tests read:
+	// the server addresses its namespace by the name alone, so a client that
+	// leaves the CGI on the path or invents one shows up here rather than in
+	// a status code.
+	paths  []string
+	opaque []string
+
 	// open file handles, and the next one to hand out.
 	handles map[xrdfs.FileHandle]string
 	nextFH  byte
@@ -314,15 +322,51 @@ func (fs *confFS) zeroed(r confRequest, what string, lo, hi int) {
 	}
 }
 
-// wantPath flags a path that is empty or not absolute.
+// wantPath splits the CGI off a path field, records both halves, and returns
+// the namespace name. Everything past the first "?" is opaque data the server
+// hands to its authorization layer unparsed — it is how a token reaches an
+// endpoint — and it is not part of the name being addressed. A path that is
+// empty or not absolute is flagged.
 func (fs *confFS) wantPath(what, p string) string {
+	name, opaque, _ := strings.Cut(p, "?")
 	switch {
-	case p == "":
+	case name == "":
 		fs.flag("%s: empty path", what)
-	case !strings.HasPrefix(p, "/"):
-		fs.flag("%s: path %q is not absolute", what, p)
+	case !strings.HasPrefix(name, "/"):
+		fs.flag("%s: path %q is not absolute", what, name)
 	}
-	return p
+
+	fs.mu.Lock()
+	fs.paths = append(fs.paths, name)
+	fs.opaque = append(fs.opaque, opaque)
+	fs.mu.Unlock()
+
+	return name
+}
+
+// pathSeq returns the namespace names the client addressed, in order.
+func (fs *confFS) pathSeq() []string {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return append([]string(nil), fs.paths...)
+}
+
+// opaqueSeq returns the CGI that arrived with each of those names, in the same
+// order. A name that carried none contributes an empty string rather than being
+// left out, so the two sequences stay aligned.
+func (fs *confFS) opaqueSeq() []string {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return append([]string(nil), fs.opaque...)
+}
+
+// forget drops the recorded path history, so a test can assert on one operation
+// at a time without counting the ones that came before it.
+func (fs *confFS) forget() {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	fs.paths = nil
+	fs.opaque = nil
 }
 
 // shape applies the per-request-id shaping knobs. It reports whether the
@@ -481,6 +525,8 @@ func (fs *confFS) serveStat(conn net.Conn, r confRequest) error {
 	if opts&0x01 != 0 { // kXR_vfs
 		if name == "" {
 			fs.flag("kXR_stat: virtual-fs query with no path prefix")
+		} else {
+			fs.wantPath("kXR_stat(vfs)", name)
 		}
 		return fs.reply(conn, r, []byte("2 1024 50 1 2048 25"))
 	}
@@ -490,7 +536,7 @@ func (fs *confFS) serveStat(conn net.Conn, r confRequest) error {
 		if fh != (xrdfs.FileHandle{}) {
 			fs.flag("kXR_stat: both a path %q and handle %v were sent", name, fh)
 		}
-		fs.wantPath("kXR_stat", name)
+		name = fs.wantPath("kXR_stat", name)
 	default:
 		fs.mu.Lock()
 		target, ok := fs.handles[fh]
@@ -521,7 +567,7 @@ func (fs *confFS) serveStatx(conn net.Conn, r confRequest) error {
 	// so position is the only thing tying an answer to its question.
 	body := make([]byte, len(paths))
 	for i, p := range paths {
-		fs.wantPath("kXR_statx", p)
+		p = fs.wantPath("kXR_statx", p)
 		switch n := fs.node(p); {
 		case n == nil:
 			body[i] = byte(xrdfs.StatIsOffline)
@@ -600,8 +646,8 @@ func (fs *confFS) serveMv(conn net.Conn, r confRequest) error {
 	if sep != ' ' {
 		fs.flag("kXR_mv: the paths are separated by %q, want a space", sep)
 	}
-	fs.wantPath("kXR_mv", oldPath)
-	fs.wantPath("kXR_mv", newPath)
+	oldPath = fs.wantPath("kXR_mv", oldPath)
+	newPath = fs.wantPath("kXR_mv", newPath)
 
 	n := fs.node(oldPath)
 	if n == nil {
@@ -664,7 +710,7 @@ func (fs *confFS) serveTruncate(conn net.Conn, r confRequest) error {
 	switch {
 	case name != "" && fh != (xrdfs.FileHandle{}):
 		fs.flag("kXR_truncate: both a path %q and handle %v were sent", name, fh)
-		fs.wantPath("kXR_truncate", name)
+		name = fs.wantPath("kXR_truncate", name)
 	case name == "" && fh == (xrdfs.FileHandle{}):
 		fs.flag("kXR_truncate: neither a path nor a handle was sent")
 		return confErr(conn, r.sid(), 3011, "no target")
@@ -678,7 +724,7 @@ func (fs *confFS) serveTruncate(conn net.Conn, r confRequest) error {
 		}
 		name = target
 	default:
-		fs.wantPath("kXR_truncate", name)
+		name = fs.wantPath("kXR_truncate", name)
 	}
 
 	n := fs.node(name)

@@ -180,3 +180,57 @@ func TestXrdCp_OfflineFailures(t *testing.T) {
 		})
 	}
 }
+
+// TestXrdCp_OfflineOpaque: the same walk as above, plus the half that only a
+// copy has — the local name. A file downloaded from "/tree/a.txt?authz=tok"
+// is called "a.txt" on disk; a token is a credential, not part of a name.
+func TestXrdCp_OfflineOpaque(t *testing.T) {
+	const token = "?authz=tok&xrd.wantprot=unix"
+
+	dir, url := cpServer(t)
+
+	files := map[string][]byte{
+		"a.txt":     []byte("a"),
+		"sub/b.txt": []byte("bb"),
+	}
+	for name, data := range files {
+		path := filepath.Join(dir, "tree", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("could not create %q: %v", path, err)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			t.Fatalf("could not write %q: %v", path, err)
+		}
+	}
+
+	t.Run("file", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := xrdcopy(dst, url+"/tree/a.txt"+token, false, false); err != nil {
+			t.Fatalf("could not download: %v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(dst, "a.txt"))
+		if err != nil {
+			t.Fatalf("could not read the downloaded file: %v", err)
+		}
+		if !bytes.Equal(got, files["a.txt"]) {
+			t.Fatalf("downloaded %q, want %q", got, files["a.txt"])
+		}
+	})
+
+	t.Run("tree", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := xrdcopy(dst, url+"/tree"+token, true, false); err != nil {
+			t.Fatalf("could not download the tree: %v", err)
+		}
+		for name, want := range files {
+			got, err := os.ReadFile(filepath.Join(dst, "tree", filepath.FromSlash(name)))
+			if err != nil {
+				t.Errorf("could not read %q: %v", name, err)
+				continue
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("%q is %q, want %q", name, got, want)
+			}
+		}
+	})
+}

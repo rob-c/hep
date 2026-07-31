@@ -160,3 +160,24 @@ func TestXrdLs_Failures(t *testing.T) {
 		})
 	}
 }
+
+// TestXrdLs_Opaque: a URL usually carries a bearer token as opaque data, and
+// the recursive walk builds the name of every subdirectory from the name of its
+// parent. Those names have to inherit the CGI rather than absorb it: joining
+// onto "/sub?authz=tok" asks the server for "/sub?authz=tok/deeper", a
+// directory nothing holds.
+func TestXrdLs_Opaque(t *testing.T) {
+	const token = "?authz=tok&xrd.wantprot=unix"
+
+	url := lsServer(t)
+
+	out, err := captureStdout(t, func() error { return xrdls(url+"/"+token, false, true) })
+	if err != nil {
+		t.Fatalf("could not list the tree: %v", err)
+	}
+	for _, want := range []string{"/a.txt", "/sub/b.txt", "/sub/deeper/c.txt"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the recursive listing does not mention %q:\n%s", want, out)
+		}
+	}
+}
