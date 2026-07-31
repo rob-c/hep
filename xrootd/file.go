@@ -6,8 +6,10 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
 	"context"
+	"fmt"
 	rsync "sync"
 
+	"go-hep.org/x/hep/xrootd/internal/pgbuf"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
@@ -188,14 +190,68 @@ func (f *file) PgReadAt(ctx context.Context, p []byte, off int64) (int, error) {
 	return copy(p, resp.Data), nil
 }
 
+// maxPgRetries is the number of times a single page is retransmitted before
+// a pgwrite gives up. Corruption that survives this many independent attempts
+// is not a transient wire error, and retrying forever would turn a broken
+// link into a hang.
+const maxPgRetries = 3
+
 // PgWriteAt implements xrdfs.PgWriter: it writes p at offset off using
 // kXR_pgwrite, attaching a CRC-32C to every page sent.
+//
+// The server verifies each page as it arrives and stores it regardless,
+// reporting any page whose CRC-32C did not match. Those pages hold corrupt
+// data on the server until they are retransmitted, so PgWriteAt resends each
+// one with the kXR_pgRetry flag and fails if any stays corrupt. A successful
+// return therefore means every page is intact on the server, not merely that
+// the request was delivered.
 func (f *file) PgWriteAt(ctx context.Context, p []byte, off int64) error {
+	corrupt, err := f.pgWriteOnce(ctx, p, off, 0)
+	if err != nil {
+		return err
+	}
+	for _, pgoff := range corrupt {
+		if err := f.pgRetryPage(ctx, p, off, pgoff); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pgWriteOnce sends a single kXR_pgwrite and returns the file offsets of the
+// pages the server reports as corrupt.
+func (f *file) pgWriteOnce(ctx context.Context, p []byte, off int64, flags uint8) ([]int64, error) {
 	var resp pgwrite.Response
-	req := &pgwrite.Request{Handle: f.handle, Offset: off, Data: p}
-	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+	req := &pgwrite.Request{Handle: f.handle, Offset: off, Data: p, Flags: flags}
+	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
 		return f.fs.c.sendSession(ctx, sid, &resp, req)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Corrupt, nil
+}
+
+// pgRetryPage retransmits the single page at file offset pgoff, sliced out of
+// data (which starts at file offset base), until the server accepts it or the
+// retry budget runs out.
+func (f *file) pgRetryPage(ctx context.Context, data []byte, base, pgoff int64) error {
+	doff := pgoff - base
+	if doff < 0 || doff >= int64(len(data)) {
+		return fmt.Errorf("xrootd: pgwrite reported a corrupt page at offset %d, outside the %d-byte request at offset %d", pgoff, len(data), base)
+	}
+	page := data[doff : doff+int64(pgbuf.PageSpan(pgoff, len(data)-int(doff)))]
+
+	for range maxPgRetries {
+		corrupt, err := f.pgWriteOnce(ctx, page, pgoff, pgwrite.Retry)
+		if err != nil {
+			return err
+		}
+		if len(corrupt) == 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("xrootd: pgwrite: page at offset %d still corrupt after %d retries", pgoff, maxPgRetries)
 }
 
 var (

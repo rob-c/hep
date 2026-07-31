@@ -18,15 +18,20 @@ import (
 // PageSize is kXR_pgPageSZ: the page length pg data units align to.
 const PageSize = 4096
 
-// firstChunk returns the length of the first data chunk for a transfer
-// starting at file offset off with n bytes remaining.
-func firstChunk(off int64, n int) int {
+// PageSpan returns the length of the page that starts at file offset off when
+// n bytes remain: a whole page, unless off is not page aligned (the first page
+// is short) or fewer than that many bytes are left.
+func PageSpan(off int64, n int) int {
 	c := PageSize - int(off%PageSize)
 	if c > n {
 		c = n
 	}
 	return c
 }
+
+// firstChunk returns the length of the first data chunk for a transfer
+// starting at file offset off with n bytes remaining.
+func firstChunk(off int64, n int) int { return PageSpan(off, n) }
 
 // EncodedLen returns the number of bytes Encode produces for n data bytes
 // starting at file offset off.

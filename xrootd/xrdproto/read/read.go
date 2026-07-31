@@ -130,6 +130,11 @@ func (req *Request) ReqID() uint16 { return RequestID }
 // ShouldSign implements xrdproto.Request.ShouldSign.
 func (req *Request) ShouldSign() bool { return false }
 
+// MaxResponseLength implements xrdproto.ResponseLimiter: a read reply carries
+// file content and nothing else, so it cannot exceed the requested length
+// however many OkSoFar frames the server splits it into.
+func (req *Request) MaxResponseLength() int64 { return int64(req.Length) }
+
 // MarshalXrd implements xrdproto.Marshaler.
 func (o Request) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 	wBuffer.WriteBytes(o.Handle[:])
