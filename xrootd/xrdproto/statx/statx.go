@@ -41,7 +41,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	for i := range o.StatFlags {
 		o.StatFlags[i] = xrdfs.StatFlags(rBuffer.ReadU8())
 	}
-	return nil
+	return rBuffer.Err()
 }
 
 // Request holds open request parameters.
@@ -66,7 +66,7 @@ func (o Request) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.Skip(16)
 	o.Paths = rBuffer.ReadStr()
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

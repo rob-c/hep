@@ -111,7 +111,7 @@ func (o WaitResponse) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 // UnmarshalXrd implements Unmarshaler.
 func (o *WaitResponse) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.Duration = time.Second * time.Duration(rBuffer.ReadI32())
-	return nil
+	return rBuffer.Err()
 }
 
 // ServerError is the error returned by the XRootD server as part of response to the request.
@@ -150,7 +150,7 @@ func (o *ServerError) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 		return errors.New("xrootd: missing error message in server response")
 	}
 	o.Message = string(data[:len(data)-1])
-	return nil
+	return rBuffer.Err()
 }
 
 // StreamID is the binary identifier associated with a request stream.
@@ -179,7 +179,7 @@ func (o *ResponseHeader) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.StreamID[:])
 	o.Status = ResponseStatus(rBuffer.ReadU16())
 	o.DataLength = rBuffer.ReadI32()
-	return nil
+	return rBuffer.Err()
 }
 
 // Error returns an error received from the server or nil if request hasn't failed.
@@ -222,7 +222,7 @@ func (o RequestHeader) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *RequestHeader) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.StreamID[:])
 	o.RequestID = rBuffer.ReadU16()
-	return nil
+	return rBuffer.Err()
 }
 
 // ServerType is the general server type kept for compatibility
@@ -331,7 +331,7 @@ func (o SecurityOverride) MarshalXrd(enc *xrdenc.WBuffer) error {
 func (o *SecurityOverride) UnmarshalXrd(dec *xrdenc.RBuffer) error {
 	o.RequestIndex = dec.ReadU8()
 	o.RequestLevel = RequestLevel(dec.ReadU8())
-	return nil
+	return dec.Err()
 }
 
 // SetOpaque sets opaque data part in the provided path.
@@ -344,8 +344,12 @@ func SetOpaque(path *string, opaque string) {
 }
 
 // Opaque returns opaque data from provided path.
+// A path that carries no "?" carries no opaque data, and Opaque returns "".
 func Opaque(path string) string {
 	pos := strings.LastIndex(path, "?")
+	if pos == -1 {
+		return ""
+	}
 	return path[pos+1:]
 }
 

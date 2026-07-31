@@ -36,7 +36,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.Skip(14)
 	o.Mode = xrdfs.OpenMode(rBuffer.ReadU16())
 	o.Path = rBuffer.ReadStr()
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

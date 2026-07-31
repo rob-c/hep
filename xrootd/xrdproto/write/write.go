@@ -47,9 +47,8 @@ func (req *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	req.Offset = rBuffer.ReadI64()
 	req.pathID = xrdproto.PathID(rBuffer.ReadU8())
 	rBuffer.Skip(3)
-	req.Data = make([]uint8, rBuffer.ReadLen())
-	rBuffer.ReadBytes(req.Data)
-	return nil
+	req.Data = rBuffer.ReadLenBytes()
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

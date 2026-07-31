@@ -48,7 +48,7 @@ func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.Options = r.ReadU16()
 	r.Skip(14)
 	o.Path = r.ReadStr()
-	return nil
+	return r.Err()
 }
 
 // Response is the response issued by the server to a locate request.
@@ -69,5 +69,5 @@ func (o Response) MarshalXrd(w *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.Data = make([]byte, r.Len())
 	r.ReadBytes(o.Data)
-	return nil
+	return r.Err()
 }

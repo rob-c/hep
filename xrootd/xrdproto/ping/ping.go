@@ -29,7 +29,7 @@ func (o Request) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 // UnmarshalXrd implements xrdproto.Unmarshaler.
 func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.Skip(20)
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

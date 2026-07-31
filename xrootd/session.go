@@ -252,6 +252,13 @@ func (sess *cliSession) handleReadError(err error) {
 	sess.Close()
 }
 
+// maxWaitDuration caps how long a "kXR_wait" may park a request. The delay is
+// chosen by the server and the protocol puts no ceiling on it, so an unbounded
+// wait — 68 years is expressible in the 32-bit field — would let a server hold
+// a request and the goroutine behind it forever. The cap is a client policy:
+// a server that really needs longer can ask again when the wait expires.
+const maxWaitDuration = time.Hour
+
 // handleWaitResponse handles a "kXR_wait" response by re-issuing the request with streamID
 // after the number of seconds encoded in data.
 // See http://xrootd.org/doc/dev45/XRdv310.pdf, p. 35 for the specification of the response.
@@ -269,8 +276,19 @@ func (sess *cliSession) handleWaitResponse(streamID xrdproto.StreamID, data []by
 		return fmt.Errorf("xrootd: could not find a request with stream id equal to %v", streamID)
 	}
 
+	wait := min(max(resp.Duration, 0), maxWaitDuration)
+
 	go func(req pendingRequest) {
-		time.Sleep(resp.Duration)
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-sess.ctx.Done():
+			// The session is going away: the request is cleaned up by
+			// whoever closed it, and re-issuing it would write to a
+			// connection that is already down.
+			return
+		case <-timer.C:
+		}
 		if err := sess.writeRequest(req); err != nil {
 			resp := mux.ServerResponse{Err: fmt.Errorf("xrootd: could not send data to the server: %w", err)}
 			err := sess.mux.SendData(streamID, resp)

@@ -51,7 +51,7 @@ func (o *Segment) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	r.ReadBytes(o.Handle[:])
 	o.Length = r.ReadI32()
 	o.Offset = r.ReadI64()
-	return nil
+	return r.Err()
 }
 
 // Request holds the readv request parameters.
@@ -120,7 +120,7 @@ func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 			return err
 		}
 	}
-	return nil
+	return r.Err()
 }
 
 // Chunk is one segment of a readv reply: the echoed file handle and offset,
@@ -177,7 +177,7 @@ func (resp *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 		r.ReadBytes(c.Data)
 		resp.Chunks = append(resp.Chunks, c)
 	}
-	return nil
+	return r.Err()
 }
 
 var (

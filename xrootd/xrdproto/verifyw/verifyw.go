@@ -56,9 +56,8 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.PathID = rBuffer.ReadU8()
 	o.Verification = Type(rBuffer.ReadU8())
 	rBuffer.Skip(2)
-	o.Data = make([]uint8, rBuffer.ReadLen())
-	rBuffer.ReadBytes(o.Data)
-	return nil
+	o.Data = rBuffer.ReadLenBytes()
+	return rBuffer.Err()
 }
 
 // NewRequestCRC32 forms a Request with crc32 verification according to provided parameters.

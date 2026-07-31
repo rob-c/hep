@@ -40,7 +40,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.Handle[:])
 	o.Size = rBuffer.ReadI64()
 	rBuffer.Skip(8)
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

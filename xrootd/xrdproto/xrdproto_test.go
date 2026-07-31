@@ -349,7 +349,7 @@ func TestOpaque(t *testing.T) {
 		path string
 		want string
 	}{
-		{"hello", "hello"},
+		{"hello", ""},
 		{"hello?", ""},
 		{"hello?boo", "boo"},
 		{"?boo", "boo"},

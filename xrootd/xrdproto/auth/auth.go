@@ -39,7 +39,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.Skip(12)
 	rBuffer.ReadBytes(o.Type[:])
 	o.Credentials = rBuffer.ReadStr()
-	return nil
+	return rBuffer.Err()
 }
 
 // Auther is the interface that must be implemented by a security provider.

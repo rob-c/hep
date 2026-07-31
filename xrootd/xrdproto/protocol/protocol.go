@@ -132,7 +132,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.ClientProtocolVersion = rBuffer.ReadI32()
 	o.Options = RequestOptions(rBuffer.ReadU8())
 	rBuffer.Skip(15)
-	return nil
+	return rBuffer.Err()
 }
 
 // Response is a response for the `Protocol` request. See details in the xrootd protocol specification.
@@ -233,7 +233,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.BinaryProtocolVersion = rBuffer.ReadI32()
 	o.Flags = Flags(rBuffer.ReadI32())
 	if rBuffer.Len() == 0 {
-		return nil
+		return rBuffer.Err()
 	}
 	o.HasSecurityInfo = true
 	rBuffer.Skip(1)
@@ -248,7 +248,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 			return err
 		}
 	}
-	return nil
+	return rBuffer.Err()
 }
 
 // RespID implements xrdproto.Response.RespID.

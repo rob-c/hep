@@ -48,20 +48,20 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.FileHandle[:])
 	if rBuffer.Len() == 0 {
-		return nil
+		return rBuffer.Err()
 	}
 	o.Compression = &xrdfs.FileCompression{}
 	if err := o.Compression.UnmarshalXrd(rBuffer); err != nil {
 		return err
 	}
 	if rBuffer.Len() == 0 {
-		return nil
+		return rBuffer.Err()
 	}
 	o.Stat = &xrdfs.EntryStat{}
 	if err := o.Stat.UnmarshalXrd(rBuffer); err != nil {
 		return err
 	}
-	return nil
+	return rBuffer.Err()
 }
 
 // RespID implements xrdproto.Response.RespID.
@@ -105,7 +105,7 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.Options = xrdfs.OpenOptions(rBuffer.ReadU16())
 	rBuffer.Skip(12)
 	o.Path = rBuffer.ReadStr()
-	return nil
+	return rBuffer.Err()
 }
 
 // ReqID implements xrdproto.Request.ReqID.

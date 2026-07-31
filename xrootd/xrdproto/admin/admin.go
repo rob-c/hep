@@ -37,7 +37,7 @@ func (o Request) MarshalXrd(w *xrdenc.WBuffer) error {
 func (o *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	r.Skip(16)
 	o.Req = r.ReadStr()
-	return nil
+	return r.Err()
 }
 
 // Response is the response issued by the server to an admin request.
@@ -58,5 +58,5 @@ func (o Response) MarshalXrd(w *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	o.Data = make([]byte, r.Len())
 	r.ReadBytes(o.Data)
-	return nil
+	return r.Err()
 }

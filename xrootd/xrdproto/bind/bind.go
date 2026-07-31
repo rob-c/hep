@@ -37,7 +37,7 @@ func (o Request) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	rBuffer.ReadBytes(o.SessionID[:])
 	rBuffer.Skip(4)
-	return nil
+	return rBuffer.Err()
 }
 
 // Response is a response for the bind request, which contains the path id.
@@ -57,5 +57,5 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 // UnmarshalXrd implements xrdproto.Unmarshaler.
 func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.PathID = xrdproto.PathID(rBuffer.ReadU8())
-	return nil
+	return rBuffer.Err()
 }
