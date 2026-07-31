@@ -8,15 +8,16 @@ import (
 	"testing"
 
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
+	"go-hep.org/x/hep/xrootd/xrdproto/auth/gsi"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth/sss"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth/token"
 )
 
 func TestDefaultProvidersIncludeTokenAndSSS(t *testing.T) {
-	// The provider set is krb5, ztn, sss, unix, host. The length is a
-	// deterministic guard against the ztn/sss wiring silently regressing,
+	// The provider set is krb5, gsi, ztn, sss, unix, host. The length is a
+	// deterministic guard against the gsi/ztn/sss wiring silently regressing,
 	// independent of whether ambient discovery made their Defaults non-nil.
-	if got, want := len(defaultProviders), 5; got != want {
+	if got, want := len(defaultProviders), 6; got != want {
 		t.Fatalf("defaultProviders has %d entries, want %d", got, want)
 	}
 
@@ -37,6 +38,12 @@ func TestDefaultProvidersIncludeTokenAndSSS(t *testing.T) {
 	if sss.Default != nil && !contains(sss.Default) {
 		t.Fatal("sss.Default is set but not in defaultProviders")
 	}
+	// An X.509 proxy sitting in the conventional place is what a stock client
+	// authenticates with; a gsi implementation the chain never offers is
+	// indistinguishable from no implementation at all.
+	if gsi.Default != nil && !contains(gsi.Default) {
+		t.Fatal("gsi.Default is set but not in defaultProviders")
+	}
 
 	// The provider names are deterministic regardless of discovery.
 	if got := (&token.Auth{Token: "x"}).Provider(); got != "ztn" {
@@ -44,5 +51,8 @@ func TestDefaultProvidersIncludeTokenAndSSS(t *testing.T) {
 	}
 	if got := (&sss.Auth{}).Provider(); got != "sss" {
 		t.Fatalf("sss provider name: got=%q want=%q", got, "sss")
+	}
+	if got := (&gsi.Auth{}).Provider(); got != "gsi" {
+		t.Fatalf("gsi provider name: got=%q want=%q", got, "gsi")
 	}
 }

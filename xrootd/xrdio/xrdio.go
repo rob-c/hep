@@ -25,9 +25,11 @@ import (
 //   - io.Seeker
 //   - fs.File
 type File struct {
-	cli *xrootd.Client
-	fs  xrdfs.FileSystem
-	f   xrdfs.File
+	// backend is the endpoint this file was opened through, closed with the
+	// file. It is nil for a File opened via OpenFrom, which does not own one.
+	backend xrootd.Backend
+	fs      xrdfs.FileSystem
+	f       xrdfs.File
 
 	name string
 	pos  int64
@@ -40,28 +42,39 @@ type File struct {
 // Example:
 //
 //	f, err := xrdio.Open("root://server.example.com:1094//some/path/to/file")
+//	f, err := xrdio.Open("https://server.example.com:1094/some/path/to/file")
+//
+// The URL scheme selects the transport: root, roots, xroot and xroots use the
+// native XRootD protocol, while http, https, dav and davs use HTTP data access
+// (see xrootd.Dial). A bare path with no scheme is treated as native XRootD,
+// as before.
 func Open(name string) (*File, error) {
+	ctx := context.Background()
+
 	urn, err := Parse(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse %q: %w", name, err)
 	}
 
-	xrd, err := xrootd.NewClient(context.Background(), urn.Addr, urn.User)
+	// The whole URL is passed on, not just the address: the scheme is what
+	// selects the transport, and dropping it here is how an https:// URL used
+	// to end up dialling the native XRootD port.
+	backend, err := xrootd.Dial(ctx, name, urn.User)
 	if err != nil {
-		return nil, fmt.Errorf("xrdio: could not connect to xrootd server %q: %w", urn.Addr, err)
+		return nil, fmt.Errorf("xrdio: could not connect to server %q: %w", urn.Addr, err)
 	}
 
-	fs := xrd.FS()
-	f, err := fs.Open(context.Background(), urn.Path, xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
+	fs := backend.FS()
+	f, err := fs.Open(ctx, urn.Path, xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
 	if err != nil {
-		xrd.Close()
+		backend.Close()
 		return nil, fmt.Errorf("xrdio: could not open %q: %w", name, err)
 	}
 
-	xf := &File{cli: xrd, fs: fs, f: f, name: urn.Path}
+	xf := &File{backend: backend, fs: fs, f: f, name: urn.Path}
 	fi, err := xf.Stat()
 	if err != nil {
-		xrd.Close()
+		backend.Close()
 		return nil, fmt.Errorf("xrdio: could not stat %q: %w", name, err)
 	}
 	xf.size = fi.Size()
@@ -107,8 +120,8 @@ func (f *File) Close() error {
 		err2 error
 	)
 
-	if f.cli != nil {
-		err2 = f.cli.Close()
+	if f.backend != nil {
+		err2 = f.backend.Close()
 	}
 	if err1 != nil {
 		return fmt.Errorf("xrdio: could not close file %q: %w", f.name, err1)
