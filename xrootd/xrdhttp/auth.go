@@ -47,12 +47,13 @@ func WithInsecureBearerToken() Option {
 	return func(c *config) { c.insecureToken = true }
 }
 
-// do sends req with the client's credentials attached. Every request the
-// package makes goes through here, so a credential cannot be forgotten on one
-// method and present on another.
+// do sends req with the client's credentials attached, retrying it as far as
+// the client's policy allows. Every request the package makes goes through
+// here, so a credential cannot be forgotten on one method and present on
+// another, and no request is left un-retried by having been built elsewhere.
 func (c *Client) do(req *http.Request) (*http.Response, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	return c.http.Do(req)
+	return c.send(req)
 }

@@ -28,6 +28,7 @@ type Client struct {
 	base  *url.URL
 	http  *http.Client
 	token string // bearer token, or "" when unauthenticated
+	retry retryPolicy
 }
 
 // Option configures a Client.
@@ -39,6 +40,7 @@ type config struct {
 	rt            http.RoundTripper
 	token         string
 	insecureToken bool
+	retry         retryPolicy
 	// err records the first option that failed, so Dial can report it rather
 	// than silently building a client with a credential the caller asked for
 	// and did not get.
@@ -124,6 +126,7 @@ func Dial(rawurl string, opts ...Option) (*Client, error) {
 		base:  u,
 		http:  &http.Client{Transport: rt, Timeout: cfg.timeout},
 		token: cfg.token,
+		retry: cfg.retry,
 	}, nil
 }
 

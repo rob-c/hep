@@ -754,6 +754,108 @@ The corollary is that the errors a server sees during shutdown are not faults. A
 read or write that fails after `closed` is set is the shutdown itself arriving,
 and reporting it as a connection error buries the one error that matters.
 
+### 7.9 The failure a bad network produces is silence, not an error
+
+§7.5 covers the connection that *dies*: the socket closes, the read returns, and
+every waiter can be told. That is the easy case, and it is not the one a
+wide-area path between a laptop and a storage element actually produces.
+
+What it produces is silence. A firewall forgets the flow, a router drops the
+return leg, a disk server is swapped out mid-transfer — and in every one of them
+both kernels still believe the connection is up. Nothing closes. The read
+blocks. TCP alone answers this after minutes to hours, if it answers at all, and
+the caller cannot tell it apart from a server that is merely slow. A client
+whose only bound is `ctx` hangs for exactly as long as the caller was willing to
+wait, which for a `context.Background()` is forever.
+
+**The detector has to be at the application layer.** TCP keepalives are worth
+turning on — they are what keeps a stateful firewall from forgetting the flow in
+the first place — but they do not detect anything a middlebox is willing to
+answer on behalf of a path it has stopped forwarding. The bound that works is a
+read deadline on the socket, re-armed before every response frame.
+
+**And it has to distinguish three silences, which look identical to
+`io.ReadFull`:**
+
+| what happened | how it looks | what to do |
+|---|---|---|
+| nothing arrived, nothing outstanding | deadline, 0 bytes read, `len(requests) == 0` | re-arm and keep reading — this is a connection between transfers |
+| nothing arrived, a request is owed an answer | deadline, 0 bytes read, requests pending | tear down and fail the waiters |
+| a frame stopped half way | deadline, *some* bytes read | tear down — the stream is out of step with the sender and cannot be resynchronised |
+
+`io.ReadFull` returns `os.ErrDeadlineExceeded` in all three, whether or not
+bytes were consumed, so the read has to go through a counting wrapper. Without
+the count, the only safe reading of a deadline is "drop the connection", and an
+idle client then reconnects — TCP handshake, login, authentication — before
+every read.
+
+Getting the first row wrong is the expensive mistake, and it is the one that
+passes its tests: dropping an idle connection is invisible on a loopback server
+and costs a full round of authentication per read over the wide area.
+
+**The handshake needs the same bound, separately.** The read loop that applies
+the deadline only starts *after* the handshake, protocol negotiation and TLS
+upgrade, all of which read the socket directly (§7.2 explains why they must).
+A host that completes the TCP connection and then says nothing — a load balancer
+in front of a dead backend, which is a normal thing to meet — stalls there
+instead, and `NewClient` never returns. The bound belongs on the bootstrap
+context, and the TLS handshake has to take that context too rather than the
+session's, which by design outlives the connection.
+
+**Retry exactly one thing: the connection.** A connection that was never
+established has carried no request, so a second attempt cannot execute anything
+twice. Everything else in the protocol is unretryable *by the client*, because a
+request that failed on a live connection may or may not have been carried out —
+that is the whole reason §7.5 replays nothing. Bound the attempts, back off
+exponentially with jitter (a job that lost its storage element otherwise brings
+every one of its clients back at the same instant), and honour the caller's
+context between them.
+
+Keep the single-attempt error unwrapped. A caller matching on `*net.OpError`, or
+simply reading "connection refused", should still find it when retrying is off.
+
+**Over HTTP the same problem has a different shape.** The request crosses
+proxies, redirectors and gateways, each with its own way of saying "not now": a
+reset before the status line, a 503 while a backend drains, a 429 from a rate
+limiter. None of them mean the file is unavailable. But what may be resent is
+narrower than it looks, and the line is not "is it a GET":
+
+- **Method.** Only the idempotent ones. `COPY` is the one that matters here: it
+  starts a third-party transfer whose first attempt may still be running, and a
+  second one has two servers writing the same file (§8.4). It is never resent.
+- **Body.** `net/http` sets `GetBody` for the bodies it can rewind — bytes,
+  strings, files. A body the caller handed over as a stream is gone once it has
+  been read, and resending would upload whatever is left of it: a truncated file
+  written over a good one. Check `GetBody`, do not assume.
+- **Status.** 429 and 5xx are "could not"; 404 and 403 are "will not". Retrying
+  an answer is round trips spent being told the same thing.
+- **`Retry-After`.** A rate limiter that names its own delay knows something the
+  backoff does not. Cap it — a gateway asking for an hour is asking for longer
+  than any caller meant to wait — but prefer it.
+
+Two details that only show up once retrying exists. Clone the request per
+attempt and re-attach the credential *before* the loop, or the second attempt
+goes out unauthenticated and a network hiccup is reported as an expired token.
+And drain the body of the response that asked for the retry, or the connection
+is dropped and redialled instead of reused.
+
+**A retry loop makes an old leak load-bearing.** `net/http` records the URL it
+was given in the `*url.Error` it builds for a transport failure, verbatim,
+including the query string — which is exactly where XRootD and WebDAV carry
+authorization (§8.8). The error for a connection that could not be made is an
+error carrying a live credential into the caller's log, and a retry loop that
+formats the URL into its own message multiplies it. Scrub the query, the
+fragment and the userinfo password at the one place every request goes through.
+`url.Redacted` covers only the password, which is the one place a grid
+credential never is.
+
+**None of it is on by default.** Each bound turns an operation that would wait
+as long as the caller's context allows into one that gives up on a schedule, and
+choosing that schedule for every program that links the library is choosing how
+long their jobs are willing to hang. What the library can offer is one option
+that bundles the settings a wide-area caller wants — `Hardened()` on both
+transports — applied like any other option, so anything after it wins.
+
 ---
 
 ## 8. Alternative protocols and API shape
@@ -1543,6 +1645,17 @@ it deliberately differs):
   `kXR_bind` falls back to the request connection (§7.6).
 - [ ] A transport loss drops the session and the next request dials again,
   replaying nothing (§7.5).
+- [ ] A connection that goes silent is bounded at the application layer, with an
+  idle socket told apart from a stalled response by counting the bytes the read
+  actually consumed; the handshake carries the same bound, ahead of the read
+  loop that applies it (§7.9).
+- [ ] The connection is the only thing retried, with backoff and jitter, and the
+  single-attempt error is left as the dialler wrote it (§7.9).
+- [ ] Over HTTP, a `COPY` and a request whose body cannot be rewound are never
+  resent, `Retry-After` is preferred to the backoff and capped, and the retried
+  request keeps its credential (§7.9).
+- [ ] A transport error does not carry the query string — and therefore the
+  token — into the caller's log (§7.9, §8.8).
 - [ ] Shutdown answers the requests already read before it closes their
   connections, bounded by the caller's deadline (§7.8).
 - [ ] `kXR_open` returns the compression block ahead of any stat record, handles
