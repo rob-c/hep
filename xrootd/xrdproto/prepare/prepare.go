@@ -14,13 +14,21 @@ import (
 
 // Prepare request options.
 const (
-	Cancel   = 1  // Cancel will cancel a prepare request.
-	Notify   = 2  // Notify will send a message when the file has been processed.
-	NoErrors = 4  // NoErrors will not send a notification for preparation errors.
-	Stage    = 8  // Stage will stage the file to disk if it is not online.
-	Write    = 16 // Write will prepare the file with write access.
-	Colocate = 32 // Colocate will co-locate the staged files, if at all possible.
-	Refresh  = 64 // Refresh will refresh the file access time even when location is known.
+	Cancel   = 1   // Cancel will cancel a prepare request.
+	Notify   = 2   // Notify will send a message when the file has been processed.
+	NoErrors = 4   // NoErrors will not send a notification for preparation errors.
+	Stage    = 8   // Stage will stage the file to disk if it is not online.
+	Write    = 16  // Write will prepare the file with write access.
+	Colocate = 32  // Colocate will co-locate the staged files, if at all possible.
+	Refresh  = 64  // Refresh will refresh the file access time even when location is known.
+	UseTCP   = 128 // UseTCP will send the notification over TCP rather than UDP.
+)
+
+// Extended prepare request options. These belong to the OptionsX half-word
+// rather than to Options: the byte the older options live in was full by the
+// time evicting a file was given a name of its own.
+const (
+	Evict uint16 = 0x0001 // Evict will remove the file from disk, undoing a Stage.
 )
 
 // RequestID is the id of the request, it is sent as part of message.
@@ -32,7 +40,8 @@ type Request struct {
 	Options  byte   // Options is a set of flags that apply to each path.
 	Priority byte   // Priority the request will have. 0: lowest priority, 3: highest.
 	Port     uint16 // UDP port number to which a message is to be sent.
-	_        [12]byte
+	OptionsX uint16 // OptionsX is the second set of flags that apply to each path.
+	_        [10]byte
 	Paths    []string
 }
 
@@ -41,7 +50,8 @@ func (req Request) MarshalXrd(w *xrdenc.WBuffer) error {
 	w.WriteU8(req.Options)
 	w.WriteU8(req.Priority)
 	w.WriteU16(req.Port)
-	w.Next(12)
+	w.WriteU16(req.OptionsX)
+	w.Next(10)
 
 	var raw []byte
 	switch len(req.Paths) {
@@ -65,7 +75,8 @@ func (req *Request) UnmarshalXrd(r *xrdenc.RBuffer) error {
 	req.Options = r.ReadU8()
 	req.Priority = r.ReadU8()
 	req.Port = r.ReadU16()
-	r.Skip(12)
+	req.OptionsX = r.ReadU16()
+	r.Skip(10)
 	raw := r.ReadLenBytes()
 	switch len(raw) {
 	case 0:

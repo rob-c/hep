@@ -22,16 +22,19 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/chkpoint"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
+	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
 	"go-hep.org/x/hep/xrootd/xrdproto/ping"
+	"go-hep.org/x/hep/xrootd/xrdproto/prepare"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
 	"go-hep.org/x/hep/xrootd/xrdproto/readv"
 	"go-hep.org/x/hep/xrootd/xrdproto/rm"
 	"go-hep.org/x/hep/xrootd/xrdproto/rmdir"
+	"go-hep.org/x/hep/xrootd/xrdproto/set"
 	"go-hep.org/x/hep/xrootd/xrdproto/signing"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
 	"go-hep.org/x/hep/xrootd/xrdproto/statx"
@@ -73,6 +76,14 @@ func signCases() []struct {
 		{"open-for-write", open.NewRequest(signPath, 0644, xrdfs.OpenOptionsOpenUpdate), xrdproto.Compatible},
 		{"open-for-read", open.NewRequest(signPath, 0644, xrdfs.OpenOptionsOpenRead), xrdproto.Standard},
 		{"mkdir", &mkdir.Request{Mode: 0755, Path: signPath}, xrdproto.Standard},
+
+		// State a caller can change without touching file content: an extended
+		// attribute is as good a place to hide something as the data is, a
+		// prepare can be made to pull a tape system to a halt, and a set
+		// rewrites what the server records about this connection.
+		{"fattr", &fattr.Request{Handle: signHandle}, xrdproto.Standard},
+		{"prepare", &prepare.Request{Options: prepare.Stage, Paths: []string{signPath}}, xrdproto.Standard},
+		{"set", &set.Request{Data: set.AppIDPrefix + "test"}, xrdproto.Standard},
 
 		// Data modification.
 		{"write", &write.Request{Handle: signHandle, Offset: 0, Data: []byte("x")}, xrdproto.Intense},

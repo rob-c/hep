@@ -31,6 +31,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/endsess"
 	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
+	"go-hep.org/x/hep/xrootd/xrdproto/hardlink"
 	"go-hep.org/x/hep/xrootd/xrdproto/locate"
 	"go-hep.org/x/hep/xrootd/xrdproto/login"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
@@ -43,13 +44,16 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/protocol"
 	"go-hep.org/x/hep/xrootd/xrdproto/query"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
+	"go-hep.org/x/hep/xrootd/xrdproto/readlink"
 	"go-hep.org/x/hep/xrootd/xrdproto/readv"
 	"go-hep.org/x/hep/xrootd/xrdproto/rm"
 	"go-hep.org/x/hep/xrootd/xrdproto/rmdir"
+	"go-hep.org/x/hep/xrootd/xrdproto/set"
 	"go-hep.org/x/hep/xrootd/xrdproto/signing"
 	"go-hep.org/x/hep/xrootd/xrdproto/sigver"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
 	"go-hep.org/x/hep/xrootd/xrdproto/statx"
+	"go-hep.org/x/hep/xrootd/xrdproto/symlink"
 	"go-hep.org/x/hep/xrootd/xrdproto/sync"
 	"go-hep.org/x/hep/xrootd/xrdproto/truncate"
 	"go-hep.org/x/hep/xrootd/xrdproto/verifyw"
@@ -89,10 +93,14 @@ func confSignCases() []confSignCase {
 		{"prepare", &prepare.Request{}, false},
 		{"protocol", &protocol.Request{}, false},
 		{"query", &query.Request{}, false},
+		{"hardlink", &hardlink.Request{}, false},
 		{"read", &read.Request{}, false},
+		{"readlink", &readlink.Request{}, false},
 		{"readv", &readv.Request{}, false},
 		{"rm", &rm.Request{}, false},
 		{"rmdir", &rmdir.Request{}, false},
+		{"set", &set.Request{}, false},
+		{"symlink", &symlink.Request{}, false},
 		{"sigver", func() *sigver.Request { r := sigver.NewRequest(open.RequestID, 1, nil); return &r }(), false},
 		{"stat", &stat.Request{}, false},
 		{"statx", &statx.Request{}, false},
@@ -158,11 +166,14 @@ func TestConformance_AConditionalIntentIsOnlyConsultedWhereTheLevelSaysLikely(t 
 		xrdproto.Intense, xrdproto.Pedantic,
 	}
 
-	// fattr answers true, and is in no level's table: nothing ever asks.
+	// fattr answers true, and is SignNeeded from Standard upwards: below that
+	// its own answer buys it nothing, and at or above it the answer is not
+	// consulted either. Either way the level, not the request, decides.
 	for _, level := range levels {
 		reqs := signing.New(level, nil)
-		if got := reqs.Needed(&fattr.Request{}); got {
-			t.Fatalf("level %v: fattr is signed, but no level lists it", level)
+		want := level >= xrdproto.Standard
+		if got := reqs.Needed(&fattr.Request{}); got != want {
+			t.Fatalf("level %v: fattr signed = %v, want %v", level, got, want)
 		}
 	}
 
