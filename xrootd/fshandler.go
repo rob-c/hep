@@ -6,11 +6,14 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"sync"
+	"syscall"
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto"
@@ -86,14 +89,49 @@ func (h *fshandler) realPath(p string) string {
 	return path.Join(h.basePath, name)
 }
 
+// osError turns a failure from the backing filesystem into the error code an
+// XRootD server answers with. Answering kXR_IOError for everything leaves a
+// client unable to tell "it is already there" from "the disk is broken", and
+// kXR_ItExists in particular is the *successful* outcome of the only open that
+// creates without truncating: a client asked to touch a file it already has
+// would otherwise be told the server has an I/O problem.
+//
+// The mapping is the reference server's mapError(), by way of nginx-xrootd's
+// core/compat/error_mapping.c.
+func osError(err error) xrdproto.ServerError {
+	code := xrdproto.IOError
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		code = xrdproto.NotFound
+	case errors.Is(err, fs.ErrExist), isNotEmpty(err):
+		// The reference maps EEXIST and ENOTEMPTY to the same code: removing a
+		// directory that still holds something reports kXR_ItExists rather than
+		// a filesystem error, and has done since before it was a good idea.
+		code = xrdproto.ItExists
+	case errors.Is(err, fs.ErrPermission):
+		code = xrdproto.NotAuthorized
+	case errors.Is(err, syscall.ENOTDIR):
+		// A path with a file in the middle of it: the namespace is wrong, not
+		// the storage. syscall.ENOTDIR is the one errno every port defines.
+		code = xrdproto.FSError
+	case isNoSpace(err):
+		code = xrdproto.NoSpace
+	case errors.Is(err, errors.ErrUnsupported):
+		code = xrdproto.Unsupported
+	case errors.Is(err, fs.ErrInvalid):
+		code = xrdproto.ArgInvalid
+	}
+	return xrdproto.ServerError{
+		Code:    code,
+		Message: fmt.Sprintf("An IO error occurred: %v", err),
+	}
+}
+
 // Dirlist implements server.Handler.Dirlist.
 func (h *fshandler) Dirlist(sessionID [16]byte, request *dirlist.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 	files, err := os.ReadDir(h.realPath(request.Path))
 	if err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	resp := &dirlist.Response{
@@ -104,10 +142,7 @@ func (h *fshandler) Dirlist(sessionID [16]byte, request *dirlist.Request) (xrdpr
 	for _, file := range files {
 		info, err := file.Info()
 		if err != nil {
-			return xrdproto.ServerError{
-				Code:    xrdproto.IOError,
-				Message: fmt.Sprintf("An IO error occurred: %+v", err),
-			}, xrdproto.Error
+			return osError(err), xrdproto.Error
 		}
 		entry := xrdfs.EntryStatFrom(info)
 		entry.HasStatInfo = resp.WithStatInfo
@@ -148,20 +183,18 @@ func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Ma
 
 	filePath := h.realPath(request.Path)
 	if request.Options&xrdfs.OpenOptionsMkPath != 0 {
-		if err := os.MkdirAll(path.Dir(filePath), os.FileMode(request.Mode)); err != nil {
-			return xrdproto.ServerError{
-				Code:    xrdproto.IOError,
-				Message: fmt.Sprintf("An IO error occurred: %v", err),
-			}, xrdproto.Error
+		// The mode of the request is the mode of the file, not of the directories
+		// leading to it: creating them with, say, 0600 would leave the open that
+		// asked for them failing on a path it could not enter. The reference
+		// creates the chain with 0755, as does this.
+		if err := os.MkdirAll(path.Dir(filePath), 0755); err != nil {
+			return osError(err), xrdproto.Error
 		}
 	}
 
 	file, err := os.OpenFile(filePath, flag, os.FileMode(request.Mode))
 	if err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	h.mu.RLock()
@@ -206,10 +239,7 @@ func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Ma
 		st, err := file.Stat()
 		if err != nil {
 			file.Close()
-			return xrdproto.ServerError{
-				Code:    xrdproto.IOError,
-				Message: fmt.Sprintf("An IO error occurred: %v", err),
-			}, xrdproto.Error
+			return osError(err), xrdproto.Error
 		}
 		es := xrdfs.EntryStatFrom(st)
 		resp.Stat = &es
@@ -272,10 +302,7 @@ func (h *fshandler) Close(sessionID [16]byte, request *xrdclose.Request) (xrdpro
 	delete(sess.handles, request.Handle)
 	err := file.Close()
 	if err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 	return nil, xrdproto.Ok
 }
@@ -293,10 +320,7 @@ func (h *fshandler) Read(sessionID [16]byte, request *read.Request) (xrdproto.Ma
 	buf := make([]byte, request.Length)
 	n, err := file.ReadAt(buf, request.Offset)
 	if err != nil && err != io.EOF {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	return read.Response{Data: buf[:n]}, xrdproto.Ok
@@ -320,10 +344,7 @@ func (h *fshandler) Write(sessionID [16]byte, request *write.Request) (xrdproto.
 		_, err = file.WriteAt(request.Data, request.Offset)
 	}
 	if err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	return nil, xrdproto.Ok
@@ -369,10 +390,7 @@ func (h *fshandler) Stat(sessionID [16]byte, request *stat.Request) (xrdproto.Ma
 
 		vfs, err := virtualStat(path)
 		if err != nil {
-			return xrdproto.ServerError{
-				Code:    xrdproto.IOError,
-				Message: fmt.Sprintf("An IO error occurred: %v", err),
-			}, xrdproto.Error
+			return osError(err), xrdproto.Error
 		}
 		return vfs, xrdproto.Ok
 	}
@@ -393,10 +411,7 @@ func (h *fshandler) Stat(sessionID [16]byte, request *stat.Request) (xrdproto.Ma
 	}
 
 	if err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	return stat.DefaultResponse{EntryStat: xrdfs.EntryStatFrom(fi)}, xrdproto.Ok
@@ -419,10 +434,7 @@ func (h *fshandler) Truncate(sessionID [16]byte, request *truncate.Request) (xrd
 	}
 
 	if err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	return nil, xrdproto.Ok
@@ -439,10 +451,7 @@ func (h *fshandler) Sync(sessionID [16]byte, request *xrdsync.Request) (xrdproto
 	}
 
 	if err := file.Sync(); err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	return nil, xrdproto.Ok
@@ -451,10 +460,7 @@ func (h *fshandler) Sync(sessionID [16]byte, request *xrdsync.Request) (xrdproto
 // Rename implements server.Handler.Rename.
 func (h *fshandler) Rename(sessionID [16]byte, request *mv.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 	if err := os.Rename(h.realPath(request.OldPath), h.realPath(request.NewPath)); err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 
 	return nil, xrdproto.Ok
@@ -468,10 +474,7 @@ func (h *fshandler) Mkdir(sessionID [16]byte, request *mkdir.Request) (xrdproto.
 	}
 
 	if err := mkdirFunc(h.realPath(request.Path), os.FileMode(request.Mode)); err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 	return nil, xrdproto.Ok
 }
@@ -479,10 +482,7 @@ func (h *fshandler) Mkdir(sessionID [16]byte, request *mkdir.Request) (xrdproto.
 // Remove implements server.Handler.Remove.
 func (h *fshandler) Remove(sessionID [16]byte, request *rm.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 	if err := os.Remove(h.realPath(request.Path)); err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 	return nil, xrdproto.Ok
 }
@@ -490,10 +490,7 @@ func (h *fshandler) Remove(sessionID [16]byte, request *rm.Request) (xrdproto.Ma
 // RemoveDir implements server.Handler.RemoveDir.
 func (h *fshandler) RemoveDir(sessionID [16]byte, request *rmdir.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 	if err := os.Remove(h.realPath(request.Path)); err != nil {
-		return xrdproto.ServerError{
-			Code:    xrdproto.IOError,
-			Message: fmt.Sprintf("An IO error occurred: %v", err),
-		}, xrdproto.Error
+		return osError(err), xrdproto.Error
 	}
 	return nil, xrdproto.Ok
 }

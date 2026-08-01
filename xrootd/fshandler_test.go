@@ -133,8 +133,8 @@ func TestHandler_Dirlist_WhenPathIsInvalid(t *testing.T) {
 	if !ok {
 		t.Fatalf("could not cast err to ServerError: %v", err)
 	}
-	if serverError.Code != xrdproto.IOError {
-		t.Fatalf("wrong error code:\ngot = %v\nwant = %v", serverError.Code, xrdproto.IOError)
+	if serverError.Code != xrdproto.NotFound {
+		t.Fatalf("wrong error code:\ngot = %v\nwant = %v", serverError.Code, xrdproto.NotFound)
 	}
 }
 
@@ -244,7 +244,7 @@ func TestHandler_Open(t *testing.T) {
 			testName:   "Read & Write | create existing file",
 			options:    xrdfs.OpenOptionsOpenUpdate | xrdfs.OpenOptionsNew,
 			createFile: true,
-			errCode:    xrdproto.IOError,
+			errCode:    xrdproto.ItExists,
 			file:       "test1.txt",
 		},
 		{
@@ -257,7 +257,7 @@ func TestHandler_Open(t *testing.T) {
 			testName: "Read & Write | new file in new directory without OpenOptionsMkPath",
 			options:  xrdfs.OpenOptionsOpenUpdate | xrdfs.OpenOptionsNew,
 			file:     path.Join("testdir", "test1.txt"),
-			errCode:  xrdproto.IOError,
+			errCode:  xrdproto.NotFound,
 		},
 		{
 			testName: "Read & Write | new file in new directory with OpenOptionsMkPath",
@@ -880,7 +880,7 @@ func TestHandler_Mkdir(t *testing.T) {
 			testName:   "existing dir",
 			createFile: true,
 			path:       "testdir",
-			errCode:    xrdproto.IOError,
+			errCode:    xrdproto.ItExists,
 		},
 		{
 			testName:   "new dir",
@@ -891,7 +891,7 @@ func TestHandler_Mkdir(t *testing.T) {
 			testName:   "nested dir",
 			createFile: false,
 			path:       "nested/testdir",
-			errCode:    xrdproto.IOError,
+			errCode:    xrdproto.NotFound,
 		},
 		{
 			testName:   "nested dir and MkdirAll",
@@ -961,7 +961,7 @@ func TestHandler_Remove(t *testing.T) {
 			testName:   "non-existing file",
 			createFile: false,
 			path:       "testfile",
-			errCode:    xrdproto.IOError,
+			errCode:    xrdproto.NotFound,
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
@@ -1028,14 +1028,14 @@ func TestHandler_RemoveDir(t *testing.T) {
 			createFile: false,
 			createDir:  false,
 			path:       "testdir",
-			errCode:    xrdproto.IOError,
+			errCode:    xrdproto.NotFound,
 		},
 		{
 			testName:   "non-empty existing dir",
 			createFile: true,
 			createDir:  true,
 			path:       "testdir",
-			errCode:    xrdproto.IOError,
+			errCode:    xrdproto.ItExists,
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
