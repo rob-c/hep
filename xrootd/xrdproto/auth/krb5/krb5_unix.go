@@ -14,11 +14,12 @@ import (
 	"strings"
 )
 
-// FIXME(sbinet): may be overwritten by $KRB5_CONFIG
-// FIXME(sbinet): Linux puts it at:     /etc/krb5.conf
-//                others may put it at: /etc/krb5/krb5.conf
-
-const configPath = "/etc/krb5.conf"
+// configCandidates lists where a Kerberos configuration is kept when
+// $KRB5_CONFIG does not say, most likely first.
+var configCandidates = []string{
+	"/etc/krb5.conf",
+	"/etc/krb5/krb5.conf",
+}
 
 func cachePath() string {
 	if v := os.Getenv("KRB5CCNAME"); v != "" {

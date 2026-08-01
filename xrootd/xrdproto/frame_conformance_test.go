@@ -92,7 +92,7 @@ var (
 )
 
 func frameCases() []frameCase {
-	sigverReq := sigver.NewRequest(open.RequestID, 0x0102030405060708, frameData)
+	sigverReq := sigver.NewRequest([]byte("key"), open.RequestID, 0x0102030405060708, frameData)
 	return []frameCase{
 		{
 			name: "admin", req: &admin.Request{Req: "query stats"}, id: 3020,

@@ -65,6 +65,19 @@ func (req *Request) ReqID() uint16 { return RequestID }
 // ShouldSign implements xrdproto.Request.ShouldSign.
 func (req *Request) ShouldSign() bool { return false }
 
+// SetHandle implements xrdproto.FilehandleRequest.SetHandle: every segment is
+// pointed at handle.
+//
+// A vector names a file per segment, so this is only meaningful for a vector
+// whose segments are all the same file — which is the only kind this client
+// builds. A caller assembling a vector over several files has to deal with a
+// redirect itself, since one handle cannot stand for all of them.
+func (req *Request) SetHandle(handle xrdfs.FileHandle) {
+	for i := range req.Segments {
+		req.Segments[i].Handle = handle
+	}
+}
+
 // MaxResponseLength implements xrdproto.ResponseLimiter: the reply is one
 // 16-byte echo header per segment plus at most the bytes that were asked for.
 func (req *Request) MaxResponseLength() int64 {

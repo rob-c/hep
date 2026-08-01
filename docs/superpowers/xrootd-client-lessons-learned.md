@@ -236,10 +236,14 @@ instead of one per range. It is implemented in `xrootd/xrdproto/readv` and
   reads `dlen` bytes and stops will happily accept either form, which is why
   the conformance server here reads the trailer off the connection itself and
   the `root-vector` integration leg runs against real xrootd.
-- **This also puts `kXR_writev` out of reach of `kXR_sigver`.** A signature
-  covers the request frame and its `dlen` bytes; a vector write's data is not
-  in either. Signing one produces a hash the server cannot reproduce, so the
-  request is deliberately absent from the signing requirements table.
+- **This does *not* put `kXR_writev` out of reach of `kXR_sigver`,** which was
+  the tempting wrong conclusion. A signature covers the frame and exactly the
+  `dlen` bytes it declares — for a vector write that is the descriptor block,
+  and the server hashes the same bytes before it reads the segment data. So a
+  vector write is signed wherever a plain write is (`kXR_secIntense` and above);
+  omitting it from the requirements table is a hole at exactly the sites that
+  asked for signing, on exactly the request that modifies data. What must not
+  happen is hashing `len(buf)` — see §4.8.
 - **A `kXR_readv` reply interleaves a 16-byte echo header with the data, per
   segment,** and the length in that header is what was *actually* read. The
   reply carries no request-side index, so a server that stops early simply
@@ -390,6 +394,34 @@ caller rather than being smoothed into an empty result.
   labels the connection in the server's monitoring stream. It is easy to skip
   because nothing fails without it — and then a site cannot tell whose traffic a
   connection carries, which is the question its monitoring exists to answer.
+
+### 4.10 An open response is positional, and a file handle is server state
+
+Three lessons that only appear once the same package implements the server side
+as well.
+
+- **The compression block is not optional in practice.** `kXR_open` answers with
+  the handle, then `cpsize`/`cptype`, then the stat record — and both other
+  oracles skip those eight bytes *unconditionally* before parsing the stat
+  (Python's `parse_open`, Julia's `decode_open`). A server that returns the stat
+  without them because the client did not ask about compression hands every
+  client a stat record read eight bytes late. Return the block whenever anything
+  follows the handle; zero page size and an empty algorithm name is what an
+  uncompressed file says.
+- **A file handle must not be guessed.** The original server drew handles at
+  random and retried on collision, which is a probability argument in place of a
+  counter: a collision moves one caller's reads and writes onto another caller's
+  file, silently. Handles are per-session, so a counter cannot collide, never
+  reissues a closed handle to the same session, and makes a failing test name
+  the same handle every run. Start it at one — zero is what an uninitialised
+  request carries.
+- **`kXR_stat` with `kXR_vfs` is about the disk, not the path.** Answering it
+  with an ordinary stat reports a file's size as the free space of the storage
+  element, and a client sizing a transfer against that fills the disk. The
+  numbers have to come from the filesystem the writes land on (`statvfs`, which
+  is what nginx-xrootd's own accounting uses), and the free figure must be what
+  an unprivileged process may still write: the blocks reserved for root are
+  space the client will be refused.
 
 ---
 
@@ -647,13 +679,80 @@ Closing alone would release the waiters too, but with the multiplexer's own
 client's own bookkeeping rather than what happened to the connection.
 
 Three things have to hold together, and each was its own test: a request in
-flight gets an error (not a hang, not a panic), a request issued *after* the
-loss is refused rather than parked, and an open file fails with the connection
-that carried it. A silent server — one that neither answers nor hangs up — is a
-fourth case, and only the caller's context can end it.
+flight gets an error (not a hang, not a panic), an open file fails with the
+connection that carried it, and a silent server — one that neither answers nor
+hangs up — is ended by the caller's context and nothing else.
+
+A request issued *after* the loss is the fourth case, and the answer is not the
+obvious one. Dropping the dead session from the table and refusing everything
+afterwards is honest but useless: the session id **is** the address of the
+server, so the client holds everything it needs to dial again, and a caller told
+"connection lost" can only do by hand what the client just declined to do. Both
+other oracles reconnect (Julia's `filesystem.jl`, Python's `session/router.py`),
+so the next request that finds no session opens one. The line to hold is that
+*nothing is replayed*: the requests that were in flight were already failed
+individually, and a write re-sent by the transport rather than by the caller is
+a write that may land twice.
 
 - **Check against nginx-xrootd:** `client/lib/conn.c` teardown on read error, and
   whether every outstanding `areq_*` is completed with an error.
+
+### 7.6 Parallel data connections are a per-server allowance, not a per-request one
+
+`kXR_bind` opens a second socket that shares a login: the request header goes
+out on the original connection carrying a path id, and the payload goes out on
+the bound one. Three things about the pool were wrong in ways that only show
+under a loop of writes.
+
+- **Returning a path to the pool must not block, and must not be deferred to a
+  goroutine.** With an unbuffered channel, the release raced the next claim: the
+  claim's non-blocking receive missed a path that was one scheduling instant
+  from being returned, and opened another connection instead. A loop of small
+  writes opened the entire allowance one write at a time. Size the pool to the
+  allowance and the release becomes a non-blocking send that always succeeds.
+- **The allowance belongs to the caller.** Eight was a guess in a comment; it is
+  now `WithSubStreams` and `XRD_SUBSTREAMSPERCHANNEL`, which is what XrdCl calls
+  it, bounded by the 255 path ids the protocol has. Zero is a legitimate answer
+  — send everything inline — and must not then log a refusal on every write.
+- **A path id is set even when there is no path.** Skipping the whole data-path
+  block when the pool is disabled also skips `SetPathID(0)`, and a `kXR_read`
+  that carries no optional args at all is a *shorter frame* than the server
+  expects to read. Claiming is conditional; setting the field is not.
+
+A server that will not bind is not a failure: the bytes go inline, which is
+where they would have gone had the client never asked.
+
+- **Check against nginx-xrootd:** whether a bound connection is accounted to the
+  login or to the socket, and what it does when the allowance is exhausted.
+
+### 7.7 The failures with nobody to return them to
+
+Three of them: a request retried onto a connection that has since died, a data
+connection the server would not bind, a response that arrives for a caller who
+has already gone. Each was a `TODO: log it` — and a library that writes to
+standard error has decided how the program logs.
+
+`WithErrorHandler` takes a `func(error)`; without one they are dropped, which is
+the default. It is worth having rather than dropping silently, because a site
+whose binds are all refused looks from the outside exactly like a link that will
+not go fast.
+
+### 7.8 A graceful shutdown is about the requests already accepted
+
+`Server.Shutdown` closed the listeners and then closed every live connection.
+Every request that had been read but not yet answered died with the socket it
+arrived on — a client that asked a question *before* the server was told to stop
+got a closed connection instead of an answer.
+
+The fix is a `WaitGroup` incremented where the request is dispatched, not where
+the connection is accepted, and waited on after the listeners are down and
+before the connections are closed. Bound by the caller's context: `Shutdown` is
+allowed to give up, and it returns `ctx.Err()` when it does, so a caller can
+choose between "wait for the transfers" and "we are going down now".
+
+The corollary is that the errors a server sees during shutdown are not faults. A
+read or write that fails after `closed` is set is the shutdown itself arriving,
+and reporting it as a connection error buries the one error that matters.
 
 ---
 
@@ -1137,7 +1236,8 @@ the request names.
   them is configured by nobody, and a job that works under `libXrdCl` fails under
   this one for a reason nothing in its own configuration explains. Honour the
   C client's spellings — `XRD_USERNAME`, `XRD_REQUIRETLS`, `XRD_TLSNOCERTVERIFY`,
-  `XRD_CONNECTIONWINDOW`, `XRD_REQUESTTIMEOUT`, `XRD_REDIRECTLIMIT` — and its
+  `XRD_CONNECTIONWINDOW`, `XRD_REQUESTTIMEOUT`, `XRD_REDIRECTLIMIT`,
+  `XRD_SUBSTREAMSPERCHANNEL` — and its
   units: they are bare seconds, which is exactly why an unnoticed `30s` has to be
   an error rather than a silent default. Apply them *before* the caller's own
   options, so a program that configures itself explicitly behaves the same
@@ -1255,7 +1355,20 @@ it deliberately differs):
   than relying on the separator, `kXR_Unsupported` reaches the caller, and the
   connection sends an `appid` (§4.9).
 - [ ] The `XRD_*` variables the C client honours reach this client too, in bare
-  seconds, applied before the caller's own options (§9.7).
+  seconds, applied before the caller's own options (§9.7), including
+  `XRD_SUBSTREAMSPERCHANNEL` (§7.6).
+- [ ] `kXR_writev` is *in* the signing table from `kXR_secIntense` up, signed
+  over the frame and its descriptor block only (§4.5).
+- [ ] A bound data connection is returned to the pool without blocking, a path
+  id is set on every data request whether or not one was bound, and a refused
+  `kXR_bind` falls back to the request connection (§7.6).
+- [ ] A transport loss drops the session and the next request dials again,
+  replaying nothing (§7.5).
+- [ ] Shutdown answers the requests already read before it closes their
+  connections, bounded by the caller's deadline (§7.8).
+- [ ] `kXR_open` returns the compression block ahead of any stat record, handles
+  are issued in order rather than guessed, and `kXR_vfs` is answered from the
+  filesystem's own free space (§4.10).
 - [ ] `fattr` nvec/vvec endianness and the count-prefixed vs NUL-list responses.
 - [ ] `sss` blob byte layout and Blowfish-CFB64 zero-IV encoding
   (`src/compat/sss_bf.c`).

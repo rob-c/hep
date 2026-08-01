@@ -6,6 +6,7 @@
 package sigver // import "go-hep.org/x/hep/xrootd/xrdproto/sigver"
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
 
@@ -92,19 +93,27 @@ func signedLength(data []byte) int {
 	return len(data)
 }
 
-func NewRequest(requestID uint16, seqID int64, data []byte) Request {
-	hash := sha256.New()
+// NewRequest builds the kXR_sigver that authenticates the marshalled request
+// data, whose request id is requestID, as the seqID'th request of the session.
+//
+// key is the session key agreed with the server while authenticating. It is
+// what makes the signature worth anything: the covered bytes are all on the
+// wire, so an unkeyed digest of them is one any observer can recompute and put
+// in front of a request of their own. A caller with no key has nothing to
+// authenticate with and must not send the request at all.
+func NewRequest(key []byte, requestID uint16, seqID int64, data []byte) Request {
+	mac := hmac.New(sha256.New, key)
 
 	var s [8]byte
 	binary.BigEndian.PutUint64(s[:], uint64(seqID))
-	_, _ = hash.Write(s[:])
+	_, _ = mac.Write(s[:])
 
 	if requestID == write.RequestID || requestID == verifyw.RequestID {
-		_, _ = hash.Write(data[:requestFrameLength])
+		_, _ = mac.Write(data[:requestFrameLength])
 	} else {
-		_, _ = hash.Write(data[:signedLength(data)])
+		_, _ = mac.Write(data[:signedLength(data)])
 	}
-	signature := hash.Sum(nil)
+	signature := mac.Sum(nil)
 
 	var f Flags
 	if requestID == write.RequestID {

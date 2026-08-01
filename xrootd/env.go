@@ -29,6 +29,9 @@ const (
 	EnvRequestTimeout = "XRD_REQUESTTIMEOUT"
 	// EnvRedirectLimit bounds how many redirections are followed in a row.
 	EnvRedirectLimit = "XRD_REDIRECTLIMIT"
+	// EnvSubStreams bounds how many parallel data connections are opened to a
+	// single server.
+	EnvSubStreams = "XRD_SUBSTREAMSPERCHANNEL"
 )
 
 // WithRedirectLimit sets how many redirections in a row the client follows
@@ -77,6 +80,31 @@ func WithRequestTimeout(d time.Duration) Option {
 	}
 }
 
+// WithSubStreams sets how many parallel data connections (kXR_bind sub-streams)
+// the client may open to one server, over and above the connection the requests
+// themselves travel on.
+//
+// Bulk data moves on these: a read or a write names one with its pathid and the
+// server answers there, so several transfers to the same server proceed without
+// queueing behind each other on a single socket. They cost a connection and a
+// login each, which is why there is a bound at all, and n = 0 asks for none —
+// every transfer then shares the request connection, which is what the C++
+// client does by default.
+func WithSubStreams(n int) Option {
+	return func(client *Client) error {
+		switch {
+		case n < 0:
+			return fmt.Errorf("xrootd: sub-stream count %d is negative", n)
+		case n > maxPathID:
+			// A sub-stream is named by a one-byte pathid, and 0 means "this
+			// connection", so there are only so many to be had.
+			return fmt.Errorf("xrootd: sub-stream count %d exceeds the %d path ids the protocol has", n, maxPathID)
+		}
+		client.maxSubs = n
+		return nil
+	}
+}
+
 // WithUsername sets the user name asserted at login, overriding the one passed
 // to NewClient.
 func WithUsername(name string) Option {
@@ -117,16 +145,24 @@ func envOptions() []Option {
 	opts = append(opts, envSeconds(EnvConnectionWindow, WithConnectionWindow))
 	opts = append(opts, envSeconds(EnvRequestTimeout, WithRequestTimeout))
 
-	if v, ok := os.LookupEnv(EnvRedirectLimit); ok && strings.TrimSpace(v) != "" {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil {
-			opts = append(opts, envError(EnvRedirectLimit, v))
-		} else {
-			opts = append(opts, WithRedirectLimit(n))
-		}
-	}
+	opts = append(opts, envCount(EnvRedirectLimit, WithRedirectLimit))
+	opts = append(opts, envCount(EnvSubStreams, WithSubStreams))
 
 	return opts
+}
+
+// envCount turns a variable holding a whole number into the option it
+// configures, or into the error that says why it could not.
+func envCount(name string, opt func(int) Option) Option {
+	v, ok := os.LookupEnv(name)
+	if !ok || strings.TrimSpace(v) == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return envError(name, v)
+	}
+	return opt(n)
 }
 
 // envBool reports whether the named variable asks for something. The spellings
@@ -158,3 +194,15 @@ func envError(name, value string) Option {
 		return fmt.Errorf("xrootd: %s=%q is not a number", name, value)
 	}
 }
+
+// The bounds on parallel data connections.
+const (
+	// defaultSubStreams is how many a client opens to one server unless it is
+	// told otherwise. Enough to keep several transfers from queueing behind
+	// each other, few enough that a client fanning out over a federation does
+	// not arrive at each server as a small crowd.
+	defaultSubStreams = 8
+	// maxPathID is the largest path id a kXR_bind can hand out: the field is
+	// one byte and 0 names the connection the request travelled on.
+	maxPathID = 255
+)

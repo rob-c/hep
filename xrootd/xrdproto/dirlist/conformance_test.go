@@ -115,3 +115,22 @@ func TestConformance_AListingRoundTripsInBothShapes(t *testing.T) {
 		})
 	}
 }
+
+func TestConformance_AnEmptyStattedDirectoryIsNotAFileNamedDot(t *testing.T) {
+	// An empty directory is answered with the sentinel entry and nothing
+	// else, and the server sends it without a trailing newline. Read as a
+	// plain listing that is a directory holding two files, "." and
+	// "0 0 0 0" -- names a caller would then try to stat, remove or copy.
+	for _, body := range []string{".\n0 0 0 0", ".\n0 0 0 0\x00"} {
+		var resp Response
+		if err := resp.UnmarshalXrd(xrdenc.NewRBuffer([]byte(body))); err != nil {
+			t.Fatalf("%q: %v", body, err)
+		}
+		if !resp.WithStatInfo {
+			t.Fatalf("%q was read as a listing without stat information", body)
+		}
+		if len(resp.Entries) != 0 {
+			t.Fatalf("%q was read as %d entries, want none", body, len(resp.Entries))
+		}
+	}
+}

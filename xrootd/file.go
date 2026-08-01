@@ -13,6 +13,8 @@ import (
 
 	"go-hep.org/x/hep/xrootd/internal/pgbuf"
 	"go-hep.org/x/hep/xrootd/xrdfs"
+	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/open"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
 	"go-hep.org/x/hep/xrootd/xrdproto/query"
@@ -33,9 +35,68 @@ type file struct {
 	handle      xrdfs.FileHandle
 	compression *xrdfs.FileCompression
 
+	// path, mode and options are what the file was opened with. They are kept
+	// because a request to an open file can be redirected, and the file then
+	// has to be opened again at the server it was sent to: a handle means
+	// nothing anywhere but where it was issued.
+	path    string
+	mode    xrdfs.OpenMode
+	options xrdfs.OpenOptions
+
 	mu        rsync.RWMutex
 	info      *xrdfs.EntryStat
 	sessionID string
+}
+
+// send issues req on the session sid on behalf of this file, re-opening the
+// file wherever the request is redirected to.
+func (f *file) send(ctx context.Context, sid string, resp xrdproto.Response, req xrdproto.Request) (string, error) {
+	return f.fs.c.sendSessionFile(ctx, sid, resp, req, f)
+}
+
+// reopen implements reopener: it opens this file again at the server a request
+// to it was redirected to, and reports the handle that server gave out along
+// with the session the file is now open on.
+//
+// The options are the ones the file was opened with, with one change: a file
+// opened with kXR_delete has already been truncated once, at the server the
+// first open went to, and asking a second server to delete it would throw away
+// whatever was written in between. It is opened for update instead, which is
+// what the reference client does.
+func (f *file) reopen(ctx context.Context, sessionID, opaque string) (xrdfs.FileHandle, string, error) {
+	f.mu.RLock()
+	path, mode, options := f.path, f.mode, f.options
+	f.mu.RUnlock()
+
+	if path == "" {
+		return xrdfs.FileHandle{}, "", fmt.Errorf("xrootd: a request to an open file was redirected to %q, but the file was not opened by this client", sessionID)
+	}
+	if options&xrdfs.OpenOptionsDelete != 0 {
+		options &^= xrdfs.OpenOptionsDelete
+		options |= xrdfs.OpenOptionsOpenUpdate
+	}
+
+	req := open.NewRequest(path, mode, options)
+	addOpaque(req, opaque)
+
+	var resp open.Response
+	id, err := f.fs.c.sendSession(ctx, sessionID, &resp, req)
+	if err != nil {
+		return xrdfs.FileHandle{}, "", fmt.Errorf("xrootd: could not re-open %q at %q after a redirect: %w", path, sessionID, err)
+	}
+
+	f.mu.Lock()
+	f.handle = resp.FileHandle
+	if resp.Compression != nil {
+		f.compression = resp.Compression
+	}
+	if resp.Stat != nil {
+		f.info = resp.Stat
+	}
+	f.sessionID = id
+	f.mu.Unlock()
+
+	return resp.FileHandle, id, nil
 }
 
 // Compression returns the compression info.
@@ -57,7 +118,7 @@ func (f *file) Handle() xrdfs.FileHandle {
 // Close closes the file.
 func (f *file) Close(ctx context.Context) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, &xrdclose.Request{Handle: f.handle})
+		return f.send(ctx, sid, nil, &xrdclose.Request{Handle: f.handle})
 	})
 }
 
@@ -65,14 +126,14 @@ func (f *file) Close(ctx context.Context) error {
 // A zero size suppresses the verification.
 func (f *file) CloseVerify(ctx context.Context, size int64) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, &xrdclose.Request{Handle: f.handle, Size: size})
+		return f.send(ctx, sid, nil, &xrdclose.Request{Handle: f.handle, Size: size})
 	})
 }
 
 // Sync commits all pending writes to an open file.
 func (f *file) Sync(ctx context.Context) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, &sync.Request{Handle: f.handle})
+		return f.send(ctx, sid, nil, &sync.Request{Handle: f.handle})
 	})
 }
 
@@ -81,7 +142,7 @@ func (f *file) ReadAtContext(ctx context.Context, p []byte, off int64) (n int, e
 	resp := read.Response{Data: p}
 	req := &read.Request{Handle: f.handle, Offset: off, Length: int32(len(p))}
 	err = f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, &resp, req)
+		return f.send(ctx, sid, &resp, req)
 	})
 	if err != nil {
 		return 0, err
@@ -97,7 +158,7 @@ func (f *file) ReadAt(p []byte, off int64) (n int, err error) {
 // WriteAtContext writes len(p) bytes from p to the file at offset off.
 func (f *file) WriteAtContext(ctx context.Context, p []byte, off int64) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, &write.Request{Handle: f.handle, Offset: off, Data: p})
+		return f.send(ctx, sid, nil, &write.Request{Handle: f.handle, Offset: off, Data: p})
 	})
 }
 
@@ -113,17 +174,21 @@ func (f *file) WriteAt(p []byte, off int64) (n int, err error) {
 // Truncate changes the size of the named file.
 func (f *file) Truncate(ctx context.Context, size int64) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, &truncate.Request{Handle: f.handle, Size: size})
+		return f.send(ctx, sid, nil, &truncate.Request{Handle: f.handle, Size: size})
 	})
 }
 
 // StatVirtualFS fetches the virtual fs stat info from the XRootD server.
-// TODO: note that calling stat with vfs and handle may be invalid.
-// See https://github.com/xrootd/xrootd/issues/728 for the details.
+//
+// The request names this open file, and whether a kXR_stat carrying kXR_vfs may
+// name a handle at all is unsettled: the stock server answers it as an ordinary
+// stat of the file. See https://github.com/xrootd/xrootd/issues/728. Servers
+// that do answer it, this package's own among them, report the storage holding
+// the file. Use FileSystem.VirtualStat to ask about a path instead.
 func (f *file) StatVirtualFS(ctx context.Context) (xrdfs.VirtualFSStat, error) {
 	var resp stat.VirtualFSResponse
 	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, &resp, &stat.Request{FileHandle: f.handle, Options: stat.OptionsVFS})
+		return f.send(ctx, sid, &resp, &stat.Request{FileHandle: f.handle, Options: stat.OptionsVFS})
 	})
 	if err != nil {
 		return xrdfs.VirtualFSStat{}, err
@@ -140,7 +205,7 @@ func (f *file) Stat(ctx context.Context) (xrdfs.EntryStat, error) {
 	f.mu.RUnlock()
 
 	var resp stat.DefaultResponse
-	sid, err := f.fs.c.sendSession(ctx, sid, &resp, &stat.Request{FileHandle: f.handle})
+	sid, err := f.send(ctx, sid, &resp, &stat.Request{FileHandle: f.handle})
 	if err != nil {
 		return xrdfs.EntryStat{}, err
 	}
@@ -155,11 +220,13 @@ func (f *file) Stat(ctx context.Context) (xrdfs.EntryStat, error) {
 
 // VerifyWriteAt writes len(p) bytes from p to the file at offset off using crc32 verification.
 //
-// TODO: note that verifyw is not supported by the XRootD server.
-// See https://github.com/xrootd/xrootd/issues/738 for the details.
+// The stock XRootD server does not implement kXR_verifyw and answers it as an
+// unknown request; see https://github.com/xrootd/xrootd/issues/738. A caller
+// that wants the write to land whatever the server supports should use WriteAt,
+// which asks for no verification and is accepted everywhere.
 func (f *file) VerifyWriteAt(ctx context.Context, p []byte, off int64) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, verifyw.NewRequestCRC32(f.handle, off, p))
+		return f.send(ctx, sid, nil, verifyw.NewRequestCRC32(f.handle, off, p))
 	})
 }
 
@@ -187,7 +254,7 @@ func (f *file) PgReadAt(ctx context.Context, p []byte, off int64) (int, error) {
 	var resp pgread.Response
 	req := &pgread.Request{Handle: f.handle, Offset: off, ReadLength: int32(len(p))}
 	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, &resp, req)
+		return f.send(ctx, sid, &resp, req)
 	})
 	if err != nil {
 		return 0, err
@@ -229,7 +296,7 @@ func (f *file) pgWriteOnce(ctx context.Context, p []byte, off int64, flags uint8
 	var resp pgwrite.Response
 	req := &pgwrite.Request{Handle: f.handle, Offset: off, Data: p, Flags: flags}
 	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, &resp, req)
+		return f.send(ctx, sid, &resp, req)
 	})
 	if err != nil {
 		return nil, err
@@ -286,7 +353,7 @@ func (f *file) ReadVAt(ctx context.Context, segs []xrdfs.ReadVSegment) ([][]byte
 
 	var resp readv.Response
 	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, &resp, req)
+		return f.send(ctx, sid, &resp, req)
 	})
 	if err != nil {
 		return nil, err
@@ -329,7 +396,7 @@ func (f *file) WriteVAt(ctx context.Context, segs []xrdfs.WriteVSegment) error {
 	}
 
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, nil, req)
+		return f.send(ctx, sid, nil, req)
 	})
 }
 
@@ -345,7 +412,7 @@ func (f *file) Visa(ctx context.Context) (string, error) {
 	var resp query.Response
 	req := &query.Request{Query: query.Visa, Handle: f.handle}
 	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
-		return f.fs.c.sendSession(ctx, sid, &resp, req)
+		return f.send(ctx, sid, &resp, req)
 	})
 	if err != nil {
 		return "", err

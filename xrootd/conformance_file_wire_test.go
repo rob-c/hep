@@ -250,7 +250,7 @@ func TestConformance_ASignedRequestIsPrefixedByItsSignature(t *testing.T) {
 	// two writes, or reordered them, would have the server reject a request that
 	// was signed correctly — and a client that reused a sequence number would
 	// have it rejected as a replay.
-	sess := &cliSession{}
+	sess := &cliSession{signKey: []byte("0123456789abcdef")}
 	streamID := xrdproto.StreamID{0x1a, 0x2b}
 	// kXR_write is signed over its 24-byte header only, so the payload handed
 	// to sign has to be at least that long — which every marshalled request is.

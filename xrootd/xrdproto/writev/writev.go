@@ -54,11 +54,26 @@ func (req *Request) ReqID() uint16 { return RequestID }
 
 // ShouldSign implements xrdproto.Request.ShouldSign.
 //
-// It is false, and kXR_writev is deliberately absent from the signing
-// requirements: a kXR_sigver hash covers the request frame and its dlen bytes,
-// and a vector write's data is outside dlen. Signing one would produce a hash
-// the server cannot reproduce.
+// It is false because it is never asked: a vector write modifies data, so the
+// signing requirements list it as always needed rather than conditionally, and
+// only a conditional entry consults this. That the segment data streams past
+// the frame is no obstacle — a signature covers the frame and exactly the dlen
+// bytes it declares, which for kXR_writev is the write_list, and the server
+// hashes the same bytes.
 func (req *Request) ShouldSign() bool { return false }
+
+// SetHandle implements xrdproto.FilehandleRequest.SetHandle: every segment is
+// pointed at handle.
+//
+// A vector names a file per segment, so this is only meaningful for a vector
+// whose segments are all the same file — which is the only kind this client
+// builds. A caller assembling a vector over several files has to deal with a
+// redirect itself, since one handle cannot stand for all of them.
+func (req *Request) SetHandle(handle xrdfs.FileHandle) {
+	for i := range req.Segments {
+		req.Segments[i].Handle = handle
+	}
+}
 
 // Validate reports whether the request is within the bounds a client applies
 // before touching the wire.

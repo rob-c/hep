@@ -8,6 +8,8 @@ package krb5 // import "go-hep.org/x/hep/xrootd/xrdproto/auth/krb5"
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jcmturner/gokrb5/v8/client"
@@ -43,6 +45,28 @@ func init() {
 	}
 }
 
+// configPath returns the Kerberos configuration file to read.
+//
+// $KRB5_CONFIG wins, as it does for every other Kerberos client on the machine,
+// and it holds a list of files rather than one: the first that exists is the
+// one in force. Without it the platform's usual locations are tried in turn,
+// because there is no single answer -- Linux keeps the file at /etc/krb5.conf
+// and several other Unixes keep it under /etc/krb5/. When nothing exists, the
+// last candidate is returned so that the error names the file an administrator
+// would expect to have to create.
+func configPath() string {
+	candidates := configCandidates
+	if v := os.Getenv("KRB5_CONFIG"); v != "" {
+		candidates = filepath.SplitList(v)
+	}
+	for _, name := range candidates {
+		if _, err := os.Stat(name); err == nil {
+			return name
+		}
+	}
+	return candidates[len(candidates)-1]
+}
+
 // Auth implements krb5 (Kerberos) security provider.
 type Auth struct {
 	client *client.Client
@@ -50,7 +74,7 @@ type Auth struct {
 
 // WithPassword creates a new Auth configured from the provided user, realm and password.
 func WithPassword(user, realm, password string) (*Auth, error) {
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(configPath())
 	if err != nil {
 		return nil, fmt.Errorf("auth/krb5: could not load kerberos-5 configuration: %w", err)
 	}
@@ -67,7 +91,7 @@ func WithPassword(user, realm, password string) (*Auth, error) {
 
 // WithCredCache creates a new Auth configured from cached credentials.
 func WithCredCache() (*Auth, error) {
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(configPath())
 	if err != nil {
 		switch err.(type) {
 		case config.UnsupportedDirective:

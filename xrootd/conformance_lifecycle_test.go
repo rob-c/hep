@@ -382,3 +382,122 @@ func TestConformance_AListenerThatFailsOnItsOwnIsReported(t *testing.T) {
 		t.Fatal("Serve did not return after its listener failed")
 	}
 }
+
+// blockingHandler answers a ping only once the test lets it, which is how a
+// request that is still being worked on when the server is told to stop is
+// simulated. Everything else is handled as usual.
+type blockingHandler struct {
+	xrootd.Handler
+
+	entered chan struct{} // closed-over signal that the request reached the handler
+	release chan struct{} // the test closes this to let the request finish
+}
+
+func (h *blockingHandler) Ping(sessionID [16]byte, request *ping.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+	h.entered <- struct{}{}
+	<-h.release
+	return h.Handler.Ping(sessionID, request)
+}
+
+func TestConformance_ShutdownWaitsForTheRequestsItAlreadyAccepted(t *testing.T) {
+	// A request that was read is a promise to answer it. Cutting the connection
+	// under a write that is half done leaves the client unable to say whether it
+	// happened — for a write or a truncate that is the difference between
+	// retrying safely and corrupting the file. So Shutdown closes the listener
+	// first, then lets what is in flight finish.
+	h := &blockingHandler{Handler: xrootd.NewFSHandler(t.TempDir()), entered: make(chan struct{}, 1), release: make(chan struct{})}
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("could not listen: %v", err)
+	}
+	srv := xrootd.NewServer(h, func(error) {})
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(l) }()
+
+	conn := dialServer(t, l.Addr().String())
+	clientHandshake(t, conn)
+	sendRequest(t, conn, xrdproto.StreamID{0, 1}, ping.RequestID, &ping.Request{})
+
+	select {
+	case <-h.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the ping never reached the handler")
+	}
+
+	shut := make(chan error, 1)
+	go func() { shut <- srv.Shutdown(context.Background()) }()
+
+	// The listener goes down first, so the port is released even though the
+	// server has not finished. Nothing else may happen while the request runs.
+	select {
+	case err := <-shut:
+		t.Fatalf("Shutdown returned %v while a request was still being handled", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(h.release)
+
+	select {
+	case err := <-shut:
+		if err != nil {
+			t.Fatalf("could not shut the server down: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Shutdown did not return once the request was answered")
+	}
+
+	// The answer the client was promised is on the connection, written before
+	// it was closed.
+	hdr, _, err := xrdproto.ReadResponse(conn)
+	if err != nil {
+		t.Fatalf("the request went unanswered: %v", err)
+	}
+	if hdr.Status != xrdproto.Ok {
+		t.Fatalf("the ping was answered with status %v, want Ok", hdr.Status)
+	}
+
+	if err := <-served; !errors.Is(err, xrootd.ErrServerClosed) {
+		t.Fatalf("Serve returned %v, want %v", err, xrootd.ErrServerClosed)
+	}
+}
+
+func TestConformance_ShutdownStopsWaitingWhenItsDeadlinePasses(t *testing.T) {
+	// The grace period is the caller's to set. A handler that never returns —
+	// a read from a tape that will not spin up, a lock nobody releases — must
+	// not keep the process alive for ever, so the deadline wins and says so.
+	h := &blockingHandler{Handler: xrootd.NewFSHandler(t.TempDir()), entered: make(chan struct{}, 1), release: make(chan struct{})}
+	defer close(h.release)
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("could not listen: %v", err)
+	}
+	srv := xrootd.NewServer(h, func(error) {})
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(l) }()
+
+	conn := dialServer(t, l.Addr().String())
+	clientHandshake(t, conn)
+	sendRequest(t, conn, xrdproto.StreamID{0, 1}, ping.RequestID, &ping.Request{})
+
+	select {
+	case <-h.entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the ping never reached the handler")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	switch err := srv.Shutdown(ctx); {
+	case err == nil:
+		t.Fatal("Shutdown reported a clean stop while a request was still running")
+	case !errors.Is(err, context.DeadlineExceeded):
+		t.Fatalf("Shutdown returned %v, want the deadline that stopped it", err)
+	}
+
+	if err := <-served; !errors.Is(err, xrootd.ErrServerClosed) {
+		t.Fatalf("Serve returned %v, want %v", err, xrootd.ErrServerClosed)
+	}
+}

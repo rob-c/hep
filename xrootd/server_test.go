@@ -185,7 +185,19 @@ func TestServe_Login(t *testing.T) {
 			t.Errorf("wrong response header:\ngot = %v\nwant = %v", respHeader, wantHeader)
 		}
 
-		// TODO: validate loginResp.
+		// A session id of all zeroes is what an unmarshalled-but-never-written
+		// response reads as, and every later request carries it: a server that
+		// answered a login without issuing one would have the client name a
+		// session nothing knows about.
+		if loginResp.SessionID == ([16]byte{}) {
+			t.Errorf("the server logged the client in without issuing a session id")
+		}
+		// The handler asks for no security, so there is nothing to negotiate;
+		// security information here would send the client into an
+		// authentication exchange this server would not answer.
+		if len(loginResp.SecurityInformation) != 0 {
+			t.Errorf("the server asked for authentication it does not implement: %q", loginResp.SecurityInformation)
+		}
 
 		err = srv.Shutdown(context.Background())
 		if err != nil {

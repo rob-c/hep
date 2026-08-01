@@ -255,7 +255,7 @@ type job struct {
 	stdout io.Writer
 }
 
-func (j job) run(ctx context.Context) (int, error) {
+func (j job) run(ctx context.Context, bufs *copyBuffers) (int, error) {
 	var (
 		o   io.WriteCloser
 		err error
@@ -280,9 +280,16 @@ func (j job) run(ctx context.Context) (int, error) {
 	}
 	defer f.Close()
 
-	// TODO(sbinet): make buffer a field of job to reduce memory pressure.
-	// TODO(sbinet): use clever heuristics for buffer size?
-	n, err := io.CopyBuffer(o, f, make([]byte, 16*1024*1024))
+	// A copy that has to ask the server for the size of the file is a copy of
+	// a file whose size the server would not say. Zero asks for the smallest
+	// buffer, which costs a large transfer some extra round trips and costs a
+	// small one nothing.
+	var size int64
+	if fi, err := f.Stat(); err == nil {
+		size = fi.Size()
+	}
+
+	n, err := io.CopyBuffer(o, f, bufs.get(size))
 	if err != nil {
 		return int(n), fmt.Errorf("could not copy to output file: %w", err)
 	}
@@ -297,6 +304,42 @@ func (j job) run(ctx context.Context) (int, error) {
 
 type jobs struct {
 	slice []job
+	bufs  copyBuffers
+}
+
+// copyBuffers hands out the buffer a transfer copies through. One buffer serves
+// every job in the run: only one of them is ever in flight, and a recursive
+// copy that allocated a fresh buffer per file would ask the collector to keep
+// up with one allocation per file for no gain.
+type copyBuffers struct {
+	buf []byte
+}
+
+// get returns a buffer to copy a file of size bytes through, growing the shared
+// one if this file wants more room than the last did.
+//
+// A buffer larger than the file is memory that is never written to, and a
+// buffer much smaller turns one transfer into many reads, each paying a round
+// trip to the server. So the buffer follows the file up to a ceiling past which
+// a larger one buys no more throughput.
+func (c *copyBuffers) get(size int64) []byte {
+	const (
+		floor = 128 * 1024
+		limit = 16 * 1024 * 1024
+	)
+
+	n := int64(floor)
+	switch {
+	case size > limit:
+		n = limit
+	case size > floor:
+		n = size
+	}
+
+	if int64(len(c.buf)) < n {
+		c.buf = make([]byte, n)
+	}
+	return c.buf[:n]
 }
 
 func (js *jobs) add(j job) {
@@ -306,7 +349,7 @@ func (js *jobs) add(j job) {
 func (js *jobs) run(ctx context.Context) (int, error) {
 	var n int
 	for _, j := range js.slice {
-		nn, err := j.run(ctx)
+		nn, err := j.run(ctx, &js.bufs)
 		n += nn
 		if err != nil {
 			return n, err

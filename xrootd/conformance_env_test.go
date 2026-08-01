@@ -153,6 +153,18 @@ func TestConformance_TheEnvironmentConfiguresTheClient(t *testing.T) {
 			want: func(c *Client) (string, bool) { return "maxRedirections", c.maxRedirections == 3 },
 		},
 		{
+			name: "a sub-stream count",
+			env:  map[string]string{EnvSubStreams: "2"},
+			want: func(c *Client) (string, bool) { return "maxSubs", c.maxSubs == 2 },
+		},
+		{
+			// Zero is a setting, not an absence: it asks for every transfer to
+			// share the request connection.
+			name: "no sub-streams at all",
+			env:  map[string]string{EnvSubStreams: "0"},
+			want: func(c *Client) (string, bool) { return "maxSubs", c.maxSubs == 0 },
+		},
+		{
 			// An empty variable is one that was unset by a script, not one that
 			// asks for zero.
 			name: "a variable set to nothing",
@@ -187,7 +199,7 @@ func TestConformance_ANumberTheEnvironmentCannotHoldIsAnError(t *testing.T) {
 	// The C client counts seconds and takes no unit, so "30s" is exactly the
 	// kind of thing that ends up in one of these variables. Ignoring it would
 	// leave the user believing a setting is in force that is not.
-	for _, name := range []string{EnvConnectionWindow, EnvRequestTimeout, EnvRedirectLimit} {
+	for _, name := range []string{EnvConnectionWindow, EnvRequestTimeout, EnvRedirectLimit, EnvSubStreams} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(name, "30s")
 
@@ -229,6 +241,17 @@ func TestConformance_AnOptionRefusesWhatItCannotMean(t *testing.T) {
 	}
 	if err := WithUsername("gopher")(client); err != nil || client.username != "gopher" {
 		t.Fatalf("WithUsername: %v, username = %q", err, client.username)
+	}
+	if err := WithSubStreams(-1)(client); err == nil {
+		t.Fatal("a negative sub-stream count was accepted")
+	}
+	// A sub-stream is named by a one-byte pathid, so there is a ceiling and
+	// asking past it is a mistake worth reporting rather than silently capping.
+	if err := WithSubStreams(maxPathID + 1)(client); err == nil {
+		t.Fatalf("a sub-stream count of %d was accepted", maxPathID+1)
+	}
+	if err := WithSubStreams(0)(client); err != nil || client.maxSubs != 0 {
+		t.Fatalf("WithSubStreams(0): %v, maxSubs = %d", err, client.maxSubs)
 	}
 }
 

@@ -308,7 +308,8 @@ func TestConformance_ARequestTheSecurityLevelCoversGoesOutSigned(t *testing.T) {
 			SecurityVersion:       1,
 			SecurityLevel:         xrdproto.Pedantic,
 		})
-		bootLogin(t, conn, login.Response{})
+		bootLogin(t, conn, login.Response{SecurityInformation: []byte("&P=fake")})
+		bootAuth(t, conn)
 
 		// The signature travels as its own request, immediately ahead of the
 		// one it covers and on the same stream.
@@ -341,7 +342,9 @@ func TestConformance_ARequestTheSecurityLevelCoversGoesOutSigned(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := NewClient(ctx, addr, "gopher")
+	// A signature is keyed with the secret the authentication exchange agreed,
+	// so the connection has to be authenticated by a provider that agrees one.
+	client, err := NewClient(ctx, addr, "gopher", WithAuth(&keyedAuther{key: []byte("0123456789abcdef")}))
 	if err != nil {
 		t.Fatalf("could not create a client: %v", err)
 	}

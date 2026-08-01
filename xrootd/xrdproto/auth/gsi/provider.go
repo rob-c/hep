@@ -119,7 +119,14 @@ type Auth struct {
 
 	cryptomod  string
 	issuerHash string
+	sessionKey []byte
 }
+
+// SessionKey implements auth.SessionKeyer: it returns the key agreed with the
+// server over Diffie-Hellman during the certificate exchange, or nil before
+// that exchange has happened. It is the AES key the exchange encrypts with,
+// and it is also what the session signs its requests with.
+func (a *Auth) SessionKey() []byte { return a.sessionKey }
 
 // Provider returns the name of the security provider.
 func (*Auth) Provider() string { return "gsi" }
@@ -161,10 +168,11 @@ func (a *Auth) More(challenge []byte) (*auth.Request, error) {
 	}
 	switch step {
 	case StepServerCert:
-		resp, err := BuildCertResponse(challenge, a.ProxyPEM, a.ProxyKey)
+		resp, key, err := BuildCertResponse(challenge, a.ProxyPEM, a.ProxyKey)
 		if err != nil {
 			return nil, err
 		}
+		a.sessionKey = key
 		return &auth.Request{Type: Type, Credentials: string(resp)}, nil
 	case StepServerPxyReq:
 		return nil, fmt.Errorf("auth/gsi: server requested X.509 delegation, which is not supported")
@@ -177,28 +185,29 @@ func (a *Auth) More(challenge []byte) (*auth.Request, error) {
 // kXGC_cert response over the unsigned-DH path: it agrees the AES-128-CBC
 // session key via Diffie-Hellman, signs the server's random tag with the proxy
 // key (proof of possession), and returns the outer message carrying the client
-// DH public value and the encrypted proxy chain.
-func BuildCertResponse(serverMsg, proxyPEM []byte, proxyKey *rsa.PrivateKey) ([]byte, error) {
+// DH public value and the encrypted proxy chain, along with the session key
+// itself — the caller needs it to sign requests once the exchange is done.
+func BuildCertResponse(serverMsg, proxyPEM []byte, proxyKey *rsa.PrivateKey) (msg, sessionKey []byte, err error) {
 	pukBlob, ok := FindBucket(serverMsg, BucketPuk)
 	if !ok {
 		if _, signed := FindBucket(serverMsg, BucketCipher); signed {
-			return nil, fmt.Errorf("auth/gsi: server chose signed-DH; only unsigned-DH is supported")
+			return nil, nil, fmt.Errorf("auth/gsi: server chose signed-DH; only unsigned-DH is supported")
 		}
-		return nil, fmt.Errorf("auth/gsi: server DH public (kXRS_puk) missing")
+		return nil, nil, fmt.Errorf("auth/gsi: server DH public (kXRS_puk) missing")
 	}
 	peer, err := parsePeerBlob(pukBlob)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	const keyLen = 16 // aes-128-cbc
 	key, err := generateKey(peer.params)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	sessionKey, err := key.sessionKey(peer.pub, keyLen)
+	sessionKey, err = key.sessionKey(peer.pub, keyLen)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Proof of possession: sign the server's random tag (in the server main
@@ -208,14 +217,14 @@ func BuildCertResponse(serverMsg, proxyPEM []byte, proxyKey *rsa.PrivateKey) ([]
 		if srtag, ok := FindBucket(xmain, BucketRTag); ok {
 			signedRTag, err = signRTag(proxyKey, srtag)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
 
 	var newRTag [8]byte
 	if _, err := rand.Read(newRTag[:]); err != nil {
-		return nil, fmt.Errorf("auth/gsi: RNG failed: %w", err)
+		return nil, nil, fmt.Errorf("auth/gsi: RNG failed: %w", err)
 	}
 
 	innerBuckets := []Bucket{{Type: BucketX509, Data: proxyPEM}}
@@ -227,7 +236,7 @@ func BuildCertResponse(serverMsg, proxyPEM []byte, proxyKey *rsa.PrivateKey) ([]
 
 	enc, err := aesCBCEncrypt(sessionKey, inner)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	myBlob := encodePublicBlob(peer.paramsPEM, key.pub)
@@ -237,7 +246,7 @@ func BuildCertResponse(serverMsg, proxyPEM []byte, proxyKey *rsa.PrivateKey) ([]
 		{Type: BucketCipherAlg, Data: []byte("aes-128-cbc")},
 		{Type: BucketMDAlg, Data: []byte("sha256")},
 		{Type: BucketMain, Data: enc},
-	}), nil
+	}), sessionKey, nil
 }
 
 // LoadProxy loads a GSI proxy from a combined PEM file (proxy certificate,

@@ -196,7 +196,9 @@ func testFileSystem_Open_Mock(t *testing.T, wantFileHandle xrdfs.FileHandle, wan
 		if err != nil {
 			t.Fatalf("invalid open call: %v", err)
 		}
-		// FIXME: consider calling defer gotFile.Close(context.Background()).
+		// The file is deliberately not closed: the mock server answers a
+		// scripted sequence of requests, and a kXR_close it was not scripted
+		// for would be read as the next test's request.
 
 		if !reflect.DeepEqual(gotFile.Handle(), wantFileHandle) {
 			t.Errorf("FileSystem.Open()\ngotFile.Handle() = %v\nwantFileHandle = %v", gotFile.Handle(), wantFileHandle)

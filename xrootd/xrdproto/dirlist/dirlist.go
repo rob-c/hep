@@ -49,7 +49,12 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 	}
 
 	if !consistent {
-		// TODO: keep this error or remove it?
+		// A half-stat listing cannot be put on the wire at all: the reader
+		// decides how to read the whole reply from its leading entry, so a
+		// response where some entries carry stat information and some do not
+		// would be read back with every name after the first gap taken for a
+		// stat line. Refusing here is the only place the mistake is still
+		// visible.
 		return errors.New("xrootd: all entries of dirlist.Response should either have stat info or not")
 	}
 
@@ -104,10 +109,11 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	data := bytes.TrimRight(rBuffer.Bytes(), "\x00")
 	lines := bytes.Split(data, []byte{'\n'})
 
-	// FIXME(sbinet): drop the extra call to bytes.Equal when
-	//  https://github.com/xrootd/xrootd/issues/739
-	// is fixed or clarified.
-	if !(bytes.HasPrefix(data, []byte(".\n0 0 0 0\n")) || bytes.Equal(data, []byte(".\n0 0 0 0"))) {
+	// The dot entry is how a server says it honoured kXR_dstat, and it is
+	// the whole payload when the directory is empty -- xrootd sends no
+	// trailing newline in that case, so the prefix is tested without one.
+	// See https://github.com/xrootd/xrootd/issues/739.
+	if !bytes.HasPrefix(data, []byte(".\n0 0 0 0")) {
 		// That means that the server doesn't support returning stat information.
 		o.Entries = make([]xrdfs.EntryStat, len(lines))
 		o.WithStatInfo = false

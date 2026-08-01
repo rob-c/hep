@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
 )
@@ -33,6 +34,9 @@ type Client struct {
 
 	maxRedirections int
 
+	// maxSubs bounds the parallel data connections opened to one server.
+	maxSubs int
+
 	// dialTimeout bounds establishing a connection; zero leaves it to the
 	// operating system.
 	dialTimeout time.Duration
@@ -42,6 +46,10 @@ type Client struct {
 	tlsConfig   *tls.Config // TLS configuration for in-protocol TLS upgrades; nil means defaults.
 	wantTLS     bool        // request TLS during protocol negotiation (roots:// or WithTLS).
 	insecureTLS bool        // skip server-certificate verification (testing only).
+
+	// errorHandler receives the failures that happen where no caller is
+	// waiting to be told about them; nil discards them.
+	errorHandler ErrorHandler
 
 	// prompter obtains a credential the client is missing; nil never prompts.
 	prompter CredentialPrompter
@@ -60,6 +68,22 @@ type Client struct {
 
 // Option configures an XRootD client.
 type Option func(*Client) error
+
+// WithErrorHandler sets what a client does with a failure that happens where
+// nobody is waiting for it: a request retried onto a connection that has since
+// died, a data connection the server would not bind, a response that arrives
+// for a caller who has already gone.
+//
+// None of these can be returned to anyone — that is what makes them worth
+// reporting. Without a handler they are dropped, which is the default because a
+// library that writes to standard error is a library that has decided how the
+// program logs.
+func WithErrorHandler(h ErrorHandler) Option {
+	return func(client *Client) error {
+		client.errorHandler = h
+		return nil
+	}
+}
 
 // WithAuth adds an authentication mechanism to the XRootD client.
 // If an authentication mechanism was already registered for that provider,
@@ -103,6 +127,7 @@ func NewClient(ctx context.Context, address string, username string, opts ...Opt
 		username:        username,
 		sessions:        make(map[string]*cliSession),
 		maxRedirections: 10,
+		maxSubs:         defaultSubStreams,
 		waitCap:         maxWaitDuration,
 		prompted:        make(map[string]promptResult),
 	}
@@ -171,12 +196,40 @@ func (client *Client) Send(ctx context.Context, resp xrdproto.Response, req xrdp
 	return client.sendSession(ctx, client.initialSessionID, resp, req)
 }
 
+// A reopener re-establishes, at another server, the file that a redirected
+// request refers to. It is implemented by the open file itself, which is the
+// only thing that knows the path and the options it was opened with.
+//
+// reopen returns the handle the file was given at the server it ended up on,
+// and the id of that server: opening it may itself be redirected once more.
+type reopener interface {
+	reopen(ctx context.Context, sessionID, opaque string) (xrdfs.FileHandle, string, error)
+}
+
 func (client *Client) sendSession(ctx context.Context, sessionID string, resp xrdproto.Response, req xrdproto.Request) (string, error) {
+	return client.sendSessionFile(ctx, sessionID, resp, req, nil)
+}
+
+// sendSessionFile is sendSession for a request that may name an open file. re
+// re-opens that file wherever the request is redirected to; it is nil for a
+// request that names no file, and a redirected request that names one without
+// it is an error rather than a request sent with a handle no server would
+// recognize.
+func (client *Client) sendSessionFile(ctx context.Context, sessionID string, resp xrdproto.Response, req xrdproto.Request, re reopener) (string, error) {
 	client.mu.RLock()
 	session, ok := client.sessions[sessionID]
 	client.mu.RUnlock()
 	if !ok {
-		return "", fmt.Errorf("xrootd: session with id = %q was not found", sessionID)
+		// The session is gone because its connection failed and it was
+		// dropped, and the id is the address of the server it was talking to.
+		// Dialling it again is what a caller would otherwise have to do by
+		// hand, and it is what makes a server restart survivable: the request
+		// that arrives next reconnects instead of failing for ever.
+		var err error
+		session, err = client.getSession(ctx, sessionID, "")
+		if err != nil {
+			return "", fmt.Errorf("xrootd: could not reconnect to %q: %w", sessionID, err)
+		}
 	}
 
 	redirection, err := session.Send(ctx, resp, req)
@@ -186,14 +239,41 @@ func (client *Client) sendSession(ctx context.Context, sessionID string, resp xr
 
 	for cnt := client.maxRedirections; redirection != nil && cnt > 0; cnt-- {
 		sessionID = redirection.Addr
+		if fp, ok := req.(xrdproto.FilepathRequest); ok {
+			addOpaque(fp, redirection.Opaque)
+		}
 		session, err = client.getSession(ctx, sessionID, redirection.Token)
 		if err != nil {
 			return sessionID, err
 		}
-		if fp, ok := req.(xrdproto.FilepathRequest); ok {
-			addOpaque(fp, redirection.Opaque)
+
+		// A file handle names state on the server that issued it, and the
+		// server this request is being moved to has none of that state. The
+		// file is opened there and the request pointed at the handle that open
+		// returns; a redirect means the request was not carried out, so
+		// nothing is done twice by re-issuing it.
+		//
+		// re says the request came from an open file, which is the only thing
+		// that fills a handle in. The request types that can carry one are also
+		// usable by path — a kXR_stat or a kXR_truncate names either — and
+		// those have nothing to re-open.
+		if fh, ok := req.(xrdproto.FilehandleRequest); ok && re != nil {
+			handle, id, err := re.reopen(ctx, sessionID, redirection.Opaque)
+			if err != nil {
+				return sessionID, err
+			}
+			if id != sessionID {
+				// Opening was itself redirected: the handle belongs to
+				// wherever it ended up, and so must the request that uses it.
+				sessionID = id
+				session, err = client.getSession(ctx, sessionID, redirection.Token)
+				if err != nil {
+					return sessionID, err
+				}
+			}
+			fh.SetHandle(handle)
 		}
-		// TODO: we should check if the request contains file handle and re-issue open request in that case.
+
 		redirection, err = session.Send(ctx, resp, req)
 		if err != nil {
 			return sessionID, err
@@ -224,6 +304,20 @@ func addOpaque(req xrdproto.FilepathRequest, opaque string) {
 	req.SetOpaque(opaque)
 }
 
+// forget drops sess from the table of live sessions, so the next request meant
+// for that server dials a new connection rather than writing to a socket that
+// is already gone.
+//
+// A session that is already replaced is left alone: the connection that died is
+// not necessarily the one the table now holds for that address.
+func (client *Client) forget(sess *cliSession) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.sessions[sess.sessionID] == sess {
+		delete(client.sessions, sess.sessionID)
+	}
+}
+
 func (client *Client) getSession(ctx context.Context, address, token string) (*cliSession, error) {
 	client.mu.RLock()
 	v, ok := client.sessions[address]
@@ -233,6 +327,12 @@ func (client *Client) getSession(ctx context.Context, address, token string) (*c
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
+	// Another caller may have connected to the same server while this one was
+	// waiting for the lock. Dialling again would leave that connection in the
+	// table unreferenced: open, logged in, and never closed.
+	if v, ok := client.sessions[address]; ok {
+		return v, nil
+	}
 	session, err := newSession(ctx, address, client.username, token, client)
 	if err != nil {
 		return nil, err
@@ -242,7 +342,12 @@ func (client *Client) getSession(ctx context.Context, address, token string) (*c
 	if len(client.initialSessionID) == 0 {
 		client.initialSessionID = address
 	}
-	// TODO: check if initial sessionID should be changed.
+	// The initial session stays the one the client was created against, and is
+	// deliberately not moved to whatever a redirect led to: it is the manager
+	// that knows where things are, and a request with no session of its own is
+	// meant to start there so that it can be sent somewhere else. Pointing it
+	// at a data server would have every later request begin at a server that
+	// holds one file and can redirect nothing.
 	// See http://xrootd.org/doc/dev45/XRdv310.pdf, p. 11 for details.
 
 	return session, nil

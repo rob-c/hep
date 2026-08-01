@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,5 +112,49 @@ func TestConformance_ACacheThatIsNotThereIsAFailureNotADefault(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "auth/krb5") {
 		t.Fatalf("the failure does not say which provider failed: %v", err)
+	}
+}
+
+func TestConformance_TheConfigurationIsFoundTheWayKerberosFindsIt(t *testing.T) {
+	// $KRB5_CONFIG is how a site points its Kerberos clients at a realm
+	// definition that is not in /etc, and it holds a list of files rather
+	// than one. Reading a hard-coded /etc/krb5.conf on such a machine either
+	// fails outright or, worse, authenticates against the wrong realm.
+	dir := t.TempDir()
+	first := filepath.Join(dir, "absent.conf")
+	second := filepath.Join(dir, "present.conf")
+	if err := os.WriteFile(second, []byte("[libdefaults]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("KRB5_CONFIG", strings.Join([]string{first, second}, string(filepath.ListSeparator)))
+	if got, want := configPath(), second; got != want {
+		t.Fatalf("configPath() = %q, want %q", got, want)
+	}
+
+	t.Setenv("KRB5_CONFIG", second)
+	if got, want := configPath(), second; got != want {
+		t.Fatalf("configPath() = %q, want %q", got, want)
+	}
+}
+
+func TestConformance_AConfigurationThatIsNotThereIsNamedAnyway(t *testing.T) {
+	// Nothing exists, so no candidate can be chosen on merit. Returning ""
+	// would make config.Load complain about an empty file name, which tells
+	// an administrator nothing; naming the last candidate makes the error say
+	// which file to create.
+	dir := t.TempDir()
+	last := filepath.Join(dir, "b.conf")
+	t.Setenv("KRB5_CONFIG", strings.Join([]string{filepath.Join(dir, "a.conf"), last}, string(filepath.ListSeparator)))
+	if got, want := configPath(), last; got != want {
+		t.Fatalf("configPath() = %q, want %q", got, want)
+	}
+}
+
+func TestConformance_WithNoEnvironmentTheConfigurationIsAPlatformOne(t *testing.T) {
+	t.Setenv("KRB5_CONFIG", "")
+	got := configPath()
+	if !slices.Contains(configCandidates, got) {
+		t.Fatalf("configPath() = %q, which is not one of the platform candidates %q", got, configCandidates)
 	}
 }

@@ -13,7 +13,6 @@ import (
 
 func (sess *cliSession) bind(ctx context.Context, sessionID [16]byte) (xrdproto.PathID, error) {
 	var resp bind.Response
-	_, err := sess.Send(ctx, &resp, &bind.Request{SessionID: sessionID})
-	// TODO: should we react somehow to redirection?
+	err := sess.sendHere(ctx, &resp, &bind.Request{SessionID: sessionID})
 	return resp.PathID, err
 }

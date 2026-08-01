@@ -29,6 +29,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/truncate"
 	"go-hep.org/x/hep/xrootd/xrdproto/verifyw"
 	"go-hep.org/x/hep/xrootd/xrdproto/write"
+	"go-hep.org/x/hep/xrootd/xrdproto/writev"
 	"go-hep.org/x/hep/xrootd/xrdproto/xrdclose"
 )
 
@@ -61,7 +62,6 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 	var sr = Requirements{make(map[uint16]xrdproto.RequestLevel)}
 
 	if level >= xrdproto.Compatible {
-		// TODO: set requirements
 		sr.requirements[chmod.RequestID] = xrdproto.SignNeeded
 		sr.requirements[mv.RequestID] = xrdproto.SignNeeded
 		sr.requirements[open.RequestID] = xrdproto.SignLikely
@@ -70,7 +70,6 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 		sr.requirements[truncate.RequestID] = xrdproto.SignNeeded
 	}
 	if level >= xrdproto.Standard {
-		// TODO: set requirements
 		// The three below change server state without touching a byte of file
 		// content, which is why they are easy to overlook and why they belong
 		// here: an attribute is as good a place to hide something as the data
@@ -83,7 +82,6 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 		sr.requirements[set.RequestID] = xrdproto.SignNeeded
 	}
 	if level >= xrdproto.Intense {
-		// TODO: set requirements
 		// A checkpoint carries a write or a truncate, and is signed where those
 		// are: an unsigned checkpoint would be a way to make exactly the
 		// modifications this level exists to authenticate.
@@ -92,9 +90,12 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 		sr.requirements[xrdclose.RequestID] = xrdproto.SignNeeded
 		sr.requirements[verifyw.RequestID] = xrdproto.SignNeeded
 		sr.requirements[write.RequestID] = xrdproto.SignNeeded
+		// A vector write is a write, and is signed wherever a write is. The
+		// signature covers the write_list the frame declares, not the segment
+		// data that streams after it, which is exactly what the server hashes.
+		sr.requirements[writev.RequestID] = xrdproto.SignNeeded
 	}
 	if level >= xrdproto.Pedantic {
-		// TODO: set requirements
 		sr.requirements[dirlist.RequestID] = xrdproto.SignNeeded
 		sr.requirements[pgread.RequestID] = xrdproto.SignNeeded
 		sr.requirements[read.RequestID] = xrdproto.SignNeeded

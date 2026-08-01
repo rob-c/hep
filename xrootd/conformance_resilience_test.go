@@ -38,6 +38,9 @@ import (
 // stops replying, or hangs up mid-reply.
 type flakyServer struct {
 	addr string
+	// ln is the listening socket, so a test can take the whole server away
+	// rather than only the connections it accepted.
+	ln net.Listener
 	// done is closed when the test ends, so a connection parked in
 	// flakySilence has something to leave on.
 	done chan struct{}
@@ -76,7 +79,7 @@ func newFlakyServer(t *testing.T, after int, fault flakyFault) *flakyServer {
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 
-	srv := &flakyServer{addr: ln.Addr().String(), done: make(chan struct{}), after: after, fault: fault}
+	srv := &flakyServer{addr: ln.Addr().String(), ln: ln, done: make(chan struct{}), after: after, fault: fault}
 	t.Cleanup(func() { close(srv.done) })
 	go func() {
 		for {
@@ -163,6 +166,13 @@ func (srv *flakyServer) severAll() {
 	}
 }
 
+// shutdown takes the server away entirely: the listener goes first, so nothing
+// can reconnect, and then every connection it had accepted.
+func (srv *flakyServer) shutdown() {
+	_ = srv.ln.Close()
+	srv.severAll()
+}
+
 // TestConformance_TransportLossIsReported is the base case: the reply to a
 // request in flight never comes because the socket closed. There is no status
 // code for that, so silence has to become an error rather than a wait.
@@ -246,11 +256,17 @@ func TestConformance_TransportLossFailsEveryRequestInFlight(t *testing.T) {
 	}
 }
 
-// TestConformance_RequestsAfterTransportLossAreRefused: once the connection is
-// gone the session is unusable, and saying so is the only honest answer. The
-// failure mode this rules out is a client that queues the request against a
-// dead socket and waits for a reply that cannot come.
-func TestConformance_RequestsAfterTransportLossAreRefused(t *testing.T) {
+// TestConformance_RequestsAfterTransportLossReconnect: a connection that was
+// severed is finished, but the server it led to is usually still there — a
+// restart, an idle timeout, a firewall dropping the flow. The session is
+// dropped and the next request dials again, which is what keeps a long copy
+// alive across a blip. What is ruled out here is the two ways that goes wrong:
+// a request queued against a dead socket, waiting for a reply that cannot come,
+// and a client that keeps handing out the same corpse for the rest of the run.
+//
+// Nothing is replayed: the requests that were in flight when the connection
+// died have already been failed, so a write is never applied twice.
+func TestConformance_RequestsAfterTransportLossReconnect(t *testing.T) {
 	srv := newFlakyServer(t, -1, flakyClose)
 	cli, ctx := redirClient(t, srv.addr)
 
@@ -260,9 +276,43 @@ func TestConformance_RequestsAfterTransportLossAreRefused(t *testing.T) {
 
 	srv.severAll()
 
-	// The client may not notice the close until it tries to use the socket,
-	// so the first request after the sever is allowed to be the one that
-	// discovers it. What is not allowed is for any of them to hang.
+	// The client may not notice the close until it tries to use the socket, so
+	// the first request after the sever is allowed to be the one that discovers
+	// it and fails. The ones after it must work again.
+	done := make(chan error, 1)
+	go func() {
+		var err error
+		for range 3 {
+			if _, err = cli.FS().Stat(ctx, "/f"); err == nil {
+				break
+			}
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the client never reconnected to a server that is still listening: %v", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("a request against a dead connection never returned")
+	}
+}
+
+// TestConformance_RequestsAfterTheServerIsGoneAreRefused: the other half of the
+// reconnect rule. When there is nothing left to dial, the failure has to arrive
+// as an error rather than as a request parked on a socket nobody will answer.
+func TestConformance_RequestsAfterTheServerIsGoneAreRefused(t *testing.T) {
+	srv := newFlakyServer(t, -1, flakyClose)
+	cli, ctx := redirClient(t, srv.addr)
+
+	if _, err := cli.FS().Stat(ctx, "/f"); err != nil {
+		t.Fatalf("the first Stat failed: %v", err)
+	}
+
+	srv.shutdown()
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -277,7 +327,7 @@ func TestConformance_RequestsAfterTransportLossAreRefused(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(20 * time.Second):
-		t.Fatal("a request against a dead connection never returned")
+		t.Fatal("a request against a server that is gone never returned")
 	}
 }
 
