@@ -7,6 +7,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -133,12 +134,25 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 	// Bootstrap runs synchronously so that consume() does not race the socket
 	// during the handshake, protocol negotiation, and TLS upgrade: TLS replaces
 	// sess.conn in place, which is only safe while no other goroutine reads it.
-	if err := sess.handshakeBootstrap(ctx); err != nil {
+	//
+	// It reads the socket directly, ahead of the read loop that applies the
+	// stream timeout, so the bound has to be applied here as well: a host that
+	// completes the TCP connection and then says nothing — a load balancer in
+	// front of a dead backend is the usual way — would otherwise hold the
+	// handshake for as long as the caller's context allows.
+	bootCtx := ctx
+	if t := sess.streamTimeout(); t > 0 {
+		var cancel context.CancelFunc
+		bootCtx, cancel = context.WithTimeout(ctx, t)
+		defer cancel()
+	}
+
+	if err := sess.handshakeBootstrap(bootCtx); err != nil {
 		sess.Close()
 		return nil, err
 	}
 
-	protocolInfo, err := sess.protocolBootstrap(ctx)
+	protocolInfo, err := sess.protocolBootstrap(bootCtx)
 	if err != nil {
 		sess.Close()
 		return nil, err
@@ -151,7 +165,7 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 	// supports it; refuse to continue in cleartext when TLS was wanted but the
 	// server offers none (no silent downgrade).
 	if sess.protocolInfo.NeedsTLS(sess.wantTLS) {
-		if err := sess.upgradeTLS(); err != nil {
+		if err := sess.upgradeTLS(bootCtx); err != nil {
 			sess.Close()
 			return nil, err
 		}
@@ -311,17 +325,53 @@ func (sess *cliSession) failPending(err error) {
 	}
 }
 
-// dial connects to addr, bounded by the client's connection window when it has
-// one. The bound is applied to a context of its own: the session's context
-// outlives the connection attempt, and cancelling it here would tear down the
-// session as soon as the window elapsed.
+// dial connects to addr, bounded by the client's connection window and retried
+// as many times as the client allows.
+//
+// A connection that was never established has carried no request, so repeating
+// the attempt cannot repeat any work: this is the one retry in the client that
+// is safe without knowing what the server did. Without a retry count — the
+// default — it is a single attempt and the error is the dialler's own, which is
+// what a caller looking for "connection refused" expects to find.
 func dial(ctx context.Context, d *net.Dialer, addr string, client *Client) (net.Conn, error) {
-	if client != nil && client.dialTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, client.dialTimeout)
-		defer cancel()
+	var (
+		window  time.Duration
+		tries   = 1
+		lastErr error
+	)
+	if client != nil {
+		window = client.dialTimeout
+		tries += client.connRetry
+		if client.keepAlive.Enable {
+			d.KeepAliveConfig = client.keepAlive
+		}
 	}
-	return d.DialContext(ctx, "tcp", addr)
+
+	for i := range tries {
+		if i > 0 {
+			timer := time.NewTimer(connectBackoff(i - 1))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, fmt.Errorf("xrootd: could not connect to %q after %d attempts: %w", addr, i, lastErr)
+			case <-timer.C:
+			}
+		}
+		conn, err := dialOnce(ctx, d, addr, window)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+		if ctx.Err() != nil {
+			// The caller gave up, or its deadline passed. Trying again would
+			// only fail the same way, and the error already says so.
+			break
+		}
+	}
+	if tries == 1 {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("xrootd: could not connect to %q after %d attempts: %w", addr, tries, lastErr)
 }
 
 // maxWaitDuration caps how long a "kXR_wait" may park a request. The delay is
@@ -388,6 +438,13 @@ func (sess *cliSession) consume() {
 	var headerBytes = make([]byte, xrdproto.ResponseHeaderLength)
 	var resp mux.ServerResponse
 
+	// The connection is settled by the time this runs: the handshake, the
+	// login and any TLS upgrade all complete before the read loop is started,
+	// so sess.conn is not swapped underneath it.
+	conn := sess.conn
+	timeout := sess.streamTimeout()
+	rd := &countingReader{r: conn}
+
 	for {
 		select {
 		case <-sess.ctx.Done():
@@ -398,12 +455,33 @@ func (sess *cliSession) consume() {
 			return
 		default:
 			var err error
-			resp.Data, err = xrdproto.ReadResponseWithReuse(sess.conn, headerBytes, &header)
+			rd.n = 0
+			if timeout > 0 {
+				// Ignored deliberately: a connection that will not take a
+				// deadline is one the read below is about to fail on anyway,
+				// and that error is the one worth reporting.
+				_ = conn.SetReadDeadline(time.Now().Add(timeout))
+			}
+			resp.Data, err = xrdproto.ReadResponseWithReuse(rd, headerBytes, &header)
 			if err != nil {
 				if sess.ctx.Err() != nil {
 					// something happened to the context.
 					// ignore this error.
 					return
+				}
+				if errors.Is(err, os.ErrDeadlineExceeded) {
+					if rd.n == 0 && !sess.hasPending() {
+						// Silence with nothing outstanding is what a connection
+						// between transfers looks like. Push the deadline out
+						// and keep the connection, rather than reconnecting for
+						// the next read.
+						continue
+					}
+					// Either a request is owed an answer that never came, or a
+					// response stopped part way through and the stream is now
+					// out of step with the sender. Neither can be recovered on
+					// this connection.
+					err = fmt.Errorf("xrootd: %q sent nothing for %v: %w", sess.addr, timeout, err)
 				}
 				sess.handleReadError(err)
 				// The read failed, so the header and the payload hold
@@ -823,8 +901,15 @@ func newSubSession(ctx context.Context, parent *cliSession) (*cliSession, error)
 	// The handshake runs synchronously before consume() so the fixed stream ID
 	// {0,0} it uses never reaches the shared mux (which the parent and all
 	// sub-sessions use); otherwise it would collide with a regular request's
-	// mux-claimed {0,0}.
-	if err := sess.handshakeBootstrap(ctx); err != nil {
+	// mux-claimed {0,0}. As on the main session, it reads the socket ahead of
+	// the loop that applies the stream timeout, so the bound is applied here.
+	bootCtx := ctx
+	if t := sess.streamTimeout(); t > 0 {
+		var cancel context.CancelFunc
+		bootCtx, cancel = context.WithTimeout(ctx, t)
+		defer cancel()
+	}
+	if err := sess.handshakeBootstrap(bootCtx); err != nil {
 		sess.Close()
 		return nil, err
 	}

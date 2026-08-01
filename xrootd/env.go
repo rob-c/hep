@@ -148,6 +148,8 @@ func envOptions() []Option {
 	opts = append(opts, envCount(EnvRedirectLimit, WithRedirectLimit))
 	opts = append(opts, envCount(EnvSubStreams, WithSubStreams))
 
+	opts = append(opts, hardeningEnvOptions()...)
+
 	return opts
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"os"
 	"sync"
 	"time"
@@ -42,6 +43,14 @@ type Client struct {
 	dialTimeout time.Duration
 	// waitCap is the longest a single kXR_wait may park a request.
 	waitCap time.Duration
+	// streamTimeout is how long a connection may go silent while a request is
+	// outstanding on it; zero tolerates any silence.
+	streamTimeout time.Duration
+	// connRetry is how many further attempts a failed connection gets.
+	connRetry int
+	// keepAlive is the TCP keepalive schedule; the zero value leaves keepalives
+	// as the system has them.
+	keepAlive net.KeepAliveConfig
 
 	tlsConfig   *tls.Config // TLS configuration for in-protocol TLS upgrades; nil means defaults.
 	wantTLS     bool        // request TLS during protocol negotiation (roots:// or WithTLS).

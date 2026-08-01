@@ -5,6 +5,7 @@
 package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -61,7 +62,12 @@ func (client *Client) tlsConfigFor(serverName string) *tls.Config {
 // upgradeTLS replaces the session's cleartext connection with a completed TLS
 // client session. It must be called during bootstrap, after the protocol
 // response and before login, so credentials never travel in the clear.
-func (sess *cliSession) upgradeTLS() error {
+//
+// ctx bounds the handshake. It is the bootstrap's context rather than the
+// session's: a server that completes the TCP connection and then stops
+// answering stalls here, and the session's context outlives the connection it
+// would otherwise be waiting on forever.
+func (sess *cliSession) upgradeTLS(ctx context.Context) error {
 	host, _, err := splitHostPortForTLS(sess.addr)
 	if err != nil {
 		return err
@@ -73,7 +79,7 @@ func (sess *cliSession) upgradeTLS() error {
 		cfg = &tls.Config{ServerName: host}
 	}
 	tconn := tls.Client(sess.conn, cfg)
-	if err := tconn.HandshakeContext(sess.ctx); err != nil {
+	if err := tconn.HandshakeContext(ctx); err != nil {
 		return fmt.Errorf("xrootd: TLS handshake failed: %w", err)
 	}
 	sess.conn = tconn
