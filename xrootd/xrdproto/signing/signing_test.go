@@ -19,6 +19,7 @@ import (
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/chkpoint"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
@@ -77,6 +78,10 @@ func signCases() []struct {
 		{"write", &write.Request{Handle: signHandle, Offset: 0, Data: []byte("x")}, xrdproto.Intense},
 		{"pgwrite", &pgwrite.Request{Handle: signHandle, Offset: 0, Data: []byte("x")}, xrdproto.Intense},
 		{"close", &xrdclose.Request{Handle: signHandle}, xrdproto.Intense},
+		// A checkpoint carries a write or a truncate, so it is signed where
+		// those are: an unsigned kXR_ckpXeq would be a way to make exactly the
+		// modifications this level exists to authenticate.
+		{"chkpoint", &chkpoint.Request{Handle: signHandle, SubCode: chkpoint.Begin}, xrdproto.Intense},
 
 		// Metadata disclosure.
 		{"dirlist", &dirlist.Request{Path: signPath}, xrdproto.Pedantic},

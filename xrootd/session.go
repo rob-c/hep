@@ -87,7 +87,7 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 
 	var d net.Dialer
 	addr := parseAddr(address)
-	conn, err := d.DialContext(ctx, "tcp", addr)
+	conn, err := dial(ctx, &d, addr, client)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -282,12 +282,35 @@ func (sess *cliSession) failPending(err error) {
 	}
 }
 
+// dial connects to addr, bounded by the client's connection window when it has
+// one. The bound is applied to a context of its own: the session's context
+// outlives the connection attempt, and cancelling it here would tear down the
+// session as soon as the window elapsed.
+func dial(ctx context.Context, d *net.Dialer, addr string, client *Client) (net.Conn, error) {
+	if client != nil && client.dialTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, client.dialTimeout)
+		defer cancel()
+	}
+	return d.DialContext(ctx, "tcp", addr)
+}
+
 // maxWaitDuration caps how long a "kXR_wait" may park a request. The delay is
 // chosen by the server and the protocol puts no ceiling on it, so an unbounded
 // wait — 68 years is expressible in the 32-bit field — would let a server hold
 // a request and the goroutine behind it forever. The cap is a client policy:
 // a server that really needs longer can ask again when the wait expires.
 const maxWaitDuration = time.Hour
+
+// waitCap is the cap this session applies, which is the client's when it has
+// one: a session made outside a Client has no configuration to consult and
+// falls back to the default.
+func (sess *cliSession) waitCap() time.Duration {
+	if sess.client != nil && sess.client.waitCap > 0 {
+		return sess.client.waitCap
+	}
+	return maxWaitDuration
+}
 
 // handleWaitResponse handles a "kXR_wait" response by re-issuing the request with streamID
 // after the number of seconds encoded in data.
@@ -306,7 +329,7 @@ func (sess *cliSession) handleWaitResponse(streamID xrdproto.StreamID, data []by
 		return fmt.Errorf("xrootd: could not find a request with stream id equal to %v", streamID)
 	}
 
-	wait := min(max(resp.Duration, 0), maxWaitDuration)
+	wait := min(max(resp.Duration, 0), sess.waitCap())
 
 	go func(req pendingRequest) {
 		timer := time.NewTimer(wait)
@@ -690,7 +713,7 @@ func newSubSession(ctx context.Context, parent *cliSession) (*cliSession, error)
 	ctx, cancel := context.WithCancel(ctx)
 
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", parent.addr)
+	conn, err := dial(ctx, &d, parent.addr, parent.client)
 	if err != nil {
 		cancel()
 		return nil, err
