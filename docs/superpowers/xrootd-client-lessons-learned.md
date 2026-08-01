@@ -961,6 +961,34 @@ happened to work next. Expiry gets the same treatment: keytabs are rotated by
 appending, so the file routinely holds dead keys ahead of the live one, and
 "first key" and "first live key" differ exactly when it matters.
 
+### 9.9 Failure injection without privileges, and the last few percent of coverage
+
+Most of what a storage client has to survive is a failure, and a test suite that
+cannot *cause* failures ends up asserting only the happy path. None of these
+needs root:
+
+- `/dev/full` accepts every write and returns `ENOSPC` — a real short-write on a
+  real `*os.File`, which no in-memory fake reproduces faithfully.
+- A mode-000 file or directory, with a write-probe `t.Skip` guard so the test
+  disables itself rather than failing when it *is* run as root.
+- A mode-0555 *parent* directory, which is what steers a copy into its
+  `MkdirAll` branch: putting the destination under a regular file instead gives
+  `ENOTDIR` from the preceding `os.Stat` and never reaches the code under test.
+  When failure injection is easy, check *which* failure you injected.
+- A directory opened as a file (`EISDIR`), a half-closed socket, an
+  `httptest.Server` closed before it is used, and a handler that answers the
+  first N requests and 404s afterwards — the last one lets a test choose which
+  of several sequential operations is the first to fail.
+
+The corollary is where to stop. Past roughly 95% of statements, what is left is
+not untested behaviour: it is `if err != nil` on a marshaller that writes to a
+growable buffer, on `http.NewRequestWithContext` for a URL the client built
+itself, on `rand.Read`. Those branches should stay — they are what makes a
+future change fail loudly — but reaching them costs a fake for every collaborator
+and buys no confidence. Enumerate them in the suite's own documentation with the
+reason each is unreachable, so the number is a statement about the code rather
+than a target to be gamed, and so a branch that *becomes* reachable is noticed.
+
 ---
 
 ## 10. Summary checklist to run against nginx-xrootd
