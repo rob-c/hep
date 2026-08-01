@@ -17,6 +17,18 @@ import (
 	"go-hep.org/x/hep/xrootd"
 )
 
+// noRedial turns off the connection retries a client applies by default.
+//
+// The copy is driven by a URL rather than by a client the test builds, so there
+// is no option to pass: XRD_CONNECTIONRETRY is how a program you did not write
+// gets configured. A test that means to observe one connection failure would
+// otherwise wait out five redials — about eight seconds each — measuring the
+// backoff schedule, which is pinned in xrootd's own conformance tests.
+func noRedial(t *testing.T) {
+	t.Helper()
+	t.Setenv(xrootd.EnvConnectionRetry, "0")
+}
+
 func TestXrdCp(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "chain.1.root")
@@ -164,6 +176,8 @@ func TestXrdCp_OfflineRecursive(t *testing.T) {
 }
 
 func TestXrdCp_OfflineFailures(t *testing.T) {
+	noRedial(t)
+
 	_, url := cpServer(t)
 
 	for _, tc := range []struct {

@@ -93,7 +93,7 @@ func TestConformance_AnEndpointThatDoesNotAnswerCOPYIsAFailedTPC(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	c, err := Dial(url)
+	c, err := Dial(url, Unbounded())
 	if err != nil {
 		t.Fatalf("could not build a client: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestConformance_ACopyThatEndsWithoutAnOutcomeIsNotADoneCopy(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("could not build a client: %v", err)
 	}

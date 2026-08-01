@@ -40,7 +40,7 @@ func TestConformance_ATokenThatCannotBeDiscoveredFailsAtDial(t *testing.T) {
 	}
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	c, err := Dial("https://example.org/", WithDiscoveredBearerToken())
+	c, err := Dial("https://example.org/", Unbounded(), WithDiscoveredBearerToken())
 	if err == nil {
 		t.Fatalf("a client was built with a bearer token that does not exist: %+v", c)
 	}
@@ -57,7 +57,7 @@ func TestConformance_ADiscoveredTokenReachesTheClient(t *testing.T) {
 	}
 	t.Setenv("BEARER_TOKEN", "the.jwt.token")
 
-	c, err := Dial("https://example.org/", WithDiscoveredBearerToken())
+	c, err := Dial("https://example.org/", Unbounded(), WithDiscoveredBearerToken())
 	if err != nil {
 		t.Fatalf("could not build a client: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestConformance_AClientCertificateSurvivesIntoTheTransport(t *testing.T) {
 	// left behind is the same failure, one layer down.
 	cert := tls.Certificate{Certificate: [][]byte{{0x30, 0x00}}}
 
-	c, err := Dial("https://example.org/", WithClientCertificate(cert), WithInsecureTLS())
+	c, err := Dial("https://example.org/", Unbounded(), WithClientCertificate(cert), WithInsecureTLS())
 	if err != nil {
 		t.Fatalf("could not build a client: %v", err)
 	}

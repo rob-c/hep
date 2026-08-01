@@ -46,7 +46,7 @@ func TestConformance_AStatReadsTheModificationTimeWhenThereIsOne(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL)
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("could not build a client: %v", err)
 			}

@@ -73,7 +73,7 @@ func TestConformance_AHostileMultistatusIsAnErrorNotACrash(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL)
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -134,7 +134,7 @@ func TestConformance_AnEndlessMultistatusIsBounded(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -197,7 +197,10 @@ func TestConformance_AnExternalEntityIsNotFetched(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL)
+			// Unbounded: the status is what is under test, and the ones the
+			// schedule considers transient would otherwise be asked five
+			// times before the answer is reported.
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -239,7 +242,10 @@ func TestConformance_AStatusThatIsNotMultistatusIsNotParsed(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL)
+			// Unbounded: the status is what is under test, and the ones the
+			// schedule considers transient would otherwise be asked five
+			// times before the answer is reported.
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}

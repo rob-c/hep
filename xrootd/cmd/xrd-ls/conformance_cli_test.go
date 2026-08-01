@@ -118,6 +118,8 @@ func TestConformance_SeveralOperandsAreListedInOrderAndSeparated(t *testing.T) {
 }
 
 func TestConformance_AFailureExitsNonZeroAndSaysSoOnStderr(t *testing.T) {
+	noRedial(t)
+
 	url := lsServer(t)
 
 	for _, tc := range []struct {

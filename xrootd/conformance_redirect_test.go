@@ -239,7 +239,9 @@ func redirClient(t *testing.T, addr string) (*Client, context.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	cli, err := NewClient(ctx, addr, "gopher")
+	// Unbounded: a redirect here may point at a dead address, and a test that
+	// means to see that reported once should not wait out five redials.
+	cli, err := NewClient(ctx, addr, "gopher", Unbounded())
 	if err != nil {
 		t.Fatalf("could not create the client: %v", err)
 	}

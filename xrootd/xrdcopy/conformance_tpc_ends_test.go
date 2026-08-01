@@ -43,6 +43,8 @@ func TestConformance_ATPCEndThatIsNotAURLIsRejected(t *testing.T) {
 }
 
 func TestConformance_ATPCEndThatDoesNotAnswerIsReportedByName(t *testing.T) {
+	noRedial(t)
+
 	// One end is up and the other is not. Which one it is decides who gets
 	// called at three in the morning, so the failure names it.
 	const dead = "root://127.0.0.1:1/"

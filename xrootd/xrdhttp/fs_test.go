@@ -212,7 +212,7 @@ func newTestFS(t *testing.T) (*davServer, xrdfs.FileSystem) {
 	srv := httptest.NewServer(dav)
 	t.Cleanup(srv.Close)
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

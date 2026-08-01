@@ -54,7 +54,7 @@ func newRefusingClient(t *testing.T, dflt int, byVerb map[string]int) *Client {
 	}))
 	t.Cleanup(srv.Close)
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestConformance_MkcolTellsAnExistingCollectionFromAMissingParent(t *testing
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

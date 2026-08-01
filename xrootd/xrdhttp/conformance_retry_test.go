@@ -246,10 +246,11 @@ func TestConformance_ARetryGivesUpWhenTheCallerDoes(t *testing.T) {
 	}
 }
 
-func TestConformance_TheDefaultIsASingleAttempt(t *testing.T) {
-	// Retrying decides how long a caller's program is willing to wait, and a
-	// library that decided that for every program linking it would be deciding
-	// something that is not its to decide.
+func TestConformance_TheDefaultRetries(t *testing.T) {
+	// A caller who passed no options is the caller least able to recognise a
+	// 503 from a draining backend as something worth asking again about. The
+	// default is therefore the hardened schedule, and a program that wants a
+	// single attempt has to say so.
 	srv, n := countingServer(t, nil, http.StatusServiceUnavailable)
 
 	c, err := Dial(srv.URL)
@@ -259,8 +260,44 @@ func TestConformance_TheDefaultIsASingleAttempt(t *testing.T) {
 	if _, err := c.ReadAll(context.Background(), "/a.txt"); err == nil {
 		t.Fatal("a refused request succeeded")
 	}
+	if got, want := n.Load(), int64(hardenedAttempts); got != want {
+		t.Fatalf("the server saw %d requests, want %d", got, want)
+	}
+}
+
+func TestConformance_UnboundedIsASingleAttempt(t *testing.T) {
+	// The way out, and the reason it is exported: a caller who wants the first
+	// failure reported as the failure — a test observing a stall, a program
+	// whose own context is the only deadline it wants — has one thing to write
+	// and does not have to know what the default schedule is to undo it.
+	srv, n := countingServer(t, nil, http.StatusServiceUnavailable)
+
+	c, err := Dial(srv.URL, Unbounded())
+	if err != nil {
+		t.Fatalf("could not build a client: %v", err)
+	}
+	if _, err := c.ReadAll(context.Background(), "/a.txt"); err == nil {
+		t.Fatal("a refused request succeeded")
+	}
 	if got, want := n.Load(), int64(1); got != want {
 		t.Fatalf("the server saw %d requests, want %d", got, want)
+	}
+}
+
+func TestConformance_UnboundedRemovesTheTimeoutToo(t *testing.T) {
+	// Unbounded has to remove both halves of Hardened. A caller left with a
+	// five-minute per-attempt timeout it did not ask for would find a long
+	// legitimate read cut off, which is precisely the failure it was trying to
+	// avoid by asking for no bounds.
+	c, err := Dial("https://example.org", Unbounded())
+	if err != nil {
+		t.Fatalf("could not build a client: %v", err)
+	}
+	if got := c.http.Timeout; got != 0 {
+		t.Errorf("got a per-attempt timeout of %v, want none", got)
+	}
+	if got, want := c.retry.attempts, 1; got != want {
+		t.Errorf("got %d attempts, want %d", got, want)
 	}
 }
 

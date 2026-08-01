@@ -45,8 +45,23 @@
 //
 // Across a wide-area link the failure to plan for is not a refused connection,
 // which is reported at once, but a path that stops forwarding while both ends
-// still believe the connection is up. [Hardened] bounds it: see that function
-// and the options it applies — [WithStreamTimeout], [WithConnectionWindow],
-// [WithConnectionRetry] and [WithKeepAlive] — each of which also reads its
-// XRD_* environment variable.
+// still believe the connection is up. A read on that connection then blocks
+// until TCP gives up, which on Linux is the better part of an hour.
+//
+// [NewClient] bounds it without being asked. The settings are [Hardened] — a
+// stream timeout, a connection window, retried connections and TCP keepalives —
+// and each is an option in its own right, [WithStreamTimeout],
+// [WithConnectionWindow], [WithConnectionRetry] and [WithKeepAlive], that a
+// caller can name to move it. Each also reads its XRD_* environment variable,
+// so a batch system can tune a program it did not write; an option passed in
+// code outranks the environment, and the environment outranks the defaults.
+//
+// [Unbounded] removes all of it, for a caller whose own context is the only
+// deadline it wants.
+//
+// # Examples
+//
+// go-hep.org/x/hep/xrootd/example holds thirty short programs covering reading
+// and writing over root://, listing a remote namespace, and token-authenticated
+// access over WebDAV.
 package xrootd // import "go-hep.org/x/hep/xrootd"

@@ -35,7 +35,9 @@ func davFailing(t *testing.T, h http.Handler) xrdfs.FileSystem {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 
-	c, err := Dial(srv.URL)
+	// Unbounded: these servers answer with a failure on purpose, and the
+	// default schedule would ask each of them five times to hear it again.
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("could not build a client: %v", err)
 	}

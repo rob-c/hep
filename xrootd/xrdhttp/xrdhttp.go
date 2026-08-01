@@ -102,8 +102,13 @@ func Dial(rawurl string, opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("xrdhttp: unsupported scheme %q", u.Scheme)
 	}
 
+	// Hardened first, so the caller's own options win over it. It is applied
+	// rather than offered because the caller who has not thought about how a
+	// wide-area path fails is exactly the caller who should not have a read
+	// hang on a stalled response until their batch slot expires. Unbounded is
+	// the way back out.
 	var cfg config
-	for _, opt := range opts {
+	for _, opt := range append([]Option{Hardened()}, opts...) {
 		opt(&cfg)
 	}
 	if cfg.err != nil {

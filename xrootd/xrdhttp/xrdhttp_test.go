@@ -2,6 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Dial applies Hardened, so a client built with no options retries a 503 or a
+// refused connection five times before reporting it. That is right for a
+// caller and wrong for a test: almost every test here means to observe one
+// failure, and asking for it five times measures the backoff schedule instead
+// of the behaviour under test — and takes about seven seconds to do it.
+//
+// So a test that is not about the schedule dials with Unbounded, and the
+// schedule itself is pinned where it belongs, in conformance_retry_test.go.
+
 package xrdhttp
 
 import (
@@ -59,7 +68,7 @@ func TestClientRoundTrip(t *testing.T) {
 	srv := httptest.NewServer(fs)
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -123,7 +132,7 @@ func TestClientRoundTrip(t *testing.T) {
 }
 
 func TestDialRejectsNonHTTP(t *testing.T) {
-	if _, err := Dial("s3://bucket/key"); err == nil {
+	if _, err := Dial("s3://bucket/key", Unbounded()); err == nil {
 		t.Fatal("expected error for non-http scheme")
 	}
 }
