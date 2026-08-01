@@ -14,6 +14,12 @@
 //	$> xrd-ls -l root://server.example.com/some/dir
 //	$> xrd-ls -R root://server.example.com/some/dir
 //	$> xrd-ls -l -R root://server.example.com/some/dir
+//	$> xrd-ls "root://server.example.com/store/mc/**/*.root"
+//
+// An operand may be a pattern: "*" and "?" match inside one path component,
+// "**" matches across them and "[abc]" is a character class. Only the
+// directories the pattern can reach are listed. Quote it, or the local shell
+// will try to expand it against the local filesystem first.
 //
 // Options:
 //
@@ -51,6 +57,11 @@ Example:
  $> xrd-ls -l root://server.example.com/some/dir
  $> xrd-ls -R root://server.example.com/some/dir
  $> xrd-ls -l -R root://server.example.com/some/dir
+ $> xrd-ls "root://server.example.com/store/mc/**/*.root"
+
+An operand may be a pattern: "*" and "?" match inside one path component, "**"
+matches across them and "[abc]" is a character class. Quote it, or the local
+shell will try to expand it against the local filesystem first.
 
 Options:
 `
@@ -128,20 +139,50 @@ func xrdls(w io.Writer, name string, long, recursive bool) error {
 
 	fs := c.FS()
 
-	fi, err := fs.Stat(ctx, url.Path)
-	if err != nil {
-		return fmt.Errorf("could not stat %q: %w", url.Path, err)
+	// A remote path never passes through the shell's own expansion, so a
+	// pattern arrives here intact and is answered against the namespace it
+	// names. Only the directories the pattern can reach are listed.
+	//
+	// Only the name is a pattern: the "?" that introduces opaque data is not
+	// one, and a token that happens to contain a "*" is not a wildcard either.
+	paths := []string{url.Path}
+	if name, opaque := xrdproto.SplitPath(url.Path); xrdfs.HasMagic(name) {
+		paths, err = xrdfs.Glob(ctx, fs, url.Path)
+		if err != nil {
+			return fmt.Errorf("could not expand %q: %w", name, err)
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("no match for %q", name)
+		}
+		if opaque != "" {
+			// Every listing below a match has to travel with the same
+			// authorization the pattern did.
+			for i := range paths {
+				paths[i] += "?" + opaque
+			}
+		}
 	}
 
-	// kXR_stat answers about a path without echoing it, so fi is nameless and
-	// url.Path is the whole of what it is called. That is why it is passed as
-	// the root below and why format falls back to the root when an entry has no
-	// name of its own: what the user asked for by full path is listed by full
-	// path, and what was found inside a directory is listed by its name within
-	// it, exactly as ls does.
-	err = display(ctx, w, fs, url.Path, fi, long, recursive)
-	if err != nil {
-		return err
+	for i, target := range paths {
+		if i > 0 {
+			// separate consecutive matches by an empty line
+			fmt.Fprintf(w, "\n")
+		}
+		fi, err := fs.Stat(ctx, target)
+		if err != nil {
+			return fmt.Errorf("could not stat %q: %w", target, err)
+		}
+
+		// kXR_stat answers about a path without echoing it, so fi is nameless
+		// and target is the whole of what it is called. That is why it is
+		// passed as the root below and why format falls back to the root when an entry
+		// has no name of its own: what the user asked for by full path is
+		// listed by full path, and what was found inside a directory is listed
+		// by its name within it, exactly as ls does.
+		err = display(ctx, w, fs, target, fi, long, recursive)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
