@@ -12,14 +12,17 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/chkpoint"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
+	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
+	"go-hep.org/x/hep/xrootd/xrdproto/prepare"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
 	"go-hep.org/x/hep/xrootd/xrdproto/rm"
 	"go-hep.org/x/hep/xrootd/xrdproto/rmdir"
+	"go-hep.org/x/hep/xrootd/xrdproto/set"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
 	"go-hep.org/x/hep/xrootd/xrdproto/statx"
 	"go-hep.org/x/hep/xrootd/xrdproto/sync"
@@ -68,8 +71,16 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 	}
 	if level >= xrdproto.Standard {
 		// TODO: set requirements
+		// The three below change server state without touching a byte of file
+		// content, which is why they are easy to overlook and why they belong
+		// here: an attribute is as good a place to hide something as the data
+		// is, a prepare can be made to pull a tape system to a halt, and a set
+		// rewrites what the server records about this connection.
+		sr.requirements[fattr.RequestID] = xrdproto.SignNeeded
 		sr.requirements[mkdir.RequestID] = xrdproto.SignNeeded
 		sr.requirements[open.RequestID] = xrdproto.SignNeeded
+		sr.requirements[prepare.RequestID] = xrdproto.SignNeeded
+		sr.requirements[set.RequestID] = xrdproto.SignNeeded
 	}
 	if level >= xrdproto.Intense {
 		// TODO: set requirements

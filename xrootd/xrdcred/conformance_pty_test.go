@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"go-hep.org/x/hep/xrootd"
 	"golang.org/x/sys/unix"
@@ -61,6 +62,34 @@ func typed(t *testing.T, master *os.File, text string) {
 	}()
 }
 
+// typedSecret sends what a user types in answer to a prompt that must not echo,
+// and waits for echo to be switched off before sending it.
+//
+// A user waits for the prompt; this waits for the same thing by the only signal
+// the terminal gives. Typing ahead of it would have the line discipline echo
+// the text whatever the reader does afterwards, and the test would be measuring
+// its own scheduling rather than the prompter. A reader that never switches
+// echo off runs the wait out and is caught, which is the point of the test.
+//
+// fd is the terminal's descriptor, taken by the caller: os.File.Fd is not for
+// two goroutines to call at once.
+func typedSecret(t *testing.T, master *os.File, fd int, text string) {
+	t.Helper()
+	go func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			tio, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+			if err != nil || tio.Lflag&unix.ECHO == 0 {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if _, err := master.WriteString(text); err != nil {
+			t.Errorf("could not type %q: %v", text, err)
+		}
+	}()
+}
+
 func TestConformance_ARealTerminalIsWhereTheQuestionIsPut(t *testing.T) {
 	master, slave := pty(t)
 
@@ -91,7 +120,7 @@ func TestConformance_APastedTokenIsNeverShownOnTheTerminal(t *testing.T) {
 	const secret = "eyJhbGciOiJub25lIn0.token"
 	out := new(strings.Builder)
 	term := &Terminal{In: slave, Out: out}
-	typed(t, master, secret+"\n")
+	typedSecret(t, master, int(slave.Fd()), secret+"\n")
 
 	a, err := pasteToken(context.Background(), term, xrootd.CredentialRequest{Provider: "ztn"})
 	if err != nil {

@@ -67,6 +67,31 @@ func (o *Request) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	return rBuffer.Err()
 }
 
+// requestFrameLength is the fixed part of every request: a 4-byte header, 16
+// parameter bytes and the 4-byte data length.
+const requestFrameLength = 24
+
+// signedLength returns how much of a marshalled request the signature covers:
+// the fixed frame plus exactly the number of payload bytes the frame declares.
+//
+// For nearly every request that is all of it. It is not for the two that write
+// past their own frame — kXR_writev and a kXR_ckpXeq carrying a write — where
+// the payload is followed by data the length field does not count. A server
+// verifies a request by hashing what it read as the request, and it stops
+// reading at the declared length; a client that hashed the trailing data too
+// would produce a signature the server can never arrive at, and every signed
+// request of that kind would be rejected as forged.
+func signedLength(data []byte) int {
+	if len(data) < requestFrameLength {
+		return len(data)
+	}
+	dlen := int(binary.BigEndian.Uint32(data[requestFrameLength-4 : requestFrameLength]))
+	if n := requestFrameLength + dlen; n >= requestFrameLength && n <= len(data) {
+		return n
+	}
+	return len(data)
+}
+
 func NewRequest(requestID uint16, seqID int64, data []byte) Request {
 	hash := sha256.New()
 
@@ -75,9 +100,9 @@ func NewRequest(requestID uint16, seqID int64, data []byte) Request {
 	_, _ = hash.Write(s[:])
 
 	if requestID == write.RequestID || requestID == verifyw.RequestID {
-		_, _ = hash.Write(data[:24])
+		_, _ = hash.Write(data[:requestFrameLength])
 	} else {
-		_, _ = hash.Write(data)
+		_, _ = hash.Write(data[:signedLength(data)])
 	}
 	signature := hash.Sum(nil)
 

@@ -233,8 +233,22 @@ func (fs *fileSystem) Checksum(ctx context.Context, path string) (string, string
 	return fields[0], fields[1], nil
 }
 
+// CancelChecksum abandons a checksum the server is still computing
+// (query kXR_Qckscan).
+//
+// Checksumming a multi-terabyte file costs the server a full read of it. A
+// caller that has given up — because the transfer it was verifying failed, or
+// because it timed out — says so rather than leaving the server to finish work
+// nobody is waiting for.
+func (fs *fileSystem) CancelChecksum(ctx context.Context, path string) error {
+	req := query.Request{Query: query.CancelChecksum, Args: []byte(path)}
+	_, err := fs.c.Send(ctx, &query.Response{}, &req)
+	return err
+}
+
 var (
-	_ xrdfs.FileSystem = (*fileSystem)(nil)
-	_ xrdfs.XAttrFS    = (*fileSystem)(nil)
-	_ xrdfs.ChecksumFS = (*fileSystem)(nil)
+	_ xrdfs.FileSystem       = (*fileSystem)(nil)
+	_ xrdfs.XAttrFS          = (*fileSystem)(nil)
+	_ xrdfs.ChecksumFS       = (*fileSystem)(nil)
+	_ xrdfs.ChecksumCancelFS = (*fileSystem)(nil)
 )

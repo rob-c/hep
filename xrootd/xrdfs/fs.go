@@ -130,3 +130,17 @@ type XAttrFS interface {
 type ChecksumFS interface {
 	Checksum(ctx context.Context, path string) (algo, value string, err error)
 }
+
+// ChecksumCancelFS is implemented by filesystems that can abandon a checksum
+// the server is still computing (query kXR_Qckscan).
+//
+// It is separate from ChecksumFS because asking for a checksum and giving up
+// on one are separate abilities: a filesystem that can answer the first is not
+// obliged to have anything to withdraw.
+type ChecksumCancelFS interface {
+	// CancelChecksum abandons the checksum being computed for path.
+	// Checksumming a multi-terabyte file costs the server a full read of it,
+	// so a caller that has given up says so rather than leaving the server to
+	// finish work nobody is waiting for.
+	CancelChecksum(ctx context.Context, path string) error
+}

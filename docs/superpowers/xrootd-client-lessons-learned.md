@@ -309,14 +309,87 @@ text, and each one means nothing without the question that produced it.
   means the endpoint is known but not online, which is what a staged-out replica
   looks like. A client that flattens these opens a file on a manager that holds
   no data, or reports a tape-resident replica as ready.
+- **A locate answer names the *tier below*, not the replicas.** Against the top
+  of a federation every token is a manager, and a caller handed those addresses
+  opens one and reads nothing. Resolving it means asking each manager the same
+  question and walking down — breadth-first, so the nearest tier is resolved
+  first. Three rules make that walk correct rather than merely recursive: ask
+  each endpoint **once**, or a federation whose tree has a cycle never
+  terminates; keep the **server** answer when the same address comes back both
+  ways, because a *supervisor* answers as a manager to the tier above it and as
+  a server to the tier below, and recording only the first answer drops a node
+  that does hold the file; and treat a subtree that cannot be reached or that
+  refuses the question as **skipped, not fatal** — one manager being down is the
+  normal state of a large federation, and failing the whole walk tells a job the
+  file exists nowhere while every other replica sits there readable. The first
+  locate is the exception: it is what says whether the path exists at all, so
+  that one failure is reported.
 - **A prepare request answers with a handle**, and the handle is what a later
   cancellation names. Discarding it leaves a tape system staging files for a job
   that has already died.
+- **`kXR_evict` is asked for in the extended half-word, not the options byte.**
+  By the time evicting was given a name of its own the byte the older options
+  share was full, so it lives in the two bytes after the notification port,
+  where `kXR_prepare`'s reserved area used to be. Written into the options byte
+  the value `1` reads as `kXR_cancel`: a request meant to free disk withdraws an
+  unrelated staging request instead, answers `kXR_ok`, and leaves the disk
+  exactly as full as it was.
 - **A `kXR_Qconfig` answer carries values only** — one line each, in the order
   asked, with no names at all. A name the server has no value for still gets its
   (empty) line, so splitting on `\n` rather than filtering to non-empty lines is
   what keeps every later value paired with the right name. Pair by position
   against the names that were sent, and leave the empty ones out of the result.
+
+### 4.8 A signature covers what the server *reads*, not what the client wrote
+
+`kXR_sigver` carries a SHA-256 over the sequence number followed by the request
+as the server received it — and the server stops reading at the `dlen` the frame
+declares. Two requests put bytes on the wire past that point: `kXR_writev`
+(§4.5) and a `kXR_ckpXeq` carrying a write (§4.6). A client that hashes its
+whole marshalled buffer therefore signs bytes the server never included, and
+produces a digest the server cannot arrive at no matter what it does.
+
+The failure is invisible until it is expensive. Nothing rejects the request
+locally; it is the *server* that answers `kXR_NotAuthorized` on a perfectly
+valid request, and only at `kXR_secIntense` or above, which is where checkpoints
+are signed — so it appears at exactly one class of site, on exactly the
+operation whose whole point is being undoable.
+
+So the rule is: **hash the frame plus exactly `dlen` bytes, never `len(buf)`.**
+Read the declared length back out of the marshalled bytes rather than trusting a
+caller to say what trails, and fall back to the whole buffer only when the
+arithmetic cannot be trusted — a buffer too short to hold a 24-byte frame, or a
+declared length that runs past its end. `kXR_write` and `kXR_verifyw` stay a
+separate case: they are signed by their 24-byte header alone with `kXR_nodata`
+set, because hashing a gigabyte to authenticate where it goes costs more than
+the write.
+
+The requirements table has a matching trap in the other direction. It is easy to
+list only the requests that move data, but the level exists to authenticate
+*state changes*, and at `kXR_secStandard` that includes `kXR_fattr`,
+`kXR_prepare` and `kXR_set`: an extended attribute is as good a place to hide
+something as the data is, a prepare can be made to pull a tape system to a halt,
+and a set rewrites what the server records about this connection.
+
+### 4.9 The vendor extensions, and the one request every other client sends
+
+Four requests are not in the protocol specification but are in every other
+client, and a server built without them answers `kXR_Unsupported` — which is the
+only way to find out that they are missing, so that answer has to reach the
+caller rather than being smoothed into an empty result.
+
+- **`kXR_symlink` (3501) and `kXR_link` (3503) are shaped like `kXR_mv`:** both
+  paths travel as one space-separated string, with the length of the first sent
+  separately in parameter bytes 14–15. The separate length is the whole point —
+  a server with only the space to go on cuts a name that contains one in half,
+  and paths with spaces in them are ordinary on the storage a physics site runs.
+- **`kXR_readlink` (3502) answers with the target as NUL-padded text**, like
+  every other text answer (§4.7).
+- **`kXR_set` (3018) reserves its entire parameter area:** everything it says is
+  in the directive text. The one every client sends is `appid <name>`, which
+  labels the connection in the server's monitoring stream. It is easy to skip
+  because nothing fails without it — and then a site cannot tell whose traffic a
+  connection carries, which is the question its monitoring exists to answer.
 
 ---
 
@@ -1171,6 +1244,16 @@ it deliberately differs):
 - [ ] A locate answer is parsed as `XY<host:port>` with the lower-case node type
   meaning pending, a prepare handle is returned rather than dropped, and a
   `kXR_Qconfig` answer is paired with the names *by position* (§4.7).
+- [ ] A deep locate asks each endpoint once, keeps a supervisor as the server it
+  also is, and skips an unreachable subtree instead of failing the walk (§4.7).
+- [ ] `kXR_evict` goes in the extended half-word after the notification port,
+  where it cannot be read as `kXR_cancel` (§4.7).
+- [ ] `kXR_sigver` hashes the frame plus exactly `dlen` bytes, so a signed
+  `kXR_ckpXeq` carrying a write is not signed over the trailing payload, and
+  `fattr`/`prepare`/`set` are in the table from `kXR_secStandard` up (§4.8).
+- [ ] The two-path vendor extensions send the length of the first path rather
+  than relying on the separator, `kXR_Unsupported` reaches the caller, and the
+  connection sends an `appid` (§4.9).
 - [ ] The `XRD_*` variables the C client honours reach this client too, in bare
   seconds, applied before the caller's own options (§9.7).
 - [ ] `fattr` nvec/vvec endianness and the count-prefixed vs NUL-list responses.

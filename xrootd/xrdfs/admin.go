@@ -104,6 +104,8 @@ const (
 	PrepareColocate PrepareOptions = 32
 	// PrepareRefresh refreshes the access time even when the location is known.
 	PrepareRefresh PrepareOptions = 64
+	// PrepareUseTCP sends the notification over TCP rather than UDP.
+	PrepareUseTCP PrepareOptions = 128
 	// PrepareNone applies no option.
 	PrepareNone PrepareOptions = 0
 )
@@ -129,6 +131,15 @@ const (
 // a path live (kXR_locate).
 type LocateFS interface {
 	Locate(ctx context.Context, path string, opts LocateOptions) ([]Location, error)
+
+	// DeepLocate resolves a path all the way down to the data servers that
+	// hold it, asking every manager the answer names in turn.
+	//
+	// A plain locate against the top of a federation answers with the managers
+	// one tier down, not with anything that holds a byte, so a caller that
+	// wants the real replicas has to walk the tree itself. Only data servers
+	// are returned.
+	DeepLocate(ctx context.Context, path string, opts LocateOptions) ([]Location, error)
 }
 
 // PrepareFS is implemented by filesystems that can stage paths in advance
@@ -136,6 +147,18 @@ type LocateFS interface {
 // is what a later cancellation or status query names.
 type PrepareFS interface {
 	Prepare(ctx context.Context, paths []string, opts PrepareOptions, prio uint8) (string, error)
+
+	// Stage brings paths online, which is the ordinary use of a prepare.
+	Stage(ctx context.Context, paths []string, prio uint8) (string, error)
+
+	// Evict releases the disk copies of paths, which is the reverse of Stage
+	// and the only prepare option that lives in the extended half-word.
+	Evict(ctx context.Context, paths []string) error
+
+	// CancelPrepare withdraws an earlier request, named by the handle it
+	// returned. A request that cannot be withdrawn keeps a tape system busy on
+	// behalf of a job that has already given up.
+	CancelPrepare(ctx context.Context, handle string) error
 }
 
 // QueryFS is implemented by filesystems that answer server questions

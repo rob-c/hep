@@ -128,3 +128,14 @@ type VectorWriter interface {
 	// WriteVAt writes every segment, or none of them.
 	WriteVAt(ctx context.Context, segs []WriteVSegment) error
 }
+
+// VisaFile is implemented by files that can report their visa attributes
+// (query kXR_Qvisa).
+//
+// A visa is whatever the storage system wants to say about this handle that
+// the protocol has no field for — which pool the file came from, how it was
+// staged, what an experiment's own plugin recorded against it. The answer is
+// site-defined text, so it is returned unparsed.
+type VisaFile interface {
+	Visa(ctx context.Context) (string, error)
+}

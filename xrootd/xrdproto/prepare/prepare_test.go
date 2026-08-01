@@ -6,6 +6,7 @@ package prepare_test
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"reflect"
@@ -35,6 +36,10 @@ func TestRequest(t *testing.T) {
 			Options:  prepare.Stage | prepare.NoErrors,
 			Priority: 0,
 			Paths:    []string{},
+		},
+		{
+			OptionsX: prepare.Evict,
+			Paths:    []string{"/foo"},
 		},
 	} {
 		t.Run("", func(t *testing.T) {
@@ -70,6 +75,33 @@ func TestRequest(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestRequestLayout(t *testing.T) {
+	// Evicting a file is asked for in the extended half-word, immediately
+	// after the notification port: by the time it was given a name of its own,
+	// the byte the older options share was full. Writing it into that byte
+	// instead would read as kXR_cancel, and a request meant to free disk would
+	// withdraw an unrelated staging request.
+	req := prepare.Request{OptionsX: prepare.Evict, Paths: []string{"/foo"}}
+
+	w := new(xrdenc.WBuffer)
+	if err := req.MarshalXrd(w); err != nil {
+		t.Fatalf("could not marshal request: %v", err)
+	}
+	raw := w.Bytes()
+
+	if got := raw[0]; got != 0 {
+		t.Fatalf("options byte is %d, want 0: evict does not belong there", got)
+	}
+	if got, want := binary.BigEndian.Uint16(raw[4:6]), prepare.Evict; got != want {
+		t.Fatalf("extended options: got = %#04x, want = %#04x", got, want)
+	}
+	for i, b := range raw[6:16] {
+		if b != 0 {
+			t.Fatalf("reserved parameter byte %d is %d, want 0", i+6, b)
+		}
 	}
 }
 

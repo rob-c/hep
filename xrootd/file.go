@@ -8,12 +8,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	rsync "sync"
 
 	"go-hep.org/x/hep/xrootd/internal/pgbuf"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
+	"go-hep.org/x/hep/xrootd/xrdproto/query"
 	"go-hep.org/x/hep/xrootd/xrdproto/read"
 	"go-hep.org/x/hep/xrootd/xrdproto/readv"
 	"go-hep.org/x/hep/xrootd/xrdproto/stat"
@@ -331,10 +333,31 @@ func (f *file) WriteVAt(ctx context.Context, segs []xrdfs.WriteVSegment) error {
 	})
 }
 
+// Visa returns the visa attributes of the open file (query kXR_Qvisa).
+//
+// A visa is whatever the storage system wants to say about this handle that
+// the protocol has no field for — which pool the file came from, how it was
+// staged, what an experiment's own plugin recorded against it. It is asked of
+// the handle rather than the path, so it describes the file this client has
+// open and not whatever a later lookup of the name would find. The answer is
+// site-defined text, so it is returned unparsed.
+func (f *file) Visa(ctx context.Context) (string, error) {
+	var resp query.Response
+	req := &query.Request{Query: query.Visa, Handle: f.handle}
+	err := f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+		return f.fs.c.sendSession(ctx, sid, &resp, req)
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(resp.Data), "\x00"), nil
+}
+
 var (
 	_ xrdfs.File         = (*file)(nil)
 	_ xrdfs.PgReader     = (*file)(nil)
 	_ xrdfs.PgWriter     = (*file)(nil)
 	_ xrdfs.VectorReader = (*file)(nil)
 	_ xrdfs.VectorWriter = (*file)(nil)
+	_ xrdfs.VisaFile     = (*file)(nil)
 )
