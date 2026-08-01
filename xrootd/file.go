@@ -14,6 +14,7 @@ import (
 	"go-hep.org/x/hep/xrootd/internal/pgbuf"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/open"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgread"
 	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
@@ -227,6 +228,40 @@ func (f *file) Stat(ctx context.Context) (xrdfs.EntryStat, error) {
 func (f *file) VerifyWriteAt(ctx context.Context, p []byte, off int64) error {
 	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
 		return f.send(ctx, sid, nil, verifyw.NewRequestCRC32(f.handle, off, p))
+	})
+}
+
+// Clone implements xrdfs.Cloner: it asks the server to copy the given ranges
+// into this file, without any of the data crossing the network.
+//
+// Every source must be a file open on the same connection as this one — a
+// handle means nothing anywhere else — and open for reading, as this file must
+// be open for writing.
+func (f *file) Clone(ctx context.Context, ranges []xrdfs.CloneRange) error {
+	if len(ranges) == 0 {
+		// Nothing to copy is not a request worth a round trip, and a server
+		// answers an empty clone list with kXR_ArgMissing.
+		return nil
+	}
+	if len(ranges) > clone.MaxItems {
+		return fmt.Errorf("xrootd: too many clone ranges: %d, at most %d are accepted", len(ranges), clone.MaxItems)
+	}
+
+	items := make([]clone.Item, len(ranges))
+	for i, r := range ranges {
+		if r.Src == nil {
+			return fmt.Errorf("xrootd: clone range %d has no source file", i)
+		}
+		items[i] = clone.Item{
+			Src:       r.Src.Handle(),
+			SrcOffset: r.SrcOffset,
+			SrcLength: r.Length,
+			DstOffset: r.DstOffset,
+		}
+	}
+
+	return f.do(ctx, func(ctx context.Context, sid string) (string, error) {
+		return f.send(ctx, sid, nil, clone.NewRequest(f.handle, items))
 	})
 }
 

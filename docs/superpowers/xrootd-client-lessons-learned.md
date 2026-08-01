@@ -1088,6 +1088,93 @@ defines neither (`syscall.ENOTDIR`, oddly, every port does define). And
 request: a `touch` asking for a 0600 file would otherwise be handed a directory
 it cannot enter and fail on a path it had just created itself.
 
+### 8.13 Three late opcodes, and the one that should not be implemented
+
+`kXR_clone`, `kXR_dcksm` and `kXR_gpfile` arrived together on the list of things
+still missing, and they divide cleanly into "transcribe it" and "refuse it".
+The line between them is whether a second independent source agrees on the
+layout — not whether a plausible one can be written.
+
+**`kXR_clone` (3032) is a server-side copy, and its list is validated whole
+before a byte moves.** The request is a destination handle, twelve reserved
+bytes, and a payload of fixed 32-byte items: source handle, four reserved,
+then source offset, length and destination offset as 64-bit big-endian. At most
+1024 items (`maxClonesz`); a payload whose length is not a multiple of 32 is
+`kXR_ArgInvalid` rather than a short read, because the alternative is decoding
+every item after the first out of the middle of its neighbour. What matters on
+the server side is the ordering: a clone is *not* atomic, so every refusal that
+can happen before the copy starts has to happen there. Resolve all the source
+handles and validate all the offsets first; a handler that copied as it went
+would answer `kXR_ArgInvalid` for item two with item one already written, and
+the caller has no request to ask how much of what it wanted happened. Zero-length
+items are skipped rather than refused — a caller building the list from a loop
+over extents produces them, and they mean exactly what they say.
+
+Two smaller notes. The offsets travel unsigned and are used signed, so validate
+before handing them to a kernel that answers `EINVAL` from somewhere the caller
+cannot see. And the signing table: a clone writes, so it belongs at
+`kXR_secIntense` with the other writes, `SignNeeded` rather than `SignLikely` —
+its payload *is* what it writes, and an unsigned clone list could be rewritten in
+flight to point at a range of a file the sender never asked to read.
+
+**`kXR_dcksm` is a dirlist option, not a request.** It is bit `0x04` alongside
+`kXR_online` (`0x01`) and `kXR_dstat` (`0x02`), and it implies `kXR_dstat`: the
+digest is appended to a stat line, and there is nowhere else in the reply to put
+it. The algorithm is not in the request at all — it rides in the path's opaque
+data as `?cks.type=<algo>`, defaulting to `adler32`. An algorithm the server
+cannot compute is `kXR_ServerError` with `"<algo> checksum not supported."`, and
+the temptation to answer with the digest it *does* have is worth naming as a bug:
+a caller comparing sha256 against a silently substituted adler32 finds every file
+in the directory corrupt.
+
+The reply is where the work is. Each entry's stat line grows from four fields to
+nine — `ino size flags mtime ctime atime mode uid gid` — and then, if a digest
+was asked for, ` [ algo:hexdigest ]`. `algo:none` is what a directory or an
+unreadable file gets; a listing is not failed over one entry whose permissions
+are wrong, or the caller loses the whole directory to it. Three things about
+that line are easy to get wrong and invisible when you do:
+
+- The mode is a **four-digit octal** token. The readers scan it back with
+  `strtoul(.., 8)`, so `0644` written in decimal comes back as `0420`.
+- An unknown owner or group still occupies its field (`"0"`). Omitting it shifts
+  every field after it by one, and the group is read as the owner and the digest
+  as the group.
+- Owner and group are *strings*, not numeric ids. The reference decoder reads
+  them with `%63s` and the Julia client keeps them as `String`; a server may send
+  either a name or a decimal uid, and a client that parses an integer breaks
+  against half the deployments.
+
+In Go, the extended tail is also where portability bites: `ctime`, `atime`, `uid`
+and `gid` are not reachable through `os.FileInfo`, and `syscall.Stat_t` spells
+them differently on each port (`Atim` vs `Atimespec`). That is three build-tagged
+`sysStat` helpers with a zero-valued fallback — not fabricated values, which
+would be worse than admitting the server does not know.
+
+**`kXR_gpfile` (3005) should not be implemented, and the reason is worth
+writing down.** It is "Grouped Parallel Fetch", retired in XRootD v5; the
+reference server marks the opcode "legacy, unused" and never sets either of the
+two flags that would advertise it (`kXR_supgpf` `0x00400000`, `kXR_anongpf`
+`0x00800000`). No local oracle has a wire layout for it, and what it was for —
+several extents in one round trip — is what `kXR_readv` does. So the package
+stops at what is known to be right: the opcode, the two capability bits read back
+through the protocol response, and a `Request()` that returns an error wrapping
+`errors.ErrUnsupported`. A guessed body that marshals is worse than a refusal: it
+fails at the far end of a network, in somebody else's error log, long after the
+caller could have chosen `readv` instead. The Rust client reaches the same
+conclusion in the same words — "a guess that compiles is worse than a refusal" —
+and that agreement is the only evidence available either way.
+
+**A bug found on the way there.** Chasing the GPF flags turned up that this
+client had two of the TLS protocol bits swapped: `kXR_tlsGPF` is `0x01000000`
+and `kXR_tlsData` is `0x02000000`, and they were the other way around. Three
+independent oracles agree on the values. The failure mode is the one §5.5
+describes — nothing breaks, the client simply believes a server that demands TLS
+for the data stream is asking for it on a request the client never sends, and
+carries the data in clear. `kXR_tlsAny` (`0x1F000000`) is the check to make
+before dialling plain TCP; note that it deliberately excludes `kXR_tlsGPFA`,
+which qualifies `kXR_tlsGPF` for unauthenticated callers and asks nothing of a
+session that never sends the request it qualifies.
+
 ---
 
 ## 9. Test harness and environment (unglamorous but load-bearing)
@@ -1461,6 +1548,16 @@ it deliberately differs):
 - [ ] `kXR_open` returns the compression block ahead of any stat record, handles
   are issued in order rather than guessed, and `kXR_vfs` is answered from the
   filesystem's own free space (§4.10).
+- [ ] `kXR_clone` items are 32 bytes each, capped at 1024, and the whole list is
+  validated and its handles resolved before the first byte is copied; a payload
+  that is not a whole number of items is refused (§8.13).
+- [ ] `kXR_dcksm` is dirlist option `0x04`, implies `kXR_dstat`, takes its
+  algorithm from `?cks.type=`, and appends ` [ algo:hexdigest ]` to a nine-field
+  stat line whose mode is four-digit octal and whose owner/group are strings
+  (§8.13).
+- [ ] `kXR_gpfile` is refused rather than guessed, and `kXR_supgpf`/`kXR_anongpf`
+  are read from their own bits; `kXR_tlsGPF` is `0x01000000` and `kXR_tlsData`
+  `0x02000000`, not the reverse (§8.13).
 - [ ] `fattr` nvec/vvec endianness and the count-prefixed vs NUL-list responses.
 - [ ] `sss` blob byte layout and Blowfish-CFB64 zero-IV encoding
   (`src/compat/sss_bf.c`).

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
@@ -39,6 +40,12 @@ const (
 )
 
 // EntryStat holds the entry name and the entry stat information.
+//
+// The first six fields are the stat line every server sends. The five that
+// follow are the extended tail that a server may append — EOS does, and so does
+// any server answering a kXR_dcksm listing — and they are meaningful only when
+// HasExtendedInfo is set. Checksum is carried on the same line but is not part
+// of that tail: it is the answer to kXR_dcksm alone.
 type EntryStat struct {
 	EntryName   string    // EntryName is the name of entry.
 	HasStatInfo bool      // HasStatInfo indicates if the following stat information is valid.
@@ -46,7 +53,47 @@ type EntryStat struct {
 	EntrySize   int64     // EntrySize is the decimal size of the entry.
 	Flags       StatFlags // Flags identifies the entry's attributes.
 	Mtime       int64     // Mtime is the last modification time in Unix time units.
+
+	HasExtendedInfo bool   // HasExtendedInfo indicates if the following extended stat information is valid.
+	Ctime           int64  // Ctime is the last status change time in Unix time units.
+	Atime           int64  // Atime is the last access time in Unix time units.
+	Perm            uint32 // Perm holds the permission bits, as the "0644" token on the wire.
+	Owner           string // Owner is the owning user, as a name or a decimal uid depending on the server.
+	Group           string // Group is the owning group, as a name or a decimal gid depending on the server.
+
+	// Checksum is the "algorithm:hexdigest" token a server appends when the
+	// dirlist request asked for kXR_dcksm. The digest reads "none" for an entry
+	// that has none: a directory, a symbolic link, or a file the server could
+	// not read. It is empty when no checksum was asked for.
+	Checksum string
 }
+
+// ChecksumAlgo returns the algorithm named by [EntryStat.Checksum], and
+// ChecksumValue the digest it produced. Both are empty when no checksum was
+// asked for; the value alone is empty when the server had none to give, which
+// is how "the file is there but its digest is not" is told apart from "this
+// listing carried no checksums at all".
+func (es EntryStat) ChecksumAlgo() string {
+	algo, _, ok := strings.Cut(es.Checksum, ":")
+	if !ok {
+		return ""
+	}
+	return algo
+}
+
+// ChecksumValue returns the hexadecimal digest of [EntryStat.Checksum].
+// See [EntryStat.ChecksumAlgo].
+func (es EntryStat) ChecksumValue() string {
+	_, digest, ok := strings.Cut(es.Checksum, ":")
+	if !ok || digest == noChecksum {
+		return ""
+	}
+	return digest
+}
+
+// noChecksum is what a server puts where a digest would go for an entry that
+// cannot have one.
+const noChecksum = "none"
 
 // EntryStatFrom creates an EntryStat that represents same information as the provided info.
 func EntryStatFrom(info os.FileInfo) EntryStat {
@@ -65,6 +112,21 @@ func EntryStatFrom(info os.FileInfo) EntryStat {
 	if info.Mode()&0200 != 0 {
 		es.Flags |= StatIsWritable
 	}
+	return es
+}
+
+// EntryStatExtendedFrom creates an EntryStat that carries the extended tail as
+// well: the two extra timestamps, the permission bits and the ownership.
+//
+// How much of that this port can see depends on the port. Everything os.FileInfo
+// exposes is filled in everywhere; the fields that need the underlying stat
+// buffer are zero where the operating system does not offer one through
+// syscall.
+func EntryStatExtendedFrom(info os.FileInfo) EntryStat {
+	es := EntryStatFrom(info)
+	es.HasExtendedInfo = true
+	es.Perm = uint32(info.Mode().Perm())
+	es.Ctime, es.Atime, es.Owner, es.Group = sysStat(info)
 	return es
 }
 
@@ -93,6 +155,12 @@ func (es EntryStat) Mode() os.FileMode {
 	var mode os.FileMode
 	if es.IsDir() {
 		mode |= os.ModeDir
+	}
+	if es.HasExtendedInfo {
+		// The extended tail carries the real permission bits, so there is no
+		// need to widen the three the flags word can tell apart into the nine
+		// a caller expects.
+		return mode | os.FileMode(es.Perm).Perm()
 	}
 	if es.IsWritable() {
 		mode |= 0222
@@ -151,8 +219,40 @@ func (o EntryStat) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 	flagsStr := strconv.Itoa(int(o.Flags))
 	mtimeStr := strconv.Itoa(int(o.Mtime))
 
-	wBuffer.WriteBytes([]byte(idStr + " " + sizeStr + " " + flagsStr + " " + mtimeStr))
+	line := idStr + " " + sizeStr + " " + flagsStr + " " + mtimeStr
+	if o.HasExtendedInfo {
+		// The permission bits go out as a four-digit octal token, which is what
+		// the readers of this line scan back with strtoul(.., 8): written in
+		// decimal, 0644 would come back as 0420.
+		line += " " + strconv.FormatInt(o.Ctime, 10) +
+			" " + strconv.FormatInt(o.Atime, 10) +
+			" " + fmt.Sprintf("%04o", o.Perm&statPermMask) +
+			" " + owned(o.Owner) + " " + owned(o.Group)
+	}
+	if o.Checksum != "" {
+		// The checksum sits after the stat fields and inside brackets, so a
+		// reader that does not know about kXR_dcksm still finds the fields it
+		// came for at the offsets it expects.
+		line += " [ " + o.Checksum + " ]"
+	}
+
+	wBuffer.WriteBytes([]byte(line))
 	return nil
+}
+
+// statPermMask is the part of a mode this line carries: the twelve bits of
+// permission and setuid/setgid/sticky, and not the file type above them, which
+// travels in the flags word.
+const statPermMask = 0o7777
+
+// owned returns the token to put on the wire for an owner or a group. A server
+// that does not know one still has to leave a field there, or every field after
+// it is read as the wrong one.
+func owned(name string) string {
+	if name == "" {
+		return "0"
+	}
+	return name
 }
 
 // UnmarshalXrd implements xrdproto.Unmarshaler.
@@ -165,6 +265,8 @@ func (o *EntryStat) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 		}
 		buf = append(buf, b)
 	}
+
+	buf, checksum := cutChecksum(buf)
 
 	stats := bytes.Split(buf, []byte{' '})
 	if len(stats) < 4 {
@@ -193,8 +295,52 @@ func (o *EntryStat) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.EntrySize = int64(size)
 	o.Mtime = int64(mtime)
 	o.Flags = StatFlags(flags)
+	o.Checksum = checksum
+
+	// The extended tail is all five fields or none of them: a line that stops
+	// partway through is one this reader does not understand, and guessing
+	// which of the five arrived would put a ctime in the owner.
+	o.HasExtendedInfo = false
+	if len(stats) >= 9 {
+		ctime, err := strconv.ParseInt(string(stats[4]), 10, 64)
+		if err != nil {
+			return err
+		}
+		atime, err := strconv.ParseInt(string(stats[5]), 10, 64)
+		if err != nil {
+			return err
+		}
+		perm, err := strconv.ParseUint(string(stats[6]), 8, 32)
+		if err != nil {
+			return err
+		}
+		o.HasExtendedInfo = true
+		o.Ctime = ctime
+		o.Atime = atime
+		o.Perm = uint32(perm)
+		o.Owner = string(stats[7])
+		o.Group = string(stats[8])
+	}
 
 	return rBuffer.Err()
+}
+
+// cutChecksum takes the " [ algorithm:hexdigest ]" token off the end of a stat
+// line, returning what is left of the line and the token's contents.
+func cutChecksum(line []byte) (rest []byte, checksum string) {
+	const (
+		lead = " [ "
+		tail = " ]"
+	)
+
+	if !bytes.HasSuffix(line, []byte(tail)) {
+		return line, ""
+	}
+	i := bytes.LastIndex(line, []byte(lead))
+	if i < 0 {
+		return line, ""
+	}
+	return line[:i], string(line[i+len(lead) : len(line)-len(tail)])
 }
 
 // VirtualFSStat holds the virtual file system information.

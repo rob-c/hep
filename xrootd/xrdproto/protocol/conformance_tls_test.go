@@ -22,12 +22,12 @@ var tlsFlags = []struct {
 }{
 	{"kXR_haveTLS", 0x80000000, (*Response).HasTLS},
 	{"kXR_gotoTLS", 0x40000000, (*Response).GotoTLS},
-	{"kXR_tlsData", 0x01000000, (*Response).TLSForData},
-	{"kXR_tlsGPF", 0x02000000, nil},
+	{"kXR_tlsGPF", 0x01000000, (*Response).TLSForGPFile},
+	{"kXR_tlsData", 0x02000000, (*Response).TLSForData},
 	{"kXR_tlsLogin", 0x04000000, (*Response).TLSForLogin},
 	{"kXR_tlsSess", 0x08000000, (*Response).TLSForSession},
 	{"kXR_tlsTPC", 0x10000000, (*Response).TLSForTPC},
-	{"kXR_tlsGPFA", 0x20000000, nil},
+	{"kXR_tlsGPFA", 0x20000000, (*Response).TLSForAnonGPFile},
 }
 
 func TestConformance_TLSFlagBitsMatchTheSpecification(t *testing.T) {
@@ -38,12 +38,15 @@ func TestConformance_TLSFlagBitsMatchTheSpecification(t *testing.T) {
 	}{
 		{"kXR_haveTLS", flagHaveTLS, 0x80000000},
 		{"kXR_gotoTLS", flagGotoTLS, 0x40000000},
-		{"kXR_tlsData", flagTLSData, 0x01000000},
-		{"kXR_tlsGPF", flagTLSGPF, 0x02000000},
+		{"kXR_tlsGPF", flagTLSGPF, 0x01000000},
+		{"kXR_tlsData", flagTLSData, 0x02000000},
 		{"kXR_tlsLogin", flagTLSLogin, 0x04000000},
 		{"kXR_tlsSess", flagTLSSess, 0x08000000},
 		{"kXR_tlsTPC", flagTLSTPC, 0x10000000},
 		{"kXR_tlsGPFA", flagTLSGPFA, 0x20000000},
+		{"kXR_tlsAny", flagTLSAny, 0x1F000000},
+		{"kXR_supgpf", flagSupGPF, 0x00400000},
+		{"kXR_anongpf", flagAnonGPF, 0x00800000},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s is %#x, want %#x", tc.name, tc.got, tc.want)
@@ -59,15 +62,9 @@ func TestConformance_TLSFlagBitsMatchTheSpecification(t *testing.T) {
 // connection it believes the server asked it to encrypt and did not.
 func TestConformance_EveryTLSCapabilityIsReadFromItsOwnBit(t *testing.T) {
 	for _, set := range tlsFlags {
-		if set.got == nil {
-			continue // no accessor: gpfile is not a surface this client has.
-		}
 		t.Run(set.name, func(t *testing.T) {
 			resp := &Response{Flags: Flags(int32(set.bit))}
 			for _, read := range tlsFlags {
-				if read.got == nil {
-					continue
-				}
 				want := read.name == set.name
 				if got := read.got(resp); got != want {
 					t.Errorf("with only %s set, %s reports %v, want %v", set.name, read.name, got, want)
@@ -122,6 +119,72 @@ func TestConformance_ResponseRoundTripsWithItsSecurityTrailer(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("round trip changed the response:\ngot = %+v\nwant= %+v", got, want)
+			}
+		})
+	}
+}
+
+// TestConformance_TLSForAnythingIsEveryBitThatNamesWork sets one flag at a time
+// and asks whether the connection needs TLS at all.
+//
+// kXR_tlsAny is what a client checks before it decides to dial plain TCP, and
+// it covers the bits that say what the work on the connection requires — not
+// kXR_haveTLS, which says only that the server could encrypt if asked, and not
+// kXR_gotoTLS, which is an instruction for this connection rather than a
+// requirement of a request. Folding either of those in would make every
+// TLS-capable server look like one that demands TLS.
+//
+// kXR_tlsGPFA is outside it too, and that is the mask the servers publish
+// rather than a choice made here: it qualifies kXR_tlsGPF for unauthenticated
+// callers, and on its own it asks nothing of a session that never sends the
+// request it qualifies.
+func TestConformance_TLSForAnythingIsEveryBitThatNamesWork(t *testing.T) {
+	for _, tc := range tlsFlags {
+		t.Run(tc.name, func(t *testing.T) {
+			want := tc.name != "kXR_haveTLS" && tc.name != "kXR_gotoTLS" && tc.name != "kXR_tlsGPFA"
+			resp := &Response{Flags: Flags(int32(tc.bit))}
+			if got := resp.TLSForAnything(); got != want {
+				t.Fatalf("with only %s set, TLSForAnything() = %v, want %v", tc.name, got, want)
+			}
+		})
+	}
+
+	if resp := (&Response{}); resp.TLSForAnything() {
+		t.Fatal("a server that asked for nothing reports that it needs TLS")
+	}
+}
+
+// TestConformance_GPFileCapabilitiesAreReadFromTheirOwnBits covers the two bits
+// that advertise kXR_gpfile.
+//
+// This client does not send that request — it was retired in XRootD v5 and no
+// server here answers it — but the bits still have to be read from the right
+// place: they sit in the same word as the TLS flags, and an accessor reading a
+// neighbour would report a server as requiring TLS for a session because it
+// happened to advertise a request nobody sends.
+func TestConformance_GPFileCapabilitiesAreReadFromTheirOwnBits(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		bit  uint32
+		got  func(*Response) bool
+		twin func(*Response) bool
+	}{
+		{"kXR_supgpf", flagSupGPF, (*Response).SupportsGPFile, (*Response).AllowsAnonGPFile},
+		{"kXR_anongpf", flagAnonGPF, (*Response).AllowsAnonGPFile, (*Response).SupportsGPFile},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &Response{Flags: Flags(int32(tc.bit))}
+			if !tc.got(resp) {
+				t.Fatalf("with %s set, it reports false", tc.name)
+			}
+			if tc.twin(resp) {
+				t.Fatalf("with only %s set, the other gpfile capability reports true", tc.name)
+			}
+			if resp.TLSForAnything() {
+				t.Fatalf("%s made the server look like one that requires TLS", tc.name)
+			}
+			if got := (&Response{}); tc.got(got) {
+				t.Fatalf("a server that advertised nothing reports %s", tc.name)
 			}
 		})
 	}

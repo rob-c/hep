@@ -25,7 +25,7 @@ func TestResponseTLSAccessors(t *testing.T) {
 		kXRhaveTLS  = 0x80000000
 		kXRgotoTLS  = 0x40000000
 		kXRtlsLogin = 0x04000000
-		kXRtlsData  = 0x01000000
+		kXRtlsData  = 0x02000000
 	)
 	// The conversion goes through a uint32 variable: kXR_haveTLS occupies the
 	// sign bit, so a direct constant conversion to int32 would not compile.

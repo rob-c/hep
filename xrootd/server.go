@@ -16,6 +16,7 @@ import (
 
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/handshake"
 	"go-hep.org/x/hep/xrootd/xrdproto/login"
@@ -379,6 +380,20 @@ func (s *Server) handleRequest(sessionID [16]byte, requestID uint16, rBuffer *xr
 			return newUnmarshalingErrorResponse(err)
 		}
 		return s.handler.RemoveDir(sessionID, &request)
+	case clone.RequestID:
+		var request clone.Request
+		err := request.UnmarshalXrd(rBuffer)
+		if err != nil {
+			return newUnmarshalingErrorResponse(err)
+		}
+		handler, ok := s.handler.(CloneHandler)
+		if !ok {
+			return xrdproto.ServerError{
+				Code:    xrdproto.Unsupported,
+				Message: "clone is not supported by this server",
+			}, xrdproto.Error
+		}
+		return handler.Clone(sessionID, &request)
 	default:
 		response := xrdproto.ServerError{
 			Code:    xrdproto.InvalidRequest,

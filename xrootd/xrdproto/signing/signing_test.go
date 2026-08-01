@@ -21,6 +21,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdproto/chkpoint"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
@@ -93,6 +94,10 @@ func signCases() []struct {
 		// those are: an unsigned kXR_ckpXeq would be a way to make exactly the
 		// modifications this level exists to authenticate.
 		{"chkpoint", &chkpoint.Request{Handle: signHandle, SubCode: chkpoint.Begin}, xrdproto.Intense},
+		// A clone writes to a file too, and the list it carries is the whole of
+		// what it writes: an unsigned clone could be rewritten in flight to
+		// point at a range of a file the sender never asked to read.
+		{"clone", clone.NewRequest(signHandle, []clone.Item{{Src: signHandle, SrcLength: 1}}), xrdproto.Intense},
 
 		// Metadata disclosure.
 		{"dirlist", &dirlist.Request{Path: signPath}, xrdproto.Pedantic},

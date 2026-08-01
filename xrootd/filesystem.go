@@ -45,6 +45,23 @@ func (fs *fileSystem) Dirlist(ctx context.Context, path string) ([]xrdfs.EntrySt
 	return resp.Entries, err
 }
 
+// DirlistChecksum implements xrdfs.ChecksumDirFS.
+func (fs *fileSystem) DirlistChecksum(ctx context.Context, dir, algo string) ([]xrdfs.EntryStat, error) {
+	var resp dirlist.Response
+	_, err := fs.c.Send(ctx, &resp, dirlist.NewChecksumRequest(dir, algo))
+	if err != nil {
+		return nil, err
+	}
+	if !resp.WithChecksum && len(resp.Entries) != 0 {
+		// kXR_dcksm is an option, and an option a server does not know is one
+		// it ignores: the listing arrives, correct and checksumless. Saying so
+		// is the point — a caller that took this for an answer would compare
+		// every file against an empty digest.
+		return resp.Entries, fmt.Errorf("xrootd: server did not return checksums for %q", dir)
+	}
+	return resp.Entries, nil
+}
+
 // Open returns the file handle for a file together with the compression and the stat info.
 func (fs *fileSystem) Open(ctx context.Context, path string, mode xrdfs.OpenMode, options xrdfs.OpenOptions) (xrdfs.File, error) {
 	var resp open.Response

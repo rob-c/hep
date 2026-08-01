@@ -6,6 +6,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/login"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
@@ -77,4 +78,17 @@ type Handler interface {
 
 	// RemoveDir handles the XRootD rmdir request: http://xrootd.org/doc/dev45/XRdv310.htm#_Toc464248844.
 	RemoveDir(sessionID [16]byte, request *rmdir.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus)
+}
+
+// CloneHandler is implemented by Handlers that can copy byte ranges from one
+// open file into another without sending the data to the client (kXR_clone).
+//
+// It is not part of Handler because it cannot be: Handler is the interface every
+// server in every program using this package already implements, and a method
+// added to it breaks all of them. A Handler that does not implement this is
+// answered kXR_Unsupported, which is what the protocol has for "this server does
+// not do that" and what a client is written to expect.
+type CloneHandler interface {
+	// Clone handles the XRootD clone request.
+	Clone(sessionID [16]byte, request *clone.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus)
 }
