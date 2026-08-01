@@ -15,12 +15,27 @@ import (
 	"go-hep.org/x/hep/xrootd/internal/s3cred"
 )
 
+// Credentials is a resolved S3 access-key/secret pair, as accepted by [New].
+//
+// It is an alias for the type the resolver returns, so that a caller outside
+// this module can name and build one: the resolver itself lives in an internal
+// package and cannot be imported.
+type Credentials = s3cred.Credentials
+
+// Provider resolves S3 credentials. AccessKey and Secret, when both set, take
+// precedence over the environment and the AWS shared credentials file.
+//
+// Provider{}.Resolve returns the first complete pair from, in order: the
+// explicit fields; $AWS_ACCESS_KEY_ID and $AWS_SECRET_ACCESS_KEY; the [default]
+// profile of ~/.aws/credentials.
+type Provider = s3cred.Provider
+
 // Client accesses objects in a single S3 bucket using AWS Signature Version 4.
 type Client struct {
 	endpoint string // scheme://host[:port] of the S3 service
 	bucket   string
 	region   string
-	creds    s3cred.Credentials
+	creds    Credentials
 	http     *http.Client
 	now      func() time.Time // overridable for tests
 }
@@ -41,7 +56,7 @@ func WithRegion(region string) Option {
 
 // New creates an S3 client for bucket at endpoint (e.g.
 // "https://s3.example.org") using the resolved credentials.
-func New(endpoint, bucket string, creds s3cred.Credentials, opts ...Option) *Client {
+func New(endpoint, bucket string, creds Credentials, opts ...Option) *Client {
 	c := &Client{
 		endpoint: strings.TrimRight(endpoint, "/"),
 		bucket:   bucket,
