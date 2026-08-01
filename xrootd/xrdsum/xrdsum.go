@@ -3,13 +3,16 @@
 // license that can be found in the LICENSE file.
 
 // Package xrdsum provides the checksum algorithms used by the XRootD
-// protocol and its tooling: adler32, crc32c (RFC 7143), crc64 (CRC-64/XZ)
-// and md5. The names accepted by Sum match the algorithm names XRootD
-// servers report for kXR_Qcksum queries.
+// protocol and its tooling: adler32, crc32 (IEEE), crc32c (RFC 7143),
+// crc64 (CRC-64/XZ), md5, sha1 and sha256. The names accepted by Sum match
+// the algorithm names XRootD servers report for kXR_Qcksum queries and accept
+// as the cks.type parameter of a kXR_dcksm listing.
 package xrdsum // import "go-hep.org/x/hep/xrootd/xrdsum"
 
 import (
 	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
 	"fmt"
 	"hash/adler32"
 	"hash/crc32"
@@ -28,26 +31,42 @@ func CRC32C(p []byte) uint32 { return crc32.Checksum(p, crc32cTable) }
 // Adler32 returns the adler32 checksum of p.
 func Adler32(p []byte) uint32 { return adler32.Checksum(p) }
 
+// CRC32 returns the CRC-32 (IEEE) checksum of p, the digest servers report as
+// plain "crc32". It is not the same polynomial as [CRC32C].
+func CRC32(p []byte) uint32 { return crc32.ChecksumIEEE(p) }
+
 // CRC64 returns the CRC-64/XZ checksum of p (ECMA polynomial, reflected),
 // the digest the reference C client reports as "crc64".
 func CRC64(p []byte) uint64 { return crc64.Checksum(p, crc64Table) }
 
 // Sum returns the lower-case hexadecimal digest of p under the named
-// algorithm: "adler32", "crc32c", "crc64" or "md5".
+// algorithm, one of those listed by [Supported].
+//
+// The 32-bit checksums are written in eight hexadecimal digits and the 64-bit
+// one in sixteen, zero-padded: a digest that dropped its leading zeros would
+// compare unequal to the same digest computed by any other client.
 func Sum(algo string, p []byte) (string, error) {
 	switch algo {
 	case "adler32":
 		return fmt.Sprintf("%08x", Adler32(p)), nil
+	case "crc32":
+		return fmt.Sprintf("%08x", CRC32(p)), nil
 	case "crc32c":
 		return fmt.Sprintf("%08x", CRC32C(p)), nil
 	case "crc64":
 		return fmt.Sprintf("%016x", CRC64(p)), nil
 	case "md5":
 		return fmt.Sprintf("%x", md5.Sum(p)), nil
+	case "sha1":
+		return fmt.Sprintf("%x", sha1.Sum(p)), nil
+	case "sha256":
+		return fmt.Sprintf("%x", sha256.Sum256(p)), nil
 	default:
 		return "", fmt.Errorf("xrootd: unsupported checksum algorithm %q", algo)
 	}
 }
 
 // Supported lists the algorithm names accepted by Sum, sorted.
-func Supported() []string { return []string{"adler32", "crc32c", "crc64", "md5"} }
+func Supported() []string {
+	return []string{"adler32", "crc32", "crc32c", "crc64", "md5", "sha1", "sha256"}
+}

@@ -17,6 +17,7 @@ import (
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
 	"go-hep.org/x/hep/xrootd/xrdproto/mv"
@@ -29,6 +30,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/truncate"
 	"go-hep.org/x/hep/xrootd/xrdproto/write"
 	"go-hep.org/x/hep/xrootd/xrdproto/xrdclose"
+	"go-hep.org/x/hep/xrootd/xrdsum"
 )
 
 // fshandler implements server.Handler API by making request to the backing filesystem at basePath.
@@ -129,13 +131,35 @@ func osError(err error) xrdproto.ServerError {
 
 // Dirlist implements server.Handler.Dirlist.
 func (h *fshandler) Dirlist(sessionID [16]byte, request *dirlist.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
-	files, err := os.ReadDir(h.realPath(request.Path))
+	// A checksum listing is a stat listing: the digest is appended to the stat
+	// line, so a request that asked for kXR_dcksm alone is answered as though
+	// it had asked for kXR_dstat too.
+	withCksum := request.Options&dirlist.WithChecksum != 0
+	algo := dirlist.DefaultChecksumAlgo
+	if withCksum {
+		var err error
+		algo, err = dirlist.ChecksumAlgo(request.Path)
+		if err != nil {
+			// The reference server refuses the whole listing rather than
+			// answering with a digest nobody asked for: a caller comparing
+			// sha256 against an adler32 it was silently given would find every
+			// file corrupt.
+			return xrdproto.ServerError{
+				Code:    xrdproto.InternalServerError,
+				Message: err.Error(),
+			}, xrdproto.Error
+		}
+	}
+
+	dir := h.realPath(request.Path)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return osError(err), xrdproto.Error
 	}
 
 	resp := &dirlist.Response{
-		WithStatInfo: request.Options&dirlist.WithStatInfo != 0,
+		WithStatInfo: request.Options&dirlist.WithStatInfo != 0 || withCksum,
+		WithChecksum: withCksum,
 		Entries:      make([]xrdfs.EntryStat, 0, len(files)),
 	}
 
@@ -144,12 +168,43 @@ func (h *fshandler) Dirlist(sessionID [16]byte, request *dirlist.Request) (xrdpr
 		if err != nil {
 			return osError(err), xrdproto.Error
 		}
-		entry := xrdfs.EntryStatFrom(info)
+		var entry xrdfs.EntryStat
+		switch {
+		case withCksum:
+			entry = xrdfs.EntryStatExtendedFrom(info)
+			entry.Checksum = algo + ":" + h.checksum(path.Join(dir, info.Name()), info, algo)
+		default:
+			entry = xrdfs.EntryStatFrom(info)
+		}
 		entry.HasStatInfo = resp.WithStatInfo
 		resp.Entries = append(resp.Entries, entry)
 	}
 
 	return resp, xrdproto.Ok
+}
+
+// checksum returns the hexadecimal digest of the named file under algo, or
+// "none" for an entry that cannot have one: a directory, something that is
+// neither a file nor a directory, or a file this server could not read.
+//
+// A listing is not failed over one unreadable entry. The client asked what is
+// in the directory, and answering "everything except the one file whose
+// permissions are wrong" would hide the rest of the directory behind it.
+func (h *fshandler) checksum(name string, info os.FileInfo, algo string) string {
+	const none = "none"
+
+	if !info.Mode().IsRegular() {
+		return none
+	}
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return none
+	}
+	sum, err := xrdsum.Sum(algo, data)
+	if err != nil {
+		return none
+	}
+	return sum
 }
 
 // Open implements server.Handler.Open.
@@ -348,6 +403,89 @@ func (h *fshandler) Write(sessionID [16]byte, request *write.Request) (xrdproto.
 	}
 
 	return nil, xrdproto.Ok
+}
+
+// Clone implements CloneHandler.Clone.
+func (h *fshandler) Clone(sessionID [16]byte, request *clone.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+	dst := h.getFile(sessionID, request.Dst)
+	if dst == nil {
+		return xrdproto.ServerError{
+			Code:    xrdproto.InvalidRequest,
+			Message: fmt.Sprintf("Invalid file handle: %v", request.Dst),
+		}, xrdproto.Error
+	}
+	switch {
+	case len(request.Items) == 0:
+		return xrdproto.ServerError{
+			Code:    xrdproto.ArgMissing,
+			Message: "clone list is missing",
+		}, xrdproto.Error
+	case len(request.Items) > clone.MaxItems:
+		return xrdproto.ServerError{
+			Code:    xrdproto.ArgTooLong,
+			Message: "too many clone items",
+		}, xrdproto.Error
+	}
+
+	// The whole list is checked before any of it is copied. A clone is not
+	// atomic, so a range that is refused half-way through leaves the earlier
+	// ranges in the destination: the ones that can be refused before anything
+	// has moved are refused there.
+	srcs := make([]*srvFile, len(request.Items))
+	for i, item := range request.Items {
+		if err := item.Validate(); err != nil {
+			return xrdproto.ServerError{
+				Code:    xrdproto.ArgInvalid,
+				Message: "clone offset/length out of range",
+			}, xrdproto.Error
+		}
+		srcs[i] = h.getFile(sessionID, item.Src)
+		if srcs[i] == nil {
+			return xrdproto.ServerError{
+				Code:    xrdproto.InvalidRequest,
+				Message: fmt.Sprintf("Invalid file handle: %v", item.Src),
+			}, xrdproto.Error
+		}
+	}
+
+	for i, item := range request.Items {
+		if item.SrcLength == 0 {
+			// An empty range copies nothing, and is not the caller's mistake.
+			continue
+		}
+		if err := copyRange(dst, srcs[i], item); err != nil {
+			return xrdproto.ServerError{
+				Code:    xrdproto.IOError,
+				Message: "clone copy failed",
+			}, xrdproto.Error
+		}
+	}
+
+	return &clone.Response{}, xrdproto.Ok
+}
+
+// copyRange copies one range of a clone request between two open files.
+func copyRange(dst, src *srvFile, item clone.Item) error {
+	const chunk = 1 << 20
+
+	for done := int64(0); done < item.SrcLength; {
+		n := min(item.SrcLength-done, chunk)
+		buf := make([]byte, n)
+		read, err := src.ReadAt(buf, item.SrcOffset+done)
+		if read > 0 {
+			if _, err := dst.WriteAt(buf[:read], item.DstOffset+done); err != nil {
+				return err
+			}
+			done += int64(read)
+		}
+		if err != nil {
+			// A source range that runs past the end of its file is short, and a
+			// short clone is a failed one: the destination would be left with a
+			// hole where the caller expects data.
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *fshandler) getFile(sessionID [16]byte, handle xrdfs.FileHandle) *srvFile {

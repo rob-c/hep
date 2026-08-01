@@ -70,12 +70,24 @@ const (
 const (
 	flagHaveTLS  uint32 = 0x80000000 // server supports in-protocol TLS (kXR_haveTLS)
 	flagGotoTLS  uint32 = 0x40000000 // server requires switching to TLS now (kXR_gotoTLS)
-	flagTLSData  uint32 = 0x01000000 // TLS required for the data stream (kXR_tlsData)
-	flagTLSGPF   uint32 = 0x02000000 // TLS required for gpfile (kXR_tlsGPF)
+	flagTLSGPF   uint32 = 0x01000000 // TLS required for gpfile (kXR_tlsGPF)
+	flagTLSData  uint32 = 0x02000000 // TLS required for the data stream (kXR_tlsData)
 	flagTLSLogin uint32 = 0x04000000 // TLS required for login (kXR_tlsLogin)
 	flagTLSSess  uint32 = 0x08000000 // TLS required for the session (kXR_tlsSess)
 	flagTLSTPC   uint32 = 0x10000000 // TLS required for third-party copy (kXR_tlsTPC)
 	flagTLSGPFA  uint32 = 0x20000000 // TLS required for anonymous gpfile (kXR_tlsGPFA)
+
+	// flagTLSAny is every bit that names a phase or a request kind needing TLS
+	// (kXR_tlsAny). It deliberately leaves out kXR_haveTLS and kXR_gotoTLS,
+	// which say what the connection can and must do rather than what the work
+	// on it requires.
+	flagTLSAny uint32 = 0x1F000000
+)
+
+// Capability bits carried in the protocol response Flags word.
+const (
+	flagSupGPF  uint32 = 0x00400000 // server supports Grouped Parallel Fetch (kXR_supgpf)
+	flagAnonGPF uint32 = 0x00800000 // GPF is open to unauthenticated clients (kXR_anongpf)
 )
 
 // Request holds protocol request parameters.
@@ -198,6 +210,34 @@ func (resp *Response) TLSForSession() bool { return resp.flagBits()&flagTLSSess 
 
 // TLSForTPC reports whether TLS is required for third-party copy (kXR_tlsTPC).
 func (resp *Response) TLSForTPC() bool { return resp.flagBits()&flagTLSTPC != 0 }
+
+// TLSForGPFile reports whether TLS is required for gpfile requests (kXR_tlsGPF).
+func (resp *Response) TLSForGPFile() bool { return resp.flagBits()&flagTLSGPF != 0 }
+
+// TLSForAnonGPFile reports whether TLS is required for gpfile requests made by
+// unauthenticated clients (kXR_tlsGPFA).
+func (resp *Response) TLSForAnonGPFile() bool { return resp.flagBits()&flagTLSGPFA != 0 }
+
+// TLSForAnything reports whether the server asks for TLS around any phase or
+// request kind at all (kXR_tlsAny). A client that speaks no TLS learns from
+// this in one test that it is going to be turned away eventually, rather than
+// finding out one request at a time.
+func (resp *Response) TLSForAnything() bool { return resp.flagBits()&flagTLSAny != 0 }
+
+// SupportsGPFile reports whether the server offers Grouped Parallel Fetch
+// (kXR_supgpf).
+//
+// The request itself, kXR_gpfile, was retired in XRootD v5 and this client does
+// not send it; see [go-hep.org/x/hep/xrootd/xrdproto/gpfile]. The flag is still
+// read because a server that sets it is telling the truth about itself, and
+// because a caller comparing this client's view of a server against another's
+// needs to see the same bits.
+func (resp *Response) SupportsGPFile() bool { return resp.flagBits()&flagSupGPF != 0 }
+
+// AllowsAnonGPFile reports whether Grouped Parallel Fetch is open to
+// unauthenticated clients (kXR_anongpf). It is meaningless without
+// [Response.SupportsGPFile].
+func (resp *Response) AllowsAnonGPFile() bool { return resp.flagBits()&flagAnonGPF != 0 }
 
 // NeedsTLS reports whether the client must upgrade the connection to TLS before
 // login. This is true when the server mandates it (kXR_gotoTLS) or when the

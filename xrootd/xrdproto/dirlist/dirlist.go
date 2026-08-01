@@ -10,10 +10,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdproto"
+	"go-hep.org/x/hep/xrootd/xrdsum"
 )
 
 // RequestID is the id of the request, it is sent as part of message.
@@ -26,6 +29,12 @@ const RequestID uint16 = 3004
 type Response struct {
 	Entries      []xrdfs.EntryStat
 	WithStatInfo bool
+
+	// WithChecksum reports whether the entries carry a checksum, which is what
+	// a server answering kXR_dcksm sends. It is set from what actually arrived
+	// rather than from what was asked for: a server that does not know the
+	// option answers an ordinary listing, and this is where that shows.
+	WithChecksum bool
 }
 
 // RespID implements xrdproto.Response.RespID.
@@ -130,6 +139,7 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	lines = lines[2:]
 	o.Entries = make([]xrdfs.EntryStat, len(lines)/2)
 	o.WithStatInfo = true
+	o.WithChecksum = false
 
 	for i := 0; i < len(lines); i += 2 {
 		var rbuf = xrdenc.NewRBuffer(lines[i+1])
@@ -138,6 +148,9 @@ func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 			return err
 		}
 		o.Entries[i/2].EntryName = string(lines[i])
+		if o.Entries[i/2].Checksum != "" {
+			o.WithChecksum = true
+		}
 	}
 
 	return rBuffer.Err()
@@ -155,12 +168,69 @@ type RequestOptions byte
 
 const (
 	None         RequestOptions = 0 // None specifies that no addition information except entry names is required.
-	WithStatInfo RequestOptions = 2 // WithStatInfo specifies that stat information for every entry is required.
+	Online       RequestOptions = 1 // Online specifies that only entries whose data is on disk should be returned. Wire value kXR_online.
+	WithStatInfo RequestOptions = 2 // WithStatInfo specifies that stat information for every entry is required. Wire value kXR_dstat.
+
+	// WithChecksum specifies that a checksum for every entry is required, next
+	// to its stat information. Wire value kXR_dcksm.
+	//
+	// A checksum listing is a stat listing too: the digest is appended to the
+	// stat line, so there is nowhere to put it in a reply that carries no stat
+	// information. Servers act as though WithStatInfo had been asked for as
+	// well, and [NewChecksumRequest] sends both.
+	WithChecksum RequestOptions = 4
 )
 
 // NewRequest forms a Request according to provided path.
 func NewRequest(path string) *Request {
 	return &Request{Options: WithStatInfo, Path: path}
+}
+
+// DefaultChecksumAlgo is the digest a server computes for a checksum listing
+// that does not name one.
+const DefaultChecksumAlgo = "adler32"
+
+// NewChecksumRequest forms a Request that asks for a checksum next to the stat
+// information of every entry.
+//
+// algo names the digest — "adler32", "crc32", "crc32c", "md5", "sha1" and
+// "sha256" are what servers are known to offer — and is passed as the cks.type
+// CGI parameter of the path, which is the only place the protocol leaves for
+// it. An empty algo asks for nothing in particular and gets
+// [DefaultChecksumAlgo]; a server that cannot compute what was asked for
+// refuses the whole listing rather than answering with a different digest.
+//
+// Every entry costs the server a read of the whole file it names, so this is a
+// request to make of a directory, not of a tree.
+func NewChecksumRequest(path, algo string) *Request {
+	if algo != "" {
+		path = xrdproto.WithOpaque(path, checksumKey+algo)
+	}
+	return &Request{Options: WithStatInfo | WithChecksum, Path: path}
+}
+
+// checksumKey is the CGI parameter that names the digest of a checksum listing.
+const checksumKey = "cks.type="
+
+// ChecksumAlgo returns the digest named by the cks.type parameter of path, or
+// [DefaultChecksumAlgo] if it names none. It is what a server calls to find out
+// what a checksum listing was asked for.
+//
+// An algorithm this build cannot compute is an error, with the message the
+// reference server sends for it: answering with a different digest would be
+// worse than refusing, since the caller has no way to tell that the digest it
+// got is not the digest it asked about.
+func ChecksumAlgo(path string) (string, error) {
+	algo := DefaultChecksumAlgo
+	for _, field := range strings.Split(xrdproto.Opaque(path), "&") {
+		if name, ok := strings.CutPrefix(field, checksumKey); ok && name != "" {
+			algo = strings.ToLower(name)
+		}
+	}
+	if !slices.Contains(xrdsum.Supported(), algo) {
+		return "", fmt.Errorf("%s checksum not supported.", algo)
+	}
+	return algo, nil
 }
 
 // ReqID implements xrdproto.Request.ReqID.

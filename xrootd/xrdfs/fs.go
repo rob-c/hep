@@ -131,6 +131,24 @@ type ChecksumFS interface {
 	Checksum(ctx context.Context, path string) (algo, value string, err error)
 }
 
+// ChecksumDirFS is implemented by filesystems that can checksum a whole
+// directory in one request (kXR_dirlist with kXR_dcksm).
+//
+// It is separate from ChecksumFS because it is a different request with a
+// different cost: one round trip instead of one per file, and a server that
+// reads every file in the directory before it answers any of it. A caller that
+// wants the digest of a single file should ask ChecksumFS for that file.
+type ChecksumDirFS interface {
+	// DirlistChecksum lists dir with a checksum next to every entry.
+	//
+	// algo names the digest, "adler32", "md5", "sha256" and so on; an empty
+	// algo takes the server's default. Entries that cannot have a digest —
+	// subdirectories, and files the server could not read — come back with a
+	// [EntryStat.Checksum] whose value is "none" rather than being left out of
+	// the listing.
+	DirlistChecksum(ctx context.Context, dir, algo string) ([]EntryStat, error)
+}
+
 // ChecksumCancelFS is implemented by filesystems that can abandon a checksum
 // the server is still computing (query kXR_Qckscan).
 //

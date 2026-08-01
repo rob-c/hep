@@ -473,6 +473,25 @@ func SetOpaque(path *string, opaque string) {
 	*path = *path + "?" + opaque
 }
 
+// WithOpaque returns path with kv added to the opaque data it already carries,
+// rather than in place of it.
+//
+// The opaque field is where a caller's authorization token lives, so a request
+// that needs a CGI parameter of its own — cks.type for a checksum listing, say
+// — has to add to that field and not replace it: a path that arrives at the
+// server with its token dropped is refused, and the refusal says nothing about
+// where the token went.
+func WithOpaque(path, kv string) string {
+	switch {
+	case !strings.Contains(path, "?"):
+		return path + "?" + kv
+	case strings.HasSuffix(path, "?"), strings.HasSuffix(path, "&"):
+		return path + kv
+	default:
+		return path + "&" + kv
+	}
+}
+
 // Opaque returns opaque data from provided path.
 // A path that carries no "?" carries no opaque data, and Opaque returns "".
 func Opaque(path string) string {

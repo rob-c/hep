@@ -11,6 +11,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
 	"go-hep.org/x/hep/xrootd/xrdproto/chkpoint"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/fattr"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
@@ -86,6 +87,10 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 		// are: an unsigned checkpoint would be a way to make exactly the
 		// modifications this level exists to authenticate.
 		sr.requirements[chkpoint.RequestID] = xrdproto.SignNeeded
+		// A clone writes to a file too, and its payload is the whole of what it
+		// writes: an unsigned clone list could be rewritten in flight to point
+		// at a different range of a file the sender never asked to read.
+		sr.requirements[clone.RequestID] = xrdproto.SignNeeded
 		sr.requirements[pgwrite.RequestID] = xrdproto.SignNeeded
 		sr.requirements[xrdclose.RequestID] = xrdproto.SignNeeded
 		sr.requirements[verifyw.RequestID] = xrdproto.SignNeeded

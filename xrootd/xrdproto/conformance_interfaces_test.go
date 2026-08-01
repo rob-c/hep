@@ -27,6 +27,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
 	"go-hep.org/x/hep/xrootd/xrdproto/bind"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
+	"go-hep.org/x/hep/xrootd/xrdproto/clone"
 	"go-hep.org/x/hep/xrootd/xrdproto/decrypt"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/endsess"
@@ -78,6 +79,7 @@ func confSignCases() []confSignCase {
 		{"auth", &auth.Request{}, false},
 		{"bind", &bind.Request{}, false},
 		{"chmod", &chmod.Request{}, false},
+		{"clone", &clone.Request{}, false},
 		{"decrypt", &decrypt.Request{}, false},
 		{"dirlist", &dirlist.Request{}, false},
 		{"endsess", &endsess.Request{}, false},
