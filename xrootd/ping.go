@@ -12,7 +12,5 @@ import (
 
 // Ping determines whether the server is still alive.
 func (sess *cliSession) Ping(ctx context.Context) error {
-	_, err := sess.Send(ctx, nil, &ping.Request{})
-	// TODO: should we react somehow to redirection?
-	return err
+	return sess.sendHere(ctx, nil, &ping.Request{})
 }

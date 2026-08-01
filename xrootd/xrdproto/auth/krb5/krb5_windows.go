@@ -14,12 +14,20 @@ import (
 	"strings"
 )
 
-const configPath = `c:\winnt\krb5.ini`
+// configCandidates lists where a Kerberos configuration is kept when
+// $KRB5_CONFIG does not say, most likely first.
+var configCandidates = []string{
+	`c:\winnt\krb5.ini`,
+	`c:\windows\krb5.ini`,
+	`c:\ProgramData\MIT\Kerberos5\krb5.ini`,
+}
 
 func cachePath() string {
-	// FIXME: ask people for the popular windows krb5 client and use its cache path.
-	// MIT krb5 lacks fresh windows builds IIUC.
-	// As for now, hope that either KRB5CCNAME or %TEMP%\krb5cc_{uid} will work.
+	// Windows has no agreed-upon cache location the way Unix does: Kerberos
+	// for Windows keeps its cache behind an API rather than in a file, and
+	// MIT ships no current build. KRB5CCNAME is therefore the supported way
+	// to point this client at a cache on Windows, with the Unix convention
+	// under %TEMP% as the only fallback worth guessing.
 	if v := os.Getenv("KRB5CCNAME"); v != "" {
 		if strings.HasPrefix(v, "FILE:") {
 			v = string(v[len("FILE:"):])

@@ -249,15 +249,188 @@ func TestConformance_APathTheFilesystemRefusesIsAnIOError(t *testing.T) {
 	}
 }
 
-func TestConformance_AVirtualStatIsRefusedRatherThanAnswered(t *testing.T) {
-	// kXR_statx with kXR_vfs asks for space accounting this handler does not
-	// keep. Answering it with an ordinary stat would report a file's size as the
-	// free space of the storage element, and a client sizing a transfer against
-	// that would fill the disk.
-	h, _ := fsHandler(t)
+func TestConformance_AVirtualStatDescribesTheDiskNotTheFile(t *testing.T) {
+	// kXR_stat with kXR_vfs asks how much room the storage element has. An
+	// ordinary stat answer would report a file's size as the free space, and a
+	// client sizing a transfer against that would fill the disk.
+	//
+	// The answer has to come from the filesystem the writes land on, so a path,
+	// a handle and no name at all must all describe the same disk.
+	h, dir := fsHandler(t)
 
-	resp, status := h.Stat(confSessionID, &stat.Request{Path: "/", Options: stat.OptionsVFS})
-	fsRefused(t, resp, status, xrdproto.InvalidRequest, "not implemented")
+	if err := os.WriteFile(filepath.Join(dir, "file.bin"), []byte("data"), 0644); err != nil {
+		t.Fatalf("could not write the file: %v", err)
+	}
+	handle := fsOpen(t, h, confSessionID, "/file.bin", xrdfs.OpenOptionsOpenRead)
+
+	for _, tc := range []struct {
+		name string
+		req  *stat.Request
+	}{
+		{"the export as a whole", &stat.Request{Options: stat.OptionsVFS}},
+		{"a path", &stat.Request{Path: "/file.bin", Options: stat.OptionsVFS}},
+		{"an open file", &stat.Request{FileHandle: handle, Options: stat.OptionsVFS}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, status := h.Stat(confSessionID, tc.req)
+			if status != xrdproto.Ok {
+				t.Fatalf("a virtual stat was refused: %v", resp)
+			}
+			vfs, ok := resp.(xrdfs.VirtualFSStat)
+			if !ok {
+				t.Fatalf("a virtual stat was answered with %T, want an xrdfs.VirtualFSStat", resp)
+			}
+			if vfs.NumberRW != 1 {
+				t.Fatalf("the server reports %d nodes with writable space, want itself (1)", vfs.NumberRW)
+			}
+			if vfs.FreeRW <= 0 {
+				t.Fatalf("the server reports %d MB free on a disk it just wrote to", vfs.FreeRW)
+			}
+			if vfs.UtilizationRW < 0 || vfs.UtilizationRW > 100 {
+				t.Fatalf("the server reports %d%% utilization, which is not a percentage", vfs.UtilizationRW)
+			}
+			// Nothing here fetches a file from tape, and a client told
+			// otherwise would wait for a stage that will never be scheduled.
+			if vfs.NumberStaging != 0 || vfs.FreeStaging != 0 || vfs.UtilizationStaging != 0 {
+				t.Fatalf("the server claims staging space it does not have: %+v", vfs)
+			}
+		})
+	}
+
+	t.Run("a path that is not there is refused", func(t *testing.T) {
+		// The filesystem cannot say how much room a disk it cannot find has,
+		// and a client told zero would route every write somewhere else.
+		resp, status := h.Stat(confSessionID, &stat.Request{Path: "/nowhere/at/all", Options: stat.OptionsVFS})
+		fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
+	})
+
+	t.Run("an unknown handle is still refused", func(t *testing.T) {
+		resp, status := h.Stat(confSessionID, &stat.Request{
+			FileHandle: xrdfs.FileHandle{0xff, 0xff, 0xff, 0xff},
+			Options:    stat.OptionsVFS,
+		})
+		fsRefused(t, resp, status, xrdproto.InvalidRequest, "Invalid file handle")
+	})
+}
+
+func TestConformance_HandlesAreIssuedInOrderAndNeverReused(t *testing.T) {
+	// A handle names server state, and a server that guesses at one can collide
+	// with a live file: the second open wins and the first caller's reads and
+	// writes silently move to another file. Handing them out in order cannot
+	// collide, and a closed handle is not offered again to the same session,
+	// so a request that arrives late is refused rather than answered about a
+	// file that took its number.
+	h, dir := fsHandler(t)
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0644); err != nil {
+			t.Fatalf("could not write the file: %v", err)
+		}
+	}
+
+	var handles []xrdfs.FileHandle
+	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
+		handles = append(handles, fsOpen(t, h, confSessionID, "/"+name, xrdfs.OpenOptionsOpenRead))
+	}
+
+	want := []xrdfs.FileHandle{{0, 0, 0, 1}, {0, 0, 0, 2}, {0, 0, 0, 3}}
+	if handles[0] != want[0] || handles[1] != want[1] || handles[2] != want[2] {
+		t.Fatalf("the handler issued %v, want %v", handles, want)
+	}
+
+	// The zero handle is what an uninitialized request carries, and no open
+	// may ever hand it out.
+	for _, handle := range handles {
+		if handle == (xrdfs.FileHandle{}) {
+			t.Fatal("the handler issued the zero handle")
+		}
+	}
+
+	if _, status := h.Close(confSessionID, &xrdclose.Request{Handle: handles[1]}); status != xrdproto.Ok {
+		t.Fatal("could not close the file")
+	}
+	next := fsOpen(t, h, confSessionID, "/b.bin", xrdfs.OpenOptionsOpenRead)
+	if next == handles[1] {
+		t.Fatalf("a closed handle %v was issued again", next)
+	}
+
+	// Four billion opens later the counter would repeat itself, and a repeated
+	// handle would silently move one caller's reads and writes onto another
+	// caller's file. The open is refused instead, and the file it had already
+	// opened is closed rather than leaked.
+	t.Run("the counter runs out rather than repeating itself", func(t *testing.T) {
+		exhausted := [16]byte{0xee}
+		fsOpen(t, h, exhausted, "/a.bin", xrdfs.OpenOptionsOpenRead)
+		h.mu.RLock()
+		sess := h.sessions[exhausted]
+		h.mu.RUnlock()
+		sess.mu.Lock()
+		sess.next = ^uint32(0)
+		sess.mu.Unlock()
+
+		resp, status := h.Open(exhausted, &open.Request{Path: "/a.bin", Options: xrdfs.OpenOptionsOpenRead})
+		fsRefused(t, resp, status, xrdproto.InvalidRequest, "handle limit exceeded")
+	})
+
+	// A second session numbers its own handles, because a handle is only ever
+	// looked up in the session that was given it.
+	other := [16]byte{0xaa}
+	if got := fsOpen(t, h, other, "/a.bin", xrdfs.OpenOptionsOpenRead); got != want[0] {
+		t.Fatalf("a fresh session started at handle %v, want %v", got, want[0])
+	}
+}
+
+func TestConformance_AnOpenReturnsTheFieldsItWasAskedFor(t *testing.T) {
+	// kXR_retstat exists so a client can open and stat in one round trip: a
+	// handler that withheld the stat when asked would cost an extra round trip
+	// per file on a workload that is millions of files, and one that sent it
+	// unasked would make the response longer than the client allocated for.
+	//
+	// The compression fields sit between the handle and the stat information on
+	// the wire, so a response carrying stat has to carry them too, whether or
+	// not the client asked about compression: every client reads the eight
+	// bytes past the handle as the page size and the algorithm name before it
+	// reads the stat record.
+	h, dir := fsHandler(t)
+	if err := os.WriteFile(filepath.Join(dir, "file.bin"), []byte("0123456789"), 0644); err != nil {
+		t.Fatalf("could not write the file: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name            string
+		opts            xrdfs.OpenOptions
+		wantCompression bool
+		wantStat        bool
+	}{
+		{"plain", xrdfs.OpenOptionsOpenRead, false, false},
+		{"kXR_retstat", xrdfs.OpenOptionsOpenRead | xrdfs.OpenOptionsReturnStatus, true, true},
+		{"kXR_compress", xrdfs.OpenOptionsOpenRead | xrdfs.OpenOptionsCompress, true, false},
+		{"both", xrdfs.OpenOptionsOpenRead | xrdfs.OpenOptionsCompress | xrdfs.OpenOptionsReturnStatus, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, status := h.Open(confSessionID, &open.Request{Path: "/file.bin", Options: tc.opts})
+			if status != xrdproto.Ok {
+				t.Fatalf("could not open the file: %v", resp)
+			}
+			got, ok := resp.(open.Response)
+			if !ok {
+				t.Fatalf("an open was answered with %T, want an open.Response", resp)
+			}
+			if (got.Compression != nil) != tc.wantCompression {
+				t.Fatalf("the response has compression %v, want present=%v", got.Compression, tc.wantCompression)
+			}
+			if (got.Stat != nil) != tc.wantStat {
+				t.Fatalf("the response has stat %v, want present=%v", got.Stat, tc.wantStat)
+			}
+			if tc.wantCompression && *got.Compression != (xrdfs.FileCompression{}) {
+				// The handler stores files as they were written. Naming an
+				// algorithm would have the client decompress plain bytes.
+				t.Fatalf("the handler claims compression %+v on a plain file", *got.Compression)
+			}
+			if tc.wantStat && got.Stat.Size() != 10 {
+				t.Fatalf("the response reports %d bytes, want 10", got.Stat.Size())
+			}
+		})
+	}
 }
 
 func TestConformance_OpenCreatesOnlyWhatItWasAskedTo(t *testing.T) {
@@ -341,67 +514,6 @@ func TestConformance_OpenCreatesOnlyWhatItWasAskedTo(t *testing.T) {
 			Path: "/x/y/new.bin", Mode: 0o644, Options: xrdfs.OpenOptionsNew,
 		})
 		fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
-	})
-}
-
-func TestConformance_OpenReturnsTheStatusOnlyWhenAsked(t *testing.T) {
-	// kXR_retstat exists so a client can open and stat in one round trip. If the
-	// handler sent the stat unasked the response would be longer than the client
-	// allocated for it, and if it withheld it when asked the client would stat
-	// again — one extra round trip per file, on a workload that is millions of
-	// files.
-	h, dir := fsHandler(t)
-	if err := os.WriteFile(filepath.Join(dir, "f.bin"), []byte("go-hep xrootd"), 0644); err != nil {
-		t.Fatalf("could not write the file: %v", err)
-	}
-
-	t.Run("without kXR_retstat", func(t *testing.T) {
-		resp, status := h.Open(confSessionID, &open.Request{Path: "/f.bin", Options: xrdfs.OpenOptionsOpenRead})
-		if status != xrdproto.Ok {
-			t.Fatalf("could not open the file: %v", resp)
-		}
-		if o := resp.(open.Response); o.Stat != nil {
-			t.Fatalf("an open that was not asked for a stat returned %+v", o.Stat)
-		}
-	})
-
-	t.Run("with kXR_retstat", func(t *testing.T) {
-		resp, status := h.Open(confSessionID, &open.Request{
-			Path:    "/f.bin",
-			Options: xrdfs.OpenOptionsOpenRead | xrdfs.OpenOptionsReturnStatus,
-		})
-		if status != xrdproto.Ok {
-			t.Fatalf("could not open the file: %v", resp)
-		}
-		o := resp.(open.Response)
-		if o.Stat == nil {
-			t.Fatal("an open that asked for a stat did not get one")
-		}
-		if o.Stat.EntrySize != int64(len("go-hep xrootd")) {
-			t.Fatalf("the stat reports %d bytes, want %d", o.Stat.EntrySize, len("go-hep xrootd"))
-		}
-		// The compression block rides along with the stat unless the client
-		// said it understands compression itself.
-		if o.Compression == nil {
-			t.Fatal("the stat came back without the compression block that follows it")
-		}
-	})
-
-	t.Run("with kXR_retstat and kXR_compress", func(t *testing.T) {
-		resp, status := h.Open(confSessionID, &open.Request{
-			Path:    "/f.bin",
-			Options: xrdfs.OpenOptionsOpenRead | xrdfs.OpenOptionsReturnStatus | xrdfs.OpenOptionsCompress,
-		})
-		if status != xrdproto.Ok {
-			t.Fatalf("could not open the file: %v", resp)
-		}
-		o := resp.(open.Response)
-		if o.Stat == nil {
-			t.Fatal("an open that asked for a stat did not get one")
-		}
-		if o.Compression != nil {
-			t.Fatalf("a client that asked for compression got the placeholder block %+v", o.Compression)
-		}
 	})
 }
 

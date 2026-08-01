@@ -90,6 +90,11 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
 			continue
 		}
+		if keyer, ok := auther.(auth.SessionKeyer); ok {
+			// The secret the exchange agreed is what signatures are keyed with
+			// from here on. Only a provider that agrees one has it to give.
+			sess.signKey = keyer.SessionKey()
+		}
 		sess.client.noteAuth(provider)
 		return nil
 	}

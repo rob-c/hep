@@ -134,6 +134,14 @@ func TestFile_ReadAt_Mock(t *testing.T) {
 			t.Fatalf("could not unmarshal request: %v", err)
 		}
 
+		// A read that carries no optional args at all is a shorter frame than
+		// the server reads, and the path id it omits is the one that says where
+		// the data comes back. Checked before it is dereferenced so a client
+		// that stops sending them fails here rather than panicking.
+		if gotRequest.OptionalArgs == nil {
+			cancel()
+			t.Fatalf("the read carried no path id, want %v", *wantRequest.OptionalArgs)
+		}
 		if !reflect.DeepEqual(*gotRequest.OptionalArgs, *wantRequest.OptionalArgs) {
 			cancel()
 			t.Fatalf("optional args do not match:\ngot = %v\nwant = %v", *gotRequest.OptionalArgs, *wantRequest.OptionalArgs)

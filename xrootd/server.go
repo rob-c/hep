@@ -57,6 +57,11 @@ type Server struct {
 
 	connMu     sync.Mutex
 	activeConn map[net.Conn]struct{}
+
+	// active counts the requests that have been read and are being handled.
+	// Shutdown waits on it so a client that asked for something before the
+	// server was told to stop still gets its answer.
+	active sync.WaitGroup
 }
 
 // NewServer creates a XRootD server which uses specified handler to handle requests
@@ -75,6 +80,14 @@ func NewServer(handler Handler, errorHandler ErrorHandler) *Server {
 
 // Shutdown stops Server and closes all listeners and active connections.
 // Shutdown returns the first non nil error while closing listeners and connections.
+//
+// Requests that were already being handled when Shutdown was called are given
+// until ctx is done to finish and have their responses written. A client that
+// asked to write a file and got no answer has no way to tell whether the bytes
+// landed; waiting turns that into an ordinary reply. Once ctx is done — or
+// immediately, for a ctx that already is — the connections are closed under
+// whatever is still running, which is the only way to bound a request that
+// never completes.
 func (s *Server) Shutdown(ctx context.Context) error {
 	var err error
 
@@ -90,7 +103,21 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// TODO: wait for active requests to be processed as long as ctx is not done.
+	// The listeners are down, so no new connection can arrive; the requests
+	// already in flight are what is left to wait for.
+	done := make(chan struct{})
+	go func() {
+		s.active.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		if err == nil {
+			err = ctx.Err()
+		}
+	}
+
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	for conn := range s.activeConn {
@@ -167,7 +194,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 		if err != nil {
 			s.closedMu.RLock()
 			defer s.closedMu.RUnlock()
-			// TODO: wait for active requests to be processed while closing.
+			// A read that fails once Shutdown has closed the connections is
+			// the shutdown, not a fault: reporting it would fill the log with
+			// one line per client every time the server stops.
 			if !s.closed {
 				s.errorHandler(fmt.Errorf("could not close connection: %w", err))
 			}
@@ -180,7 +209,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 		// in the separate goroutine. We follow the XRootD protocol and
 		// write results back with StreamID provided in the request,
 		// so Client will match the responses to the corresponding request calls.
+		s.active.Add(1)
 		go func(req []byte) {
+			defer s.active.Done()
 			var (
 				reqHeader xrdproto.RequestHeader
 				resp      xrdproto.Marshaler
@@ -197,7 +228,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 			if err := xrdproto.WriteResponse(conn, reqHeader.StreamID, status, resp); err != nil {
 				s.closedMu.RLock()
 				defer s.closedMu.RUnlock()
-				// TODO: wait for active requests to be processed while closing.
+				// As above: a write that fails after Shutdown closed the
+				// connections is the shutdown reaching a request that ran past
+				// the grace period, and is reported by Shutdown itself.
 				if !s.closed {
 					s.errorHandler(fmt.Errorf("could not close connection: %w", err))
 				}

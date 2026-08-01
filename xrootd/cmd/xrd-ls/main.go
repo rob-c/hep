@@ -129,10 +129,16 @@ func xrdls(w io.Writer, name string, long, recursive bool) error {
 	fs := c.FS()
 
 	fi, err := fs.Stat(ctx, url.Path)
-	// TODO fi.Name() here is an empty string (see handling in format() below)
 	if err != nil {
 		return fmt.Errorf("could not stat %q: %w", url.Path, err)
 	}
+
+	// kXR_stat answers about a path without echoing it, so fi is nameless and
+	// url.Path is the whole of what it is called. That is why it is passed as
+	// the root below and why format falls back to the root when an entry has no
+	// name of its own: what the user asked for by full path is listed by full
+	// path, and what was found inside a directory is listed by its name within
+	// it, exactly as ls does.
 	err = display(ctx, w, fs, url.Path, fi, long, recursive)
 	if err != nil {
 		return err
@@ -143,7 +149,7 @@ func xrdls(w io.Writer, name string, long, recursive bool) error {
 
 func display(ctx context.Context, w io.Writer, fs xrdfs.FileSystem, root string, fi os.FileInfo, long, recursive bool) error {
 	if !fi.IsDir() {
-		// TODO fi.Name() here is an empty string (see handling in format() below)
+		// A nameless entry is the one the caller named: see run.
 		format(w, root, fi, long)
 		return nil
 	}
@@ -190,6 +196,8 @@ func format(o io.Writer, root string, fi os.FileInfo, long bool) {
 		return
 	}
 
+	// An entry with no name is the path the caller asked about, which the
+	// server stats without echoing; root is what they called it.
 	name := fi.Name()
 	if name == "" {
 		name = root

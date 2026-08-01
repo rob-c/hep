@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
+	"go-hep.org/x/hep/xrootd/xrdfs"
 )
 
 // Request is a XRootD request issued to a server.
@@ -360,6 +361,17 @@ const (
 type FilepathRequest interface {
 	Opaque() string          // Opaque returns opaque data from this request.
 	SetOpaque(opaque string) // SetOpaque sets opaque data for this request.
+}
+
+// FilehandleRequest is a request that names an open file by the handle the
+// server handed out when it was opened.
+//
+// A handle is meaningful only to the server that issued it, so such a request
+// cannot simply be re-sent to a server it has been redirected to: the file has
+// to be opened there first and the request pointed at the handle that server
+// gives out. SetHandle is what does the pointing.
+type FilehandleRequest interface {
+	SetHandle(handle xrdfs.FileHandle)
 }
 
 // PathID is the socket identifier. It may be used in read and write requests to indicate

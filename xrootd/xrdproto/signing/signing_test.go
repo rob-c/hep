@@ -102,13 +102,16 @@ func signCases() []struct {
 		{"statx", statx.NewRequest([]string{signPath}), xrdproto.Pedantic},
 		{"sync", &sync.Request{Handle: signHandle}, xrdproto.Pedantic},
 
-		// Never in the table: ping carries nothing worth signing, and the
-		// vector requests are absent by construction — a kXR_sigver hash
-		// covers the frame and its declared payload, and a vector write's
-		// data is in neither.
+		// A vector write modifies data, and is signed wherever a plain write
+		// is. Its segment data streams past the frame, but that costs it
+		// nothing: what is signed is the frame and the write_list its length
+		// field declares, which is what the server hashes to verify.
+		{"writev", &writev.Request{Segments: []writev.Segment{{Handle: signHandle, Data: []byte("x")}}}, xrdproto.Intense},
+
+		// Never in the table: a ping carries nothing worth signing, and a
+		// vector read modifies nothing.
 		{"ping", &ping.Request{}, 0},
 		{"readv", &readv.Request{Segments: []readv.Segment{{Handle: signHandle, Length: 1}}}, 0},
-		{"writev", &writev.Request{Segments: []writev.Segment{{Handle: signHandle, Data: []byte("x")}}}, 0},
 	}
 }
 

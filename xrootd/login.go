@@ -14,7 +14,6 @@ import (
 // and token which can be supplied by the previous redirection response.
 func (sess *cliSession) Login(ctx context.Context, username, token string) (login.Response, error) {
 	var resp login.Response
-	_, err := sess.Send(ctx, &resp, login.NewRequest(username, token))
-	// TODO: should we react somehow to redirection?
+	err := sess.sendHere(ctx, &resp, login.NewRequest(username, token))
 	return resp, err
 }

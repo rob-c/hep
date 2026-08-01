@@ -61,6 +61,11 @@ func (req *Request) ReqID() uint16 { return RequestID }
 // ShouldSign implements xrdproto.Request.ShouldSign.
 func (req *Request) ShouldSign() bool { return true }
 
+// SetHandle implements xrdproto.FilehandleRequest.SetHandle: it points the
+// request at the file handle handle, which is what the file is open as at
+// the server the request is about to be sent to.
+func (req *Request) SetHandle(handle xrdfs.FileHandle) { req.Handle = handle }
+
 // MarshalXrd implements xrdproto.Marshaler.
 func (o Request) MarshalXrd(w *xrdenc.WBuffer) error {
 	w.WriteBytes(o.Handle[:])

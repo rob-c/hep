@@ -111,7 +111,7 @@ func decCases() []decCase {
 		{name: "readv/request", valid: &readv.Request{Segments: []readv.Segment{{Handle: decHandle, Length: 1}}}, dec: func() xrdproto.Unmarshaler { return &readv.Request{} }, needs: 20},
 		{name: "rm/request", valid: &rm.Request{Path: decPath}, dec: func() xrdproto.Unmarshaler { return &rm.Request{} }, needs: 20},
 		{name: "rmdir/request", valid: &rmdir.Request{Path: decPath}, dec: func() xrdproto.Unmarshaler { return &rmdir.Request{} }, needs: 20},
-		{name: "sigver/request", valid: sigver.NewRequest(rm.RequestID, 1, []byte("sig")), dec: func() xrdproto.Unmarshaler { return &sigver.Request{} }, needs: 20},
+		{name: "sigver/request", valid: sigver.NewRequest([]byte("key"), rm.RequestID, 1, []byte("sig")), dec: func() xrdproto.Unmarshaler { return &sigver.Request{} }, needs: 20},
 		{name: "stat/request", valid: &stat.Request{Path: decPath}, dec: func() xrdproto.Unmarshaler { return &stat.Request{} }, needs: 20},
 		{name: "statx/request", valid: statx.NewRequest([]string{decPath}), dec: func() xrdproto.Unmarshaler { return &statx.Request{} }, needs: 20},
 		{name: "sync/request", valid: &sync.Request{Handle: decHandle}, dec: func() xrdproto.Unmarshaler { return &sync.Request{} }, needs: 20},

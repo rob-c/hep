@@ -101,7 +101,7 @@ func confSignCases() []confSignCase {
 		{"rmdir", &rmdir.Request{}, false},
 		{"set", &set.Request{}, false},
 		{"symlink", &symlink.Request{}, false},
-		{"sigver", func() *sigver.Request { r := sigver.NewRequest(open.RequestID, 1, nil); return &r }(), false},
+		{"sigver", func() *sigver.Request { r := sigver.NewRequest([]byte("key"), open.RequestID, 1, nil); return &r }(), false},
 		{"stat", &stat.Request{}, false},
 		{"statx", &statx.Request{}, false},
 		{"sync", &sync.Request{}, false},

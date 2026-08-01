@@ -240,3 +240,47 @@ func TestConformance_TheUsageIsNotAnError(t *testing.T) {
 		}
 	}
 }
+
+func TestConformance_TheCopyBufferFollowsTheFile(t *testing.T) {
+	// One buffer serves the whole run, and it is sized to the file being
+	// copied: a small file must not reserve room it will never use, and a
+	// large one must not be dribbled across the network in tiny reads. Growing
+	// it and never shrinking it is what makes a single buffer enough — a run
+	// that shrank would allocate again on the next large file.
+	const (
+		floor = 128 * 1024
+		limit = 16 * 1024 * 1024
+	)
+
+	var bufs copyBuffers
+
+	for _, tc := range []struct {
+		name string
+		size int64
+		want int
+	}{
+		{"a size the server would not report", 0, floor},
+		{"smaller than the floor", 1024, floor},
+		{"between the floor and the ceiling", 4 * 1024 * 1024, 4 * 1024 * 1024},
+		{"larger than the ceiling", 64 * 1024 * 1024, limit},
+		{"small again", 2048, floor},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := bufs.get(tc.size)
+			if len(buf) != tc.want {
+				t.Fatalf("a %d byte file is copied through a %d byte buffer, want %d", tc.size, len(buf), tc.want)
+			}
+		})
+	}
+
+	// The last call asked for the smallest buffer, and the run has already
+	// allocated the largest: asking again must hand back the same memory
+	// rather than allocate a second time.
+	if cap(bufs.buf) != limit {
+		t.Fatalf("the run holds %d bytes of buffer, want the largest it needed (%d)", cap(bufs.buf), limit)
+	}
+	before := &bufs.buf[0]
+	if buf := bufs.get(limit); &buf[0] != before {
+		t.Fatal("a second large copy allocated a new buffer instead of reusing the one it had")
+	}
+}

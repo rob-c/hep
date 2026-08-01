@@ -16,8 +16,7 @@ import (
 // needed to the specified predefined security level.
 func (sess *cliSession) Protocol(ctx context.Context) (protocol.Response, error) {
 	var resp protocol.Response
-	_, err := sess.Send(ctx, &resp, protocol.NewRequest(sess.protocolVersion, true))
-	// TODO: should we react somehow to redirection?
+	err := sess.sendHere(ctx, &resp, protocol.NewRequest(sess.protocolVersion, true))
 	return resp, err
 }
 

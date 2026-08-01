@@ -48,13 +48,20 @@ type cliSession struct {
 	protocolVersion  int32
 	signRequirements signing.Requirements
 	seqID            int64
-	mu               sync.RWMutex
-	requests         map[xrdproto.StreamID]pendingRequest
+	// signKey is the session key the security provider agreed with the server,
+	// and is what kXR_sigver signatures are keyed with. It is nil for a session
+	// that authenticated with a provider agreeing no secret (unix, host, sss,
+	// ztn), and such a session cannot sign.
+	signKey  []byte
+	mu       sync.RWMutex
+	requests map[xrdproto.StreamID]pendingRequest
 
 	subCreateMu sync.Mutex   // subCreateMu is used to serialize the creation of sub-sessions.
 	subsMu      sync.RWMutex // subsMu is used to serialize the access to the subs map.
 	subs        map[xrdproto.PathID]*cliSession
 
+	// maxSubs bounds the parallel data connections this session opens to its
+	// server; see WithSubStreams.
 	maxSubs   int
 	freeSubs  chan xrdproto.PathID
 	isSub     bool // indicates whether this session is a sub-session.
@@ -93,18 +100,28 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 		return nil, err
 	}
 
+	maxSubs := defaultSubStreams
+	if client != nil {
+		maxSubs = client.maxSubs
+	}
+
 	sess := &cliSession{
-		ctx:       ctx,
-		cancel:    cancel,
-		conn:      conn,
-		mux:       mux.New(),
-		subs:      make(map[xrdproto.PathID]*cliSession),
-		freeSubs:  make(chan xrdproto.PathID),
+		ctx:    ctx,
+		cancel: cancel,
+		conn:   conn,
+		mux:    mux.New(),
+		subs:   make(map[xrdproto.PathID]*cliSession),
+		// Buffered to hold every path the session may open, so releasing one
+		// never blocks and never has to be deferred to a goroutine: a path
+		// that is not back in the pool by the time the next request looks for
+		// one has a second connection opened in its place, and a loop of small
+		// writes would open the whole allowance one write at a time.
+		freeSubs:  make(chan xrdproto.PathID, maxSubs),
 		requests:  make(map[xrdproto.StreamID]pendingRequest),
 		client:    client,
 		sessionID: addr,
 		addr:      addr,
-		maxSubs:   8, // TODO: The value of 8 is just a guess. Change it?
+		maxSubs:   maxSubs,
 	}
 	// client is nil when a bare session is created outside of a Client
 	// (some tests do this); such sessions cannot request TLS themselves
@@ -220,7 +237,11 @@ func (sess *cliSession) Close() error {
 		sess.mux.Close()
 	}
 
-	// TODO: should we remove session here somehow?
+	// The client's table is not touched here: Close is what Client.Close calls
+	// for every session it holds, and a session that removed itself would be
+	// mutating the table that call is walking. A session that dies on its own
+	// is dropped by handleReadError, which is the case where the table would
+	// otherwise keep a corpse.
 	err := sess.conn.Close()
 	if err != nil {
 		errs = append(errs, err)
@@ -237,6 +258,12 @@ func (sess *cliSession) Close() error {
 // all requests are redirected to the initial session.
 // See http://xrootd.org/doc/dev45/XRdv310.pdf, p. 11 for details.
 func (sess *cliSession) handleReadError(err error) {
+	// Whatever happens next, this session is finished: its connection failed
+	// and nothing can be sent on it again. Dropping it from the client means
+	// the request that comes after reconnects instead of being handed the same
+	// dead socket for the rest of the program's life.
+	sess.client.forget(sess)
+
 	if sess.sessionID == sess.client.initialSessionID {
 		// There is nowhere to redirect these requests to: every other
 		// session is reached through this one. Failing the callers is the
@@ -251,9 +278,11 @@ func (sess *cliSession) handleReadError(err error) {
 	sess.mu.RLock()
 	resp := mux.ServerResponse{Redirection: &mux.Redirection{Addr: sess.client.initialSessionID}}
 	for streamID := range sess.requests {
-		err := sess.mux.SendData(streamID, resp)
-		// TODO: should we log error somehow? We have nowhere to send it.
-		_ = err
+		if err := sess.mux.SendData(streamID, resp); err != nil {
+			// The caller is not reachable through the mux any more, so it
+			// cannot be told; it is already being failed by the close below.
+			sess.logf("xrootd: could not redirect the request waiting on stream %v of %q: %v", streamID, sess.sessionID, err)
+		}
 	}
 	sess.mu.RUnlock()
 	sess.Close()
@@ -344,9 +373,9 @@ func (sess *cliSession) handleWaitResponse(streamID xrdproto.StreamID, data []by
 		}
 		if err := sess.writeRequest(req); err != nil {
 			resp := mux.ServerResponse{Err: fmt.Errorf("xrootd: could not send data to the server: %w", err)}
-			err := sess.mux.SendData(streamID, resp)
-			// TODO: should we log error somehow? We have nowhere to send it.
-			_ = err
+			if err := sess.mux.SendData(streamID, resp); err != nil {
+				sess.logf("xrootd: could not report the failed retry of stream %v to %q: %v", streamID, sess.sessionID, err)
+			}
 			sess.cleanupRequest(streamID)
 		}
 	}(req)
@@ -362,7 +391,10 @@ func (sess *cliSession) consume() {
 	for {
 		select {
 		case <-sess.ctx.Done():
-			// TODO: Should wait for active requests to be completed?
+			// The session is closing. Whatever is still waiting is released by
+			// the close itself — failPending for the session whose connection
+			// died, the mux for one the caller shut down — so reading on would
+			// only be reading a socket that is about to be closed underneath.
 			return
 		default:
 			var err error
@@ -615,14 +647,26 @@ func (sess *cliSession) Send(ctx context.Context, resp xrdproto.Response, req xr
 	var pathID xrdproto.PathID = 0
 	var pathData []byte
 	if dr, ok := req.(xrdproto.DataRequest); ok {
-		var err error
-		pathID, err = sess.claimPathID(ctx)
-		if err != nil {
-			// Should we log error somehow?
-			// Fallback to sending the data over a single connection.
-			pathID = 0
+		// A session configured with no data paths sends everything inline.
+		// Asking for one would fail on every request and report a refusal
+		// nobody made.
+		if sess.maxSubs > 0 {
+			var err error
+			pathID, err = sess.claimPathID(ctx)
+			if err != nil {
+				// A data path is an optimisation, not a requirement: the
+				// request still goes out, with its data on the connection the
+				// header travels on. It is worth reporting, though — a server
+				// refusing every kXR_bind is why a transfer that should
+				// saturate the link does not.
+				sess.logf("xrootd: could not open a data connection to %q, sending the data inline: %v", sess.sessionID, err)
+				pathID = 0
+			}
+			defer sess.unclaimPathID(pathID)
 		}
-		defer sess.unclaimPathID(pathID)
+		// The path id is set either way: zero names the connection the request
+		// travels on, and a request that carries no path id at all is a
+		// shorter frame than the server expects to read.
 		dr.SetPathID(pathID)
 		pathData = dr.PathData()
 	}
@@ -652,6 +696,27 @@ func (sess *cliSession) Send(ctx context.Context, resp xrdproto.Response, req xr
 	return nil, resp.UnmarshalXrd(xrdenc.NewRBuffer(data))
 }
 
+// sendHere issues a request that asks about this connection and nothing else —
+// a login, a protocol negotiation, a bind, a ping.
+//
+// A redirect is an answer to "where is this file"; it is no answer to "what
+// version do you speak" or "are you still there". Following one would ask a
+// different server a question about a connection it knows nothing about, and
+// ignoring one leaves the caller with a zero response it cannot tell from a
+// real one — a bind that never happened reads as path 0, the connection the
+// request was meant to establish. It is reported as the failure it is.
+func (sess *cliSession) sendHere(ctx context.Context, resp xrdproto.Response, req xrdproto.Request) error {
+	redirection, err := sess.Send(ctx, resp, req)
+	if err != nil {
+		return err
+	}
+	if redirection != nil {
+		return fmt.Errorf("xrootd: server %q answered request %d with a redirect to %q, which says nothing about this connection",
+			sess.sessionID, req.ReqID(), redirection.Addr)
+	}
+	return nil
+}
+
 func (sess *cliSession) claimPathID(ctx context.Context) (xrdproto.PathID, error) {
 	select {
 	case child := <-sess.freeSubs:
@@ -679,22 +744,45 @@ func (sess *cliSession) claimPathID(ctx context.Context) (xrdproto.PathID, error
 	}
 }
 
+// unclaimPathID returns a data path to the pool, where the next request that
+// needs one will find it.
 func (sess *cliSession) unclaimPathID(pathID xrdproto.PathID) {
 	if pathID == 0 {
 		return
 	}
-	go func() {
-		select {
-		case <-sess.ctx.Done():
-			return
-		case sess.freeSubs <- pathID:
-		}
-	}()
+	select {
+	case sess.freeSubs <- pathID:
+	default:
+		// Unreachable: the pool holds one slot per path this session is
+		// allowed to open. Dropping the id rather than blocking is still the
+		// right answer if that ever stops being true — a lost path costs one
+		// connection, a blocked one costs the request.
+	}
+}
+
+// logf reports a failure that has no caller to return it to. It is a no-op
+// unless the client was given an error handler; see WithErrorHandler.
+func (sess *cliSession) logf(format string, args ...any) {
+	if sess.client == nil || sess.client.errorHandler == nil {
+		return
+	}
+	sess.client.errorHandler(fmt.Errorf(format, args...))
 }
 
 func (sess *cliSession) sign(streamID xrdproto.StreamID, requestID uint16, data []byte) ([]byte, error) {
+	if len(sess.signKey) == 0 {
+		// Signing without a key would be a formality: every byte a signature
+		// covers is on the wire, so an unkeyed digest of them proves only that
+		// the sender could read the request they are sending. The server
+		// rejects it, and it is a clearer failure to say why here than to have
+		// the request come back unauthorized for no visible reason.
+		return nil, fmt.Errorf(
+			"xrootd: server %q requires request %d to be signed, but the session established no signing key (only gsi does)",
+			sess.sessionID, requestID,
+		)
+	}
 	seqID := atomic.AddInt64(&sess.seqID, 1)
-	signRequest := sigver.NewRequest(requestID, seqID, data)
+	signRequest := sigver.NewRequest(sess.signKey, requestID, seqID, data)
 	header := xrdproto.RequestHeader{StreamID: streamID, RequestID: signRequest.ReqID()}
 
 	var wBuffer xrdenc.WBuffer

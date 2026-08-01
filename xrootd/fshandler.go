@@ -5,7 +5,7 @@
 package xrootd // import "go-hep.org/x/hep/xrootd"
 
 import (
-	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -42,6 +42,15 @@ type fshandler struct {
 type srvSession struct {
 	mu      sync.Mutex
 	handles map[xrdfs.FileHandle]*srvFile
+
+	// next is the handle the next open gets. Handles are handed out in order
+	// rather than guessed at random: a counter cannot collide with a live
+	// handle, so an open never fails for a reason the caller cannot act on,
+	// and a failing test names the same handle every run.
+	//
+	// It starts at one so that the zero handle, which is what an uninitialized
+	// request carries, is never a handle this server issued.
+	next uint32
 }
 
 // srvFile is an open file together with the part of how it was opened that the
@@ -171,44 +180,72 @@ func (h *fshandler) Open(sessionID [16]byte, request *open.Request) (xrdproto.Ma
 
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
+	sess.next++
+	if sess.next == 0 {
+		// The counter wrapped, so the next handle would be one this session has
+		// already issued. There are four billion of them, so a session that
+		// gets here has leaked every one it ever opened.
+		file.Close()
+		return xrdproto.ServerError{
+			Code:    xrdproto.InvalidRequest,
+			Message: "handle limit exceeded",
+		}, xrdproto.Error
+	}
 	var handle xrdfs.FileHandle
+	binary.BigEndian.PutUint32(handle[:], sess.next)
 
-	// TODO: make handle obtain more deterministic.
-	// Right now, we hope that even if 1000000000 of 256*256*256*256 handles are obtained by single user,
-	// we have appr. 0.7 probability to find a free handle by the random guess.
-	// Then, probability that no free handle is found by 100 tries is something near pow(0.3,100) = 1e-53.
-	for range 100 {
-		rand.Read(handle[:])
-		if _, dup := sess.handles[handle]; !dup {
-			resp := open.Response{FileHandle: handle}
-			if request.Options&xrdfs.OpenOptionsReturnStatus != 0 {
-				st, err := file.Stat()
-				if err != nil {
-					return xrdproto.ServerError{
-						Code:    xrdproto.IOError,
-						Message: fmt.Sprintf("An IO error occurred: %v", err),
-					}, xrdproto.Error
-				}
-				es := xrdfs.EntryStatFrom(st)
-				resp.Stat = &es
-				if request.Options&xrdfs.OpenOptionsCompress == 0 {
-					resp.Compression = &xrdfs.FileCompression{}
-				}
-			}
-			// TODO: return compression info if requested.
-			sess.handles[handle] = &srvFile{
-				File:      file,
-				appending: request.Options&xrdfs.OpenOptionsOpenAppend != 0,
-			}
-
-			return resp, xrdproto.Ok
+	resp := open.Response{FileHandle: handle}
+	// The compression fields precede the stat information on the wire, so a
+	// response carrying stat must carry them too or the client reads the stat
+	// as a page size. A file this handler serves is stored as it was written,
+	// which a zero page size and an empty algorithm name say.
+	if request.Options&(xrdfs.OpenOptionsCompress|xrdfs.OpenOptionsReturnStatus) != 0 {
+		resp.Compression = &xrdfs.FileCompression{}
+	}
+	if request.Options&xrdfs.OpenOptionsReturnStatus != 0 {
+		st, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return xrdproto.ServerError{
+				Code:    xrdproto.IOError,
+				Message: fmt.Sprintf("An IO error occurred: %v", err),
+			}, xrdproto.Error
 		}
+		es := xrdfs.EntryStatFrom(st)
+		resp.Stat = &es
+	}
+	sess.handles[handle] = &srvFile{
+		File:      file,
+		appending: request.Options&xrdfs.OpenOptionsOpenAppend != 0,
 	}
 
-	return xrdproto.ServerError{
-		Code:    xrdproto.InvalidRequest,
-		Message: "handle limit exceeded",
-	}, xrdproto.Error
+	return resp, xrdproto.Ok
+}
+
+// virtualStat answers a kXR_stat carrying kXR_vfs from the filesystem holding
+// path, which is what a storage element's own server does: the numbers a client
+// sizes a transfer against have to come from the disk the transfer lands on.
+//
+// One node can provide the space, this one, and none of it is staging space:
+// nothing here fetches a file from tape.
+func virtualStat(path string) (xrdfs.VirtualFSStat, error) {
+	free, total, err := diskSpace(path)
+	if err != nil {
+		return xrdfs.VirtualFSStat{}, err
+	}
+
+	const mb = 1024 * 1024
+	vfs := xrdfs.VirtualFSStat{
+		NumberRW: 1,
+		FreeRW:   int(free / mb),
+	}
+	if total != 0 {
+		// Utilization is of the partition the free figure describes, so it is
+		// measured against the same figure: space this caller cannot write to
+		// is space in use as far as this caller is concerned.
+		vfs.UtilizationRW = int((total - free) * 100 / total)
+	}
+	return vfs, nil
 }
 
 // Close implements server.Handler.Close.
@@ -311,11 +348,33 @@ func (h *fshandler) getFile(sessionID [16]byte, handle xrdfs.FileHandle) *srvFil
 // Stat implements server.Handler.Stat.
 func (h *fshandler) Stat(sessionID [16]byte, request *stat.Request) (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 	if request.Options&stat.OptionsVFS != 0 {
-		// TODO: handle virtual stat info.
-		return xrdproto.ServerError{
-			Code:    xrdproto.InvalidRequest,
-			Message: "Stat request with OptionsVFS is not implemented",
-		}, xrdproto.Error
+		// A virtual stat is about the storage behind a path, not the path, so
+		// an absent path asks about the export as a whole rather than being an
+		// error. A handle names a file, and the filesystem it was opened on is
+		// the one to report.
+		path := h.basePath
+		switch {
+		case len(request.Path) != 0:
+			path = h.realPath(request.Path)
+		case request.FileHandle != (xrdfs.FileHandle{}):
+			file := h.getFile(sessionID, request.FileHandle)
+			if file == nil {
+				return xrdproto.ServerError{
+					Code:    xrdproto.InvalidRequest,
+					Message: fmt.Sprintf("Invalid file handle: %v", request.FileHandle),
+				}, xrdproto.Error
+			}
+			path = file.Name()
+		}
+
+		vfs, err := virtualStat(path)
+		if err != nil {
+			return xrdproto.ServerError{
+				Code:    xrdproto.IOError,
+				Message: fmt.Sprintf("An IO error occurred: %v", err),
+			}, xrdproto.Error
+		}
+		return vfs, xrdproto.Ok
 	}
 
 	var fi os.FileInfo

@@ -55,8 +55,9 @@ type File interface {
 
 	// VerifyWriteAt writes len(p) bytes from p to the file at offset off using crc32 verification.
 	//
-	// TODO: note that verifyw is not supported by the XRootD server.
-	// See https://github.com/xrootd/xrootd/issues/738 for the details.
+	// The stock XRootD server does not implement kXR_verifyw and answers it as
+	// an unknown request; see https://github.com/xrootd/xrootd/issues/738.
+	// WriteAt asks for no verification and is accepted everywhere.
 	VerifyWriteAt(ctx context.Context, p []byte, off int64) error
 }
 
