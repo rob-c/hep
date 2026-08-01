@@ -265,6 +265,59 @@ instead of one per range. It is implemented in `xrootd/xrdproto/readv` and
   (the pack/unpack pair) and the `readahead_list` / `write_list` structs in
   `src/protocols/root/protocol/wire_write_extended_requests.h`.
 
+### 4.6 `kXR_chkpoint`: the sub-code at the end, and the payload past the end
+
+A checkpoint makes a group of writes undoable: `kXR_ckpBegin` opens one,
+`kXR_ckpCommit` makes the writes permanent, `kXR_ckpRollback` puts the file back,
+`kXR_ckpQuery` reports how much undo the server will hold, and `kXR_ckpXeq` runs
+one enclosed request inside it. Two things about its framing are unlike every
+other request, and both fail quietly.
+
+- **The sub-code is the *last* parameter byte (offset 15), not the first.**
+  Written first it reads as zero at the server — which is `kXR_ckpBegin` — so a
+  rollback opens a fresh checkpoint instead of undoing one, reports success, and
+  leaves in place exactly the writes it was asked to discard. Bytes 0–3 are the
+  file handle and 4–14 are reserved and must be zero.
+- **A `kXR_ckpXeq` declares only the enclosed request's 24-byte header as its
+  data length; the enclosed payload streams past the frame uncounted.** This is
+  the same exception `kXR_writev` makes (§4.5), for the same reason, and it has
+  the same consequence for anything that reads the declared length and stops.
+- **Only `kXR_write`, `kXR_pgwrite` and `kXR_truncate` may be enclosed** — the
+  three modifications a server knows how to reverse. Refuse anything else on the
+  client side: a request that runs outside the checkpoint is a modification the
+  caller believes a rollback will take back.
+- **The capacity in a query answer bounds the *undo*, not the file.** A
+  transaction that would overwrite more than that is one the server could no
+  longer roll back, so it refuses the write rather than silently dropping the
+  guarantee. Asking first is cheaper than finding out after the work is done.
+- **A checkpoint is signed where a write is** (Intense, §5): it carries a write
+  or a truncate, so leaving it out of the requirements table is a way to make
+  exactly the modifications that level exists to authenticate.
+- **This bites a test server too.** Because the payload follows the frame, a
+  mock server that reads the request and answers it *without* draining those
+  bytes deadlocks a synchronous transport: on `net.Pipe` the client is still
+  blocked in `Write`. The symptom is a hang in the client, and the bug is in the
+  server.
+
+### 4.7 `kXR_locate`, `kXR_prepare`, `kXR_Qconfig`: answers that are text
+
+The three namespace calls that ask a server *about* the storage answer with
+text, and each one means nothing without the question that produced it.
+
+- **A locate answer is space-separated `XY<host:port>` tokens**, NUL-padded. `X`
+  is `S`/`M` for data server / manager and `Y` is `r`/`w`; a **lower-case** type
+  means the endpoint is known but not online, which is what a staged-out replica
+  looks like. A client that flattens these opens a file on a manager that holds
+  no data, or reports a tape-resident replica as ready.
+- **A prepare request answers with a handle**, and the handle is what a later
+  cancellation names. Discarding it leaves a tape system staging files for a job
+  that has already died.
+- **A `kXR_Qconfig` answer carries values only** — one line each, in the order
+  asked, with no names at all. A name the server has no value for still gets its
+  (empty) line, so splitting on `\n` rather than filtering to non-empty lines is
+  what keeps every later value paired with the right name. Pair by position
+  against the names that were sent, and leave the empty ones out of the result.
+
 ---
 
 ## 5. Authentication
@@ -1006,6 +1059,21 @@ the request names.
   Back-date or settle briefly after minting.
 - **Gate expensive/flaky interop behind an env flag** and skip cleanly when the
   server/tool is absent, so the normal `go test` stays green and offline.
+- **The `XRD_*` variables are configuration a site already wrote.** A site sets
+  them once, for whatever client its jobs happen to use; a client that ignores
+  them is configured by nobody, and a job that works under `libXrdCl` fails under
+  this one for a reason nothing in its own configuration explains. Honour the
+  C client's spellings — `XRD_USERNAME`, `XRD_REQUIRETLS`, `XRD_TLSNOCERTVERIFY`,
+  `XRD_CONNECTIONWINDOW`, `XRD_REQUESTTIMEOUT`, `XRD_REDIRECTLIMIT` — and its
+  units: they are bare seconds, which is exactly why an unnoticed `30s` has to be
+  an error rather than a silent default. Apply them *before* the caller's own
+  options, so a program that configures itself explicitly behaves the same
+  whatever shell it was started from, and let an explicit user name beat the
+  environment rather than the other way round.
+- **A connection window belongs on a context of its own.** Applied to the
+  session's context it works, then tears the session down the moment it elapses
+  — a connection that stops working after thirty seconds, which reads as
+  anything but a timeout that was put in the wrong place.
 
 ### 9.8 A credential is only tested if something verifies it
 
@@ -1097,6 +1165,14 @@ it deliberately differs):
   `kXR_pgRetry` under a bounded budget (`client/lib/ops_file_pg.c`:
   `pgwrite_handle_cse`).
 - [ ] `crc64` = CRC-64/XZ; `crc32c` = Castagnoli; SSS CRC = IEEE.
+- [ ] `kXR_chkpoint` carries its sub-code in the *last* parameter byte, encloses
+  only a write/pgwrite/truncate, declares just the enclosed 24-byte header as
+  its data length, and is signed where a write is (§4.6).
+- [ ] A locate answer is parsed as `XY<host:port>` with the lower-case node type
+  meaning pending, a prepare handle is returned rather than dropped, and a
+  `kXR_Qconfig` answer is paired with the names *by position* (§4.7).
+- [ ] The `XRD_*` variables the C client honours reach this client too, in bare
+  seconds, applied before the caller's own options (§9.7).
 - [ ] `fattr` nvec/vvec endianness and the count-prefixed vs NUL-list responses.
 - [ ] `sss` blob byte layout and Blowfish-CFB64 zero-IV encoding
   (`src/compat/sss_bf.c`).

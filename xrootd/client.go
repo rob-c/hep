@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
@@ -31,6 +32,12 @@ type Client struct {
 	sessions         map[string]*cliSession
 
 	maxRedirections int
+
+	// dialTimeout bounds establishing a connection; zero leaves it to the
+	// operating system.
+	dialTimeout time.Duration
+	// waitCap is the longest a single kXR_wait may park a request.
+	waitCap time.Duration
 
 	tlsConfig   *tls.Config // TLS configuration for in-protocol TLS upgrades; nil means defaults.
 	wantTLS     bool        // request TLS during protocol negotiation (roots:// or WithTLS).
@@ -96,12 +103,16 @@ func NewClient(ctx context.Context, address string, username string, opts ...Opt
 		username:        username,
 		sessions:        make(map[string]*cliSession),
 		maxRedirections: 10,
+		waitCap:         maxWaitDuration,
 		prompted:        make(map[string]promptResult),
 	}
 
 	client.initSecurityProviders()
 
-	for _, opt := range opts {
+	// The environment is applied first so that a caller's own options win: a
+	// program that configures its client explicitly should behave the same
+	// whatever shell it was started from.
+	for _, opt := range append(envOptions(), opts...) {
 		if opt == nil {
 			continue
 		}

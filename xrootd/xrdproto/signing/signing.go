@@ -9,6 +9,7 @@ package signing // import "go-hep.org/x/hep/xrootd/xrdproto/signing"
 import (
 	"go-hep.org/x/hep/xrootd/xrdproto"
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
+	"go-hep.org/x/hep/xrootd/xrdproto/chkpoint"
 	"go-hep.org/x/hep/xrootd/xrdproto/chmod"
 	"go-hep.org/x/hep/xrootd/xrdproto/dirlist"
 	"go-hep.org/x/hep/xrootd/xrdproto/mkdir"
@@ -72,6 +73,10 @@ func New(level xrdproto.SecurityLevel, overrides []xrdproto.SecurityOverride) Re
 	}
 	if level >= xrdproto.Intense {
 		// TODO: set requirements
+		// A checkpoint carries a write or a truncate, and is signed where those
+		// are: an unsigned checkpoint would be a way to make exactly the
+		// modifications this level exists to authenticate.
+		sr.requirements[chkpoint.RequestID] = xrdproto.SignNeeded
 		sr.requirements[pgwrite.RequestID] = xrdproto.SignNeeded
 		sr.requirements[xrdclose.RequestID] = xrdproto.SignNeeded
 		sr.requirements[verifyw.RequestID] = xrdproto.SignNeeded
