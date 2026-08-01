@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ func TestXrdCp(t *testing.T) {
 		verbose   = true
 	)
 
-	err := xrdcopy(dst, src, recursive, verbose)
+	err := xrdcopy(io.Discard, io.Discard, dst, src, recursive, verbose)
 	if err != nil {
 		t.Fatalf("could not copy remote file: %v", err)
 	}
@@ -56,7 +57,7 @@ func benchmarkXrdCp(b *testing.B, src string) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		os.RemoveAll(dst)
-		err := xrdcopy(dst, src, recursive, verbose)
+		err := xrdcopy(io.Discard, io.Discard, dst, src, recursive, verbose)
 		if err != nil {
 			b.Fatalf("could not copy remote file: %v", err)
 		}
@@ -106,7 +107,7 @@ func TestXrdCp_Offline(t *testing.T) {
 	)
 
 	dst := filepath.Join(t.TempDir(), "dst.bin")
-	if err := xrdcopy(dst, url+"/remote.bin", recursive, verbose); err != nil {
+	if err := xrdcopy(io.Discard, io.Discard, dst, url+"/remote.bin", recursive, verbose); err != nil {
 		t.Fatalf("could not download: %v", err)
 	}
 	got, err := os.ReadFile(dst)
@@ -139,14 +140,14 @@ func TestXrdCp_OfflineRecursive(t *testing.T) {
 	}
 
 	t.Run("refused without -r", func(t *testing.T) {
-		if err := xrdcopy(t.TempDir(), url+"/tree", false, false); err == nil {
+		if err := xrdcopy(io.Discard, io.Discard, t.TempDir(), url+"/tree", false, false); err == nil {
 			t.Fatal("a directory was copied without -r")
 		}
 	})
 
 	t.Run("copied with -r", func(t *testing.T) {
 		dst := t.TempDir()
-		if err := xrdcopy(dst, url+"/tree", true, false); err != nil {
+		if err := xrdcopy(io.Discard, io.Discard, dst, url+"/tree", true, false); err != nil {
 			t.Fatalf("could not download the tree: %v", err)
 		}
 		for name, want := range files {
@@ -174,7 +175,7 @@ func TestXrdCp_OfflineFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dst := filepath.Join(t.TempDir(), "dst.bin")
-			if err := xrdcopy(dst, tc.src, false, false); err == nil {
+			if err := xrdcopy(io.Discard, io.Discard, dst, tc.src, false, false); err == nil {
 				t.Fatal("the copy reported success")
 			}
 		})
@@ -205,7 +206,7 @@ func TestXrdCp_OfflineOpaque(t *testing.T) {
 
 	t.Run("file", func(t *testing.T) {
 		dst := t.TempDir()
-		if err := xrdcopy(dst, url+"/tree/a.txt"+token, false, false); err != nil {
+		if err := xrdcopy(io.Discard, io.Discard, dst, url+"/tree/a.txt"+token, false, false); err != nil {
 			t.Fatalf("could not download: %v", err)
 		}
 		got, err := os.ReadFile(filepath.Join(dst, "a.txt"))
@@ -219,7 +220,7 @@ func TestXrdCp_OfflineOpaque(t *testing.T) {
 
 	t.Run("tree", func(t *testing.T) {
 		dst := t.TempDir()
-		if err := xrdcopy(dst, url+"/tree"+token, true, false); err != nil {
+		if err := xrdcopy(io.Discard, io.Discard, dst, url+"/tree"+token, true, false); err != nil {
 			t.Fatalf("could not download the tree: %v", err)
 		}
 		for name, want := range files {

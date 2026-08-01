@@ -23,10 +23,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"text/tabwriter"
 
@@ -36,9 +36,7 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdproto"
 )
 
-func init() {
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `xrd-ls lists directory contents on a remote xrootd server.
+const usage = `xrd-ls lists directory contents on a remote xrootd server.
 
 Usage:
 
@@ -52,40 +50,57 @@ Example:
  $> xrd-ls -l -R root://server.example.com/some/dir
 
 Options:
-`)
-		flag.PrintDefaults()
-	}
-}
+`
 
 func main() {
-	log.SetPrefix("xrd-ls: ")
-	log.SetFlags(0)
-
-	var (
-		recFlag  = flag.Bool("R", false, "list subdirectories recursively")
-		longFlag = flag.Bool("l", false, "use a long listing format")
-	)
-
-	flag.Parse()
-
-	if flag.NArg() == 0 {
-		flag.Usage()
-		log.Fatalf("missing directory operand")
-	}
-
-	for i, dir := range flag.Args() {
-		if i > 0 {
-			// separate consecutive files by an empty line
-			fmt.Printf("\n")
-		}
-		err := xrdls(dir, *longFlag, *recFlag)
-		if err != nil {
-			log.Fatalf("could not list %q content: %+v", dir, err)
-		}
-	}
+	os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))
 }
 
-func xrdls(name string, long, recursive bool) error {
+func run(stdout, stderr io.Writer, args []string) int {
+	fset := flag.NewFlagSet("xrd-ls", flag.ContinueOnError)
+	fset.SetOutput(stderr)
+	fset.Usage = func() {
+		fmt.Fprint(stderr, usage)
+		fset.PrintDefaults()
+	}
+
+	var (
+		recFlag  = fset.Bool("R", false, "list subdirectories recursively")
+		longFlag = fset.Bool("l", false, "use a long listing format")
+	)
+
+	switch err := fset.Parse(args); {
+	case err == nil:
+		// ok.
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	default:
+		fmt.Fprintf(stderr, "xrd-ls: could not parse arguments: %+v\n", err)
+		return 1
+	}
+
+	if fset.NArg() == 0 {
+		fmt.Fprintf(stderr, "xrd-ls: missing directory operand\n\n")
+		fset.Usage()
+		return 1
+	}
+
+	for i, dir := range fset.Args() {
+		if i > 0 {
+			// separate consecutive files by an empty line
+			fmt.Fprintf(stdout, "\n")
+		}
+		err := xrdls(stdout, dir, *longFlag, *recFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "xrd-ls: could not list %q content: %+v\n", dir, err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func xrdls(w io.Writer, name string, long, recursive bool) error {
 	url, err := xrdio.Parse(name)
 	if err != nil {
 		return fmt.Errorf("could not parse %q: %w", name, err)
@@ -106,7 +121,7 @@ func xrdls(name string, long, recursive bool) error {
 	if err != nil {
 		return fmt.Errorf("could not stat %q: %w", url.Path, err)
 	}
-	err = display(ctx, fs, url.Path, fi, long, recursive)
+	err = display(ctx, w, fs, url.Path, fi, long, recursive)
 	if err != nil {
 		return err
 	}
@@ -114,10 +129,10 @@ func xrdls(name string, long, recursive bool) error {
 	return nil
 }
 
-func display(ctx context.Context, fs xrdfs.FileSystem, root string, fi os.FileInfo, long, recursive bool) error {
+func display(ctx context.Context, w io.Writer, fs xrdfs.FileSystem, root string, fi os.FileInfo, long, recursive bool) error {
 	if !fi.IsDir() {
 		// TODO fi.Name() here is an empty string (see handling in format() below)
-		format(os.Stdout, root, fi, long)
+		format(w, root, fi, long)
 		return nil
 	}
 
@@ -127,15 +142,15 @@ func display(ctx context.Context, fs xrdfs.FileSystem, root string, fi os.FileIn
 	}
 
 	dir := xrdproto.JoinPath(root, fi.Name())
-	fmt.Printf("%s%s\n", dir, end)
+	fmt.Fprintf(w, "%s%s\n", dir, end)
 	if long {
-		fmt.Printf("total %d\n", fi.Size())
+		fmt.Fprintf(w, "total %d\n", fi.Size())
 	}
 	ents, err := fs.Dirlist(ctx, dir)
 	if err != nil {
 		return fmt.Errorf("could not list dir %q: %w", dir, err)
 	}
-	o := tabwriter.NewWriter(os.Stdout, 8, 4, 0, ' ', tabwriter.AlignRight)
+	o := tabwriter.NewWriter(w, 8, 4, 0, ' ', tabwriter.AlignRight)
 	for _, e := range ents {
 		format(o, dir, e, long)
 	}
@@ -146,8 +161,8 @@ func display(ctx context.Context, fs xrdfs.FileSystem, root string, fi os.FileIn
 				continue
 			}
 			// make an empty line before going into a subdirectory.
-			fmt.Printf("\n")
-			err := display(ctx, fs, dir, e, long, recursive)
+			fmt.Fprintf(w, "\n")
+			err := display(ctx, w, fs, dir, e, long, recursive)
 			if err != nil {
 				return err
 			}

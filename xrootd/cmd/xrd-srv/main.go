@@ -7,9 +7,10 @@ package main // import "go-hep.org/x/hep/xrootd/cmd/xrd-srv"
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -17,9 +18,7 @@ import (
 	"go-hep.org/x/hep/xrootd"
 )
 
-func init() {
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `xrd-srv serves data from a local filesystem over the XRootD protocol. 
+const usage = `xrd-srv serves data from a local filesystem over the XRootD protocol.
 
 Usage:
 
@@ -31,48 +30,76 @@ Example:
  $> xrd-srv -addr=0.0.0.0:1094 /tmp
 
 Options:
-`)
-		flag.PrintDefaults()
-	}
-}
+`
 
 func main() {
-	log.SetPrefix("xrd-srv: ")
-	log.SetFlags(0)
+	os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))
+}
 
-	addr := flag.String("addr", "0.0.0.0:1094", "listen to the provided address")
-
-	flag.Parse()
-
-	if flag.NArg() != 1 {
-		flag.Usage()
-		log.Fatalf("missing base dir operand")
+func run(stdout, stderr io.Writer, args []string) int {
+	fset := flag.NewFlagSet("xrd-srv", flag.ContinueOnError)
+	fset.SetOutput(stderr)
+	fset.Usage = func() {
+		fmt.Fprint(stderr, usage)
+		fset.PrintDefaults()
 	}
 
-	baseDir := flag.Arg(0)
+	addr := fset.String("addr", "0.0.0.0:1094", "listen to the provided address")
+
+	switch err := fset.Parse(args); {
+	case err == nil:
+		// ok.
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	default:
+		fmt.Fprintf(stderr, "xrd-srv: could not parse arguments: %+v\n", err)
+		return 1
+	}
+
+	if fset.NArg() != 1 {
+		fmt.Fprintf(stderr, "xrd-srv: missing base dir operand\n\n")
+		fset.Usage()
+		return 1
+	}
 
 	listener, err := net.Listen("tcp", *addr)
 	if err != nil {
-		log.Fatalf("could not listen on %q: %v", *addr, err)
+		fmt.Fprintf(stderr, "xrd-srv: could not listen on %q: %+v\n", *addr, err)
+		return 1
 	}
 
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	defer signal.Stop(quit)
+
+	return serve(stdout, stderr, listener, fset.Arg(0), quit)
+}
+
+// serve runs a server over listener until quit fires, then shuts it down. It is
+// kept apart from run so the serving loop can be driven without a signal.
+func serve(stdout, stderr io.Writer, listener net.Listener, baseDir string, quit <-chan os.Signal) int {
 	srv := xrootd.NewServer(xrootd.NewFSHandler(baseDir), func(err error) {
-		log.Printf("an error occured: %v", err)
+		fmt.Fprintf(stderr, "xrd-srv: an error occured: %+v\n", err)
 	})
 
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt)
-
+	errc := make(chan error, 1)
 	go func() {
-		log.Printf("listening on %v...", listener.Addr())
-		if err = srv.Serve(listener); err != nil {
-			log.Fatalf("could not serve: %v", err)
-		}
+		fmt.Fprintf(stdout, "xrd-srv: listening on %v...\n", listener.Addr())
+		errc <- srv.Serve(listener)
 	}()
 
-	<-ch
-	err = srv.Shutdown(context.Background())
-	if err != nil {
-		log.Fatalf("could not shutdown: %v", err)
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, xrootd.ErrServerClosed) {
+			fmt.Fprintf(stderr, "xrd-srv: could not serve: %+v\n", err)
+			return 1
+		}
+	case <-quit:
+		if err := srv.Shutdown(context.Background()); err != nil {
+			fmt.Fprintf(stderr, "xrd-srv: could not shutdown: %+v\n", err)
+			return 1
+		}
 	}
+
+	return 0
 }
