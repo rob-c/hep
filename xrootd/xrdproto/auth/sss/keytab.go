@@ -82,9 +82,9 @@ func ParseKeytab(r io.Reader) ([]Key, error) {
 	return keys, nil
 }
 
-// LoadKeytab reads the SSS keytab from $XrdSecSSSKT, then $XrdSecsssKT, then
-// ~/.xrd/sss.keytab.
-func LoadKeytab() ([]Key, error) {
+// KeytabLocations lists the keytab paths that are consulted, in order:
+// $XrdSecSSSKT, then $XrdSecsssKT, then ~/.xrd/sss.keytab.
+func KeytabLocations() []string {
 	var paths []string
 	for _, env := range []string{"XrdSecSSSKT", "XrdSecsssKT"} {
 		if p := os.Getenv(env); p != "" {
@@ -94,7 +94,13 @@ func LoadKeytab() ([]Key, error) {
 	if home, err := os.UserHomeDir(); err == nil {
 		paths = append(paths, filepath.Join(home, ".xrd", "sss.keytab"))
 	}
-	for _, p := range paths {
+	return paths
+}
+
+// LoadKeytab reads the SSS keytab from the first of KeytabLocations that holds
+// one.
+func LoadKeytab() ([]Key, error) {
+	for _, p := range KeytabLocations() {
 		f, err := os.Open(p)
 		if err != nil {
 			continue

@@ -173,7 +173,7 @@ func TestConformance_AFailedNegotiationNamesEveryProtocolItTried(t *testing.T) {
 	if err == nil {
 		t.Fatal("negotiation succeeded with no usable protocol")
 	}
-	for _, want := range []string{"krb5", "gsi", "unix", "no credentials cache", "provider was not found"} {
+	for _, want := range []string{"krb5", "gsi", "unix", "no credentials cache", "no gsi credential was found"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the failure does not mention %q: %v", want, err)
 		}

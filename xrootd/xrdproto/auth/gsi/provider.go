@@ -9,10 +9,13 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-hep.org/x/hep/xrootd/xrdproto/auth"
 )
@@ -37,10 +40,67 @@ const clntOptsDefault = 0x80
 // which is what a stock client does.
 var Default auth.Auther
 
+// DefaultErr is why Default is nil: an *auth.Missing naming the proxy location
+// that was consulted and, when a proxy was there but unusable, what was wrong
+// with it. It is nil when Default was discovered.
+var DefaultErr error
+
 func init() {
-	if a, err := LoadProxy(DefaultProxyPath()); err == nil {
+	a, err := Discover()
+	switch err {
+	case nil:
 		Default = a
+	default:
+		DefaultErr = err
 	}
+}
+
+// Discover loads the proxy at DefaultProxyPath and checks that it is still
+// valid. A proxy that has expired is *not* returned: it would be offered to the
+// server, refused, and reported as an authorization failure naming the file
+// system rather than the clock — and "your proxy ran out" is the single most
+// common reason a job that worked yesterday does not work today.
+func Discover() (auth.Auther, error) {
+	path := DefaultProxyPath()
+	miss := &auth.Missing{
+		Provider: "gsi",
+		What:     "X.509 proxy",
+		Searched: []string{path},
+		Hint:     "voms-proxy-init -voms <vo>",
+	}
+
+	a, err := LoadProxy(path)
+	if err != nil {
+		// A proxy that is simply not there needs no further explanation; one
+		// that is there and cannot be used does.
+		if !errors.Is(err, fs.ErrNotExist) {
+			miss.Err = err
+		}
+		return nil, miss
+	}
+	switch expiry, err := a.NotAfter(); {
+	case err != nil:
+		miss.Err = err
+		return nil, miss
+	case !time.Now().Before(expiry):
+		miss.Err = fmt.Errorf("the proxy expired at %s", expiry.UTC().Format(time.RFC3339))
+		return nil, miss
+	}
+	return a, nil
+}
+
+// NotAfter returns the expiry of the proxy certificate itself, which is the
+// first certificate of the chain and the shortest-lived part of it.
+func (a *Auth) NotAfter() (time.Time, error) {
+	blk, _ := pem.Decode(a.ProxyPEM)
+	if blk == nil {
+		return time.Time{}, fmt.Errorf("auth/gsi: proxy holds no certificate")
+	}
+	cert, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("auth/gsi: could not parse the proxy certificate: %w", err)
+	}
+	return cert.NotAfter, nil
 }
 
 // Auth is the GSI (X.509 proxy) security provider. It drives the two client

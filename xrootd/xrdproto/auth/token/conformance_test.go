@@ -18,9 +18,12 @@ package token
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+
+	"go-hep.org/x/hep/xrootd/xrdproto/auth"
 )
 
 // tokenFile writes content to a file under dir and returns its path.
@@ -259,5 +262,53 @@ func TestConformance_ADiscoveredTokenIsUsableAsACredential(t *testing.T) {
 	}
 	if want := "ztn\x00the.jwt.token"; req.Credentials != want {
 		t.Fatalf("the credential is %q, want %q", req.Credentials, want)
+	}
+}
+
+func TestConformance_AFailedDiscoveryListsEveryPlaceItLooked(t *testing.T) {
+	// A pilot that wrote the token somewhere else is the usual cause of "no
+	// token", and the only way a user can tell is by comparing where their token
+	// is with where the client looked. The list is that comparison.
+	skipIfSystemToken(t)
+	clearTokenEnv(t)
+
+	xdg := t.TempDir()
+	btf := filepath.Join(t.TempDir(), "absent.jwt")
+	t.Setenv("BEARER_TOKEN_FILE", btf)
+	t.Setenv("XDG_RUNTIME_DIR", xdg)
+
+	_, err := Discover()
+	miss := auth.AsMissing(err)
+	if miss == nil {
+		t.Fatalf("the failure is %v, want a missing credential", err)
+	}
+	want := []string{
+		"$BEARER_TOKEN",
+		btf,
+		xdg + "/bt_u" + strconv.Itoa(os.Geteuid()),
+		"/tmp/bt_u" + strconv.Itoa(os.Geteuid()),
+	}
+	if !reflect.DeepEqual(miss.Searched, want) {
+		t.Fatalf("discovery reports looking in\n%q\nwant\n%q", miss.Searched, want)
+	}
+	switch {
+	case miss.Provider != "ztn":
+		t.Errorf("the missing credential names provider %q", miss.Provider)
+	case miss.Hint == "":
+		t.Error("a user with no token is not told how to get one")
+	case miss.Err != nil:
+		t.Errorf("a token that was never there was reported as broken: %v", miss.Err)
+	}
+}
+
+func TestConformance_TheDiscoveryFailureIsKeptForTheClientToReport(t *testing.T) {
+	// Default is nil on a machine with no token, and nil says nothing. DefaultErr
+	// is what the client shows when a server asks for ztn — so exactly one of the
+	// two is set, always.
+	if (Default == nil) == (DefaultErr == nil) {
+		t.Fatalf("Default is %v and DefaultErr is %v, want exactly one of them", Default, DefaultErr)
+	}
+	if DefaultErr != nil && auth.AsMissing(DefaultErr) == nil {
+		t.Fatalf("the discovery failure is %v, want a missing credential", DefaultErr)
 	}
 }

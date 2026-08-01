@@ -35,6 +35,20 @@ type Client struct {
 	tlsConfig   *tls.Config // TLS configuration for in-protocol TLS upgrades; nil means defaults.
 	wantTLS     bool        // request TLS during protocol negotiation (roots:// or WithTLS).
 	insecureTLS bool        // skip server-certificate verification (testing only).
+
+	// prompter obtains a credential the client is missing; nil never prompts.
+	prompter CredentialPrompter
+	// promptMu guards the fields below, which are written from every session's
+	// login and read when a request comes back unauthorized.
+	promptMu sync.Mutex
+	// prompted remembers each answer so a user is asked once per client rather
+	// than once per redirect.
+	prompted map[string]promptResult
+	// usedAuth is the security provider the last session logged in with.
+	usedAuth string
+	// unusedAuth records the providers the server offered that this client had
+	// no credential for, and why.
+	unusedAuth map[string]error
 }
 
 // Option configures an XRootD client.
@@ -82,6 +96,7 @@ func NewClient(ctx context.Context, address string, username string, opts ...Opt
 		username:        username,
 		sessions:        make(map[string]*cliSession),
 		maxRedirections: 10,
+		prompted:        make(map[string]promptResult),
 	}
 
 	client.initSecurityProviders()
