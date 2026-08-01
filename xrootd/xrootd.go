@@ -27,4 +27,26 @@
 //
 //	srv := xrootd.NewServer(xrootd.Default(), nil)
 //	err := srv.Serve(listener)
+//
+// # Reading and listing
+//
+// [Client.FS] returns an [go-hep.org/x/hep/xrootd/xrdfs.FileSystem]: Dirlist
+// for one directory, Statx for a batch of paths in one request, and
+// [go-hep.org/x/hep/xrootd/xrdfs.Walk] and
+// [go-hep.org/x/hep/xrootd/xrdfs.Glob] for a subtree. The same interface is
+// implemented over WebDAV by [go-hep.org/x/hep/xrootd/xrdhttp], so a program
+// that takes a URL can serve root:// and davs:// with one code path.
+//
+// When a URL is what the program has rather than an address and a path,
+// [go-hep.org/x/hep/xrootd/xrdio.Open] takes the whole thing and picks the
+// transport from its scheme.
+//
+// # Wide-area networks
+//
+// Across a wide-area link the failure to plan for is not a refused connection,
+// which is reported at once, but a path that stops forwarding while both ends
+// still believe the connection is up. [Hardened] bounds it: see that function
+// and the options it applies — [WithStreamTimeout], [WithConnectionWindow],
+// [WithConnectionRetry] and [WithKeepAlive] — each of which also reads its
+// XRD_* environment variable.
 package xrootd // import "go-hep.org/x/hep/xrootd"
