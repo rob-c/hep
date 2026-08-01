@@ -366,3 +366,62 @@ func TestConformance_AKeyIsLiveUntilTheInstantItExpires(t *testing.T) {
 		t.Fatal("a key with no expiry went stale")
 	}
 }
+
+func TestConformance_TheKeytabLocationsAreTheOnesThatWereSearched(t *testing.T) {
+	// The list a failure reports has to be the list the loader actually walks,
+	// or a user is told to look in a place the client never opened. Both come
+	// from KeytabLocations, which is the point of it being one function.
+	a := filepath.Join(t.TempDir(), "a.keytab")
+	b := filepath.Join(t.TempDir(), "b.keytab")
+	t.Setenv("XrdSecSSSKT", a)
+	t.Setenv("XrdSecsssKT", b)
+
+	got := KeytabLocations()
+	if len(got) < 2 || got[0] != a || got[1] != b {
+		t.Fatalf("the locations are %q, want %q and %q first", got, a, b)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if want := filepath.Join(home, ".xrd", "sss.keytab"); got[len(got)-1] != want {
+			t.Fatalf("the last location is %q, want %q", got[len(got)-1], want)
+		}
+	}
+}
+
+func TestConformance_AKeytabTheUserNamesIsUsedOnItsOwnTerms(t *testing.T) {
+	// A user who names a keytab has said which file to use, so the environment
+	// must not redirect it — but the rules for reading it are the same rules,
+	// down to skipping expired keys.
+	t.Setenv("XrdSecSSSKT", sssKeytab(t, "0 N:1 k:"+hexKey))
+	named := sssKeytab(t,
+		"0 N:2 k:"+hexKey+" e:1",
+		"0 N:3 k:"+hexKey+" e:0",
+	)
+
+	a, err := NewFromKeytab(named)
+	if err != nil {
+		t.Fatalf("could not use the keytab: %v", err)
+	}
+	if a.Key.ID != 3 {
+		t.Fatalf("key %d was used, want the first live key of the named keytab", a.Key.ID)
+	}
+	if a.User == "" {
+		t.Fatal("the credential carries no login name")
+	}
+}
+
+func TestConformance_AKeytabTheUserNamesAndCannotBeUsedIsAnError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path func(t *testing.T) string
+	}{
+		{"no such file", func(t *testing.T) string { return filepath.Join(t.TempDir(), "absent") }},
+		{"not a keytab", func(t *testing.T) string { return sssKeytab(t, "0 N:1 nokeyhere") }},
+		{"nothing live", func(t *testing.T) string { return sssKeytab(t, "0 N:1 k:"+hexKey+" e:1") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := NewFromKeytab(tc.path(t)); err == nil {
+				t.Fatal("an unusable keytab produced a credential")
+			}
+		})
+	}
+}

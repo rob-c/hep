@@ -23,9 +23,17 @@ var Type = [4]byte{'z', 't', 'n', 0}
 // no bearer token could be found.
 var Default auth.Auther
 
+// DefaultErr is why Default is nil: an *auth.Missing naming the locations that
+// were searched. It is nil when Default was discovered.
+var DefaultErr error
+
 func init() {
-	if tok, err := Discover(); err == nil {
+	tok, err := Discover()
+	switch err {
+	case nil:
 		Default = &Auth{Token: tok}
+	default:
+		DefaultErr = err
 	}
 }
 
@@ -49,6 +57,10 @@ func (a *Auth) Request(params []string) (*auth.Request, error) {
 // Discover locates a bearer token, trying $BEARER_TOKEN (a literal token),
 // $BEARER_TOKEN_FILE, $XDG_RUNTIME_DIR/bt_u<uid> and /tmp/bt_u<uid> in order.
 // Trailing whitespace and NUL bytes are trimmed.
+//
+// When nothing is found the error is an *auth.Missing carrying every location
+// that was consulted: a pilot that wrote the token somewhere else is the usual
+// cause, and the list is what says so.
 func Discover() (string, error) {
 	if v := strings.TrimRight(os.Getenv("BEARER_TOKEN"), " \t\r\n\x00"); v != "" {
 		return v, nil
@@ -72,7 +84,12 @@ func Discover() (string, error) {
 			return tok, nil
 		}
 	}
-	return "", fmt.Errorf("auth/token: no bearer token found")
+	return "", &auth.Missing{
+		Provider: "ztn",
+		What:     "bearer token",
+		Searched: append([]string{"$BEARER_TOKEN"}, paths...),
+		Hint:     "obtain a WLCG token and put it in $BEARER_TOKEN_FILE",
+	}
 }
 
 var _ auth.Auther = (*Auth)(nil)

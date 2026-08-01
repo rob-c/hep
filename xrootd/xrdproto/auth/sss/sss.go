@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"os"
 	"os/user"
 	"time"
 
@@ -115,6 +116,26 @@ func New() (*Auth, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newFromKeys(keys)
+}
+
+// NewFromKeytab builds an Auth from the keytab at path, which is what a user
+// who names a keytab means: the same rules as an ambient one, applied to a file
+// of their choosing.
+func NewFromKeytab(path string) (*Auth, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("auth/sss: could not open keytab: %w", err)
+	}
+	defer f.Close()
+	keys, err := ParseKeytab(f)
+	if err != nil {
+		return nil, err
+	}
+	return newFromKeys(keys)
+}
+
+func newFromKeys(keys []Key) (*Auth, error) {
 	k, err := FirstLiveKey(keys, time.Now())
 	if err != nil {
 		return nil, err
@@ -130,9 +151,22 @@ func New() (*Auth, error) {
 // no keytab/live key is available.
 var Default auth.Auther
 
+// DefaultErr is why Default is nil: an *auth.Missing naming the keytab
+// locations that were consulted. It is nil when Default was discovered.
+var DefaultErr error
+
 func init() {
-	if a, err := New(); err == nil {
+	a, err := New()
+	switch err {
+	case nil:
 		Default = a
+	default:
+		DefaultErr = &auth.Missing{
+			Provider: "sss",
+			What:     "shared-secret keytab",
+			Searched: KeytabLocations(),
+			Err:      err,
+		}
 	}
 }
 

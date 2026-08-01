@@ -22,6 +22,8 @@
 //
 //	-r	copy directories recursively
 //	-v	enable verbose mode
+//	-no-prompt
+//		never ask for a missing credential
 package main
 
 import (
@@ -34,6 +36,7 @@ import (
 	stdpath "path"
 
 	"go-hep.org/x/hep/xrootd"
+	"go-hep.org/x/hep/xrootd/xrdcred"
 	"go-hep.org/x/hep/xrootd/xrdfs"
 	"go-hep.org/x/hep/xrootd/xrdio"
 	"go-hep.org/x/hep/xrootd/xrdproto"
@@ -78,8 +81,9 @@ func run(stdout, stderr io.Writer, args []string) int {
 	}
 
 	var (
-		recFlag     = fset.Bool("r", false, "copy directories recursively")
-		verboseFlag = fset.Bool("v", false, "enable verbose mode")
+		recFlag      = fset.Bool("r", false, "copy directories recursively")
+		verboseFlag  = fset.Bool("v", false, "enable verbose mode")
+		noPromptFlag = fset.Bool("no-prompt", false, "never ask for a missing credential")
 	)
 
 	switch err := fset.Parse(args); {
@@ -90,6 +94,14 @@ func run(stdout, stderr io.Writer, args []string) int {
 	default:
 		fmt.Fprintf(stderr, "xrd-cp: could not parse arguments: %+v\n", err)
 		return 1
+	}
+
+	// This is a command a person runs, so it may ask that person for a
+	// credential the server wants and the client cannot find. The prompter
+	// declines by itself when there is no terminal, which is what makes it safe
+	// to enable unconditionally here.
+	if !*noPromptFlag {
+		xrootd.SetDefaultCredentialPrompt(xrdcred.NewTerminal())
 	}
 
 	switch n := fset.NArg(); n {

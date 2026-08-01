@@ -322,6 +322,83 @@ client forces unsigned-DH and rejects a delegation challenge. libxrdc *does*
 implement delegation (`client/lib/sec/sec_gsi.c::gsi_sigpxy`,
 `src/auth/gsi/delegation.c`) — a place where the C client is ahead.
 
+### 5.5 The worst authentication failure is the one that succeeds
+
+An XRootD client that has no credential for the protocol a site expects does not
+fail at login. `cliSession.auth` walks the server's `&P=` list in the server's
+order, skips every protocol it cannot supply, and logs in as whatever it *can* —
+in practice `unix`. That login succeeds. The refusal arrives later, on the first
+real request, as `kXR_NotAuthorized`: a message about a *path*, naming an
+identity the user never chose, with nothing in it about the proxy that expired an
+hour ago. Everything below follows from wanting that half-second back.
+
+- **The client already knows, and throws it away.** By the time the refusal
+  arrives the client has long since decided which protocols it skipped and why.
+  Recording that at the moment of the decision (`noteUnavailable`) and attaching
+  it to a `kXR_NotAuthorized`/`kXR_AuthFailed` (`explainAuth`) costs one map and
+  turns an unactionable error into a list of what to run. Wrap, do not replace:
+  the server error stays reachable through `errors.Is`/`errors.As`, so a caller
+  testing for a permission failure is unaffected by the extra sentence.
+- **"Not found" and "found and unusable" are different problems.** A missing
+  proxy and an expired proxy are the same message in most clients and have
+  different fixes. `auth.Missing` carries what was looked for (`What`), where
+  (`Searched`), why what was there did not work (`Err`), and what to run
+  (`Hint`) — and has to survive the `errors.Join` the discovery path wraps it
+  in, or it degrades back to "no credential".
+- **Prefer the credential's reason over the prompt's.** When a prompt is
+  declined there are two true statements: "the proxy in /tmp expired" and "there
+  was no terminal to ask on". Only the first is worth reading at the end of a
+  failed transfer. Making that a named function (`skipReason`) rather than an
+  inline `if` is what made it testable without a terminal.
+
+### 5.6 Prompting for a missing credential, without becoming a liability
+
+Asking the user is only safe if the asking cannot make anything worse.
+
+- **Never prompt by default.** A library that reads a terminal hangs a batch job
+  on a read nobody is watching — and it hangs it *silently*, holding a slot.
+  The default is no prompter; commands opt in from `main`. A process-wide
+  `SetDefaultCredentialPrompt` earns its ugliness: whether there is a user to
+  ask is a property of the process, and the alternative is threading an option
+  through `xrdio`, `xrdcopy` and every layer that happens to dial.
+- **A decline must be indistinguishable from never having asked.** No prompter,
+  no terminal, a refusal, a prompter returning `(nil, nil)` — all four leave the
+  negotiation walking the server's list exactly as before. That property is what
+  makes it defensible to switch on unconditionally in `xrd-ls`/`xrd-cp`, and it
+  is worth a conformance test each.
+- **Beware the lock you are already holding.** `getSession` holds `client.mu`
+  across `newSession`, which performs login *and* authentication — so nothing on
+  the auth path may take `client.mu`. The obvious "cache the credential in
+  `client.auths`" deadlocks. The answer was a separate `promptMu` cache keyed by
+  provider, which also gives the property that actually matters: one question
+  per client, not one per session. A redirector turns a single transfer into a
+  dozen logins, and a client that asked each time would ask for the same proxy
+  twelve times.
+- **Ask the question the user can act on.** Parse the *whole* `&P=` list before
+  trying any of it, so the prompt can end with "this server also accepts gsi,
+  sss — any one of them is enough". Without it, a user with a perfectly good
+  X.509 proxy who is asked first for a Kerberos ticket has no way to know that
+  saying no leads to the question they can answer. This showed up in a live run
+  against CERN EOS, which offers `krb5` first.
+- **Offer no default that is known to be wrong.** The conventional location is
+  precisely what was searched and failed, so pre-filling it as the answer offers
+  the user the answer that already did not work. Ask with no default and treat a
+  blank line as a decline.
+- **Do not handle the passphrase.** `voms-proxy-init` and `kinit` are handed the
+  real terminal (`cmd.Stdin = t.in()`); the private-key passphrase never enters
+  this process, is never in its memory and cannot end up in a log. A pasted
+  bearer token is read with `term.ReadPassword`, confirmed only as a length, and
+  never quoted back into an error — a terminal keeps its scrollback.
+- **Do not buffer the terminal.** A `bufio.Reader` reads past the newline and
+  swallows the bytes a following no-echo `term.ReadPassword` needs. Line reads
+  on a shared terminal are byte-at-a-time, deliberately.
+- **Print prompts to stderr.** Prompting on stdout corrupts the output of the
+  command whose result is being piped somewhere — which is exactly the command a
+  user is running when they discover their proxy expired.
+- **Serialize.** One terminal, several sessions authenticating at once the
+  moment a redirector answers: without a mutex two questions interleave and the
+  answer goes to whichever read wins.
+
 ---
 
 ## 6. Third-party copy (the hardest, and most instructive)
@@ -975,6 +1052,13 @@ needs root:
   `MkdirAll` branch: putting the destination under a regular file instead gives
   `ENOTDIR` from the preceding `os.Stat` and never reaches the code under test.
   When failure injection is easy, check *which* failure you injected.
+- A pseudo-terminal, for the code that only runs on one. `/dev/ptmx` plus
+  `TIOCSPTLCK`/`TIOCGPTN` is about twenty lines and needs no dependency, and it
+  is the only way to test a no-echo read: driven through a pipe, a prompter that
+  never switches the echo off passes every assertion, because there was no echo
+  to switch off. Take the file descriptor *once* — `os.File.Fd` puts it back
+  into blocking mode on every call, so a second call quietly undoes the
+  `SetNonblock` that bounded the read.
 - A directory opened as a file (`EISDIR`), a half-closed socket, an
   `httptest.Server` closed before it is used, and a handler that answers the
   first N requests and 404s afterwards — the last one lets a test choose which
@@ -1047,3 +1131,10 @@ it deliberately differs):
   issued afterwards, or holding an open file (§7.5).
 - [ ] Protocol constants are transcribed from the specification in a test, not
   only round-tripped through the code that defines them (§9.1).
+- [ ] A protocol the client cannot supply is *recorded* when it is skipped, and
+  a later `kXR_NotAuthorized` says which credential was missing and where it was
+  looked for — a login as `unix` that fails on the first read is the default
+  behaviour, not an error path (§5.5).
+- [ ] Prompting is opt-in, never blocks a batch job, and a decline leaves the
+  negotiation exactly as it would have been; the credential cache lives outside
+  `client.mu`, which is held across login (§5.6).

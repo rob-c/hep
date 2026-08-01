@@ -623,7 +623,7 @@ func (sess *cliSession) Send(ctx context.Context, resp xrdproto.Response, req xr
 
 	data, redirection, _, err := sess.send(ctx, streamID, responseChannel, data, pathData, pathID, maxBytes)
 	if err != nil || redirection != nil || resp == nil {
-		return redirection, err
+		return redirection, sess.client.explainAuth(err)
 	}
 
 	return nil, resp.UnmarshalXrd(xrdenc.NewRBuffer(data))

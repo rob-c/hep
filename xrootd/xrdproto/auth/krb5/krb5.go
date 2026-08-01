@@ -23,10 +23,23 @@ import (
 // If the credentials could not be correctly configured, Default will be nil.
 var Default auth.Auther
 
+// DefaultErr is why Default is nil: an *auth.Missing naming the credential
+// cache that was consulted. It is nil when Default was configured.
+var DefaultErr error
+
 func init() {
 	v, err := WithCredCache()
-	if err == nil {
+	switch err {
+	case nil:
 		Default = v
+	default:
+		DefaultErr = &auth.Missing{
+			Provider: "krb5",
+			What:     "Kerberos ticket",
+			Searched: []string{cachePath()},
+			Hint:     "kinit",
+			Err:      err,
+		}
 	}
 }
 

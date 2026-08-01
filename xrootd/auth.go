@@ -36,7 +36,12 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 	securityInformation = bytes.TrimLeft(securityInformation, "&")
 	providerInfos := bytes.Split(securityInformation, []byte{'&'})
 
-	var errs []error
+	// The whole list is parsed before any of it is tried, because a user who is
+	// asked for one credential needs to know what the alternatives are: "this
+	// server also accepts gsi" turns "I have no Kerberos ticket" from a dead end
+	// into an answer.
+	protos := make([][]string, 0, len(providerInfos))
+	offered := make([]string, 0, len(providerInfos))
 	for _, providerInfo := range providerInfos {
 		providerInfo = bytes.TrimLeft(providerInfo, "P=")[:]
 		paramsData := bytes.Split(providerInfo, []byte{','})
@@ -44,27 +49,71 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 		for i := range paramsData {
 			params[i] = string(paramsData[i])
 		}
+		protos = append(protos, params)
+		offered = append(offered, params[0])
+	}
+
+	var errs []error
+	for _, params := range protos {
 		provider := params[0]
 		params = params[1:]
 
 		auther, ok := sess.client.auths[provider]
 		if !ok {
-			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: provider was not found", provider))
-			continue
+			// The server offers a protocol this client has no credential for.
+			// Ask, if anyone is there to be asked; a refusal — or no prompter at
+			// all — leaves the loop to try the next protocol exactly as before,
+			// so the outcome is never worse than not having asked.
+			miss := missingCredential(provider)
+			var err error
+			auther, err = sess.client.promptFor(ctx, CredentialRequest{
+				Provider: provider,
+				Params:   params,
+				Offered:  offered,
+				Server:   sess.sessionID,
+				Missing:  miss,
+			})
+			if err != nil {
+				sess.client.noteUnavailable(provider, skipReason(miss, err))
+				errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
+				continue
+			}
 		}
 		r, err := auther.Request(params)
 		if err != nil {
+			sess.client.noteUnavailable(provider, err)
 			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
 			continue
 		}
 		if err := sess.runAuth(ctx, auther, r); err != nil {
+			sess.client.noteUnavailable(provider, err)
 			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
 			continue
 		}
+		sess.client.noteAuth(provider)
 		return nil
 	}
 
 	return fmt.Errorf("xrootd: could not authorize:\n%v", errs)
+}
+
+// missingCredential reports what a security provider looked for and did not
+// find, when the provider is one this client implements. It is nil for a
+// protocol the client does not know at all, which is a different situation and
+// reads differently to a user: nothing they can supply would help.
+func missingCredential(provider string) *auth.Missing {
+	var err error
+	switch provider {
+	case "gsi":
+		err = gsi.DefaultErr
+	case "ztn":
+		err = token.DefaultErr
+	case "krb5":
+		err = krb5.DefaultErr
+	case "sss":
+		err = sss.DefaultErr
+	}
+	return auth.AsMissing(err)
 }
 
 // maxAuthRounds bounds a multi-round authentication exchange to guard against a

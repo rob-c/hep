@@ -22,6 +22,8 @@ require (
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.40.0
 	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.44.0
+	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
 	golang.org/x/tools v0.45.0
 	gonum.org/v1/gonum v0.17.0
@@ -53,7 +55,6 @@ require (
 	github.com/teambition/rrule-go v1.8.2 // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260508192327-42602be52be6 // indirect
 	modernc.org/b v1.1.0 // indirect
 	modernc.org/db v1.1.1 // indirect
