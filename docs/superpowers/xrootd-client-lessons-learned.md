@@ -996,6 +996,52 @@ What that mapping needs, in order:
   question over both transports and compares the answers, which is the only test
   that fails when one of them drifts.
 
+### 8.11 A namespace glob is a walk with a prune, not `fnmatch`
+
+Every sibling client grew the same convenience — Rust `client/glob.rs`, Python
+`filesystem.glob`, Julia `Base.walkdir` — because the alternative is that every
+caller writes the same recursive listing badly. Three things make it worth
+copying rather than reaching for `path/filepath.Match`:
+
+- **`*` must not swallow separators, and `**` must.** `filepath.Match` gets the
+  first right and has no notion of the second, so `/store/mc/**/*.root` — which
+  is what a physicist actually types — cannot be expressed. The semantics to
+  implement are `pathlib`'s: `*` and `?` stay inside one path component, `**`
+  crosses them, `[abc]` is a character class, and an unclosed `[` is a literal
+  one. Recursive descent over the two byte slices is enough; a pattern is a
+  handful of components and a listing is a network round trip, so the cost that
+  matters is not in the matcher.
+
+- **The literal prefix is the whole optimisation.** `Glob("/store/mc/**/*.root")`
+  must never ask about `/store/data`. Split the pattern at its first magic
+  component, start there, and — when the only magic is in the last component —
+  answer with one `kXR_dirlist` instead of a walk. Against a real storage
+  element the difference between pruning and not is minutes of listings for an
+  answer the pattern said could not be there.
+
+- **A walk cannot give up at the first unreadable directory.** Mixed permissions
+  are the normal case at a shared endpoint. Report the failure against the
+  directory rather than hiding it — only the caller knows whether one unreadable
+  subtree makes the answer wrong — and keep going. The exception is a cancelled
+  context: every listing from there on fails identically, so a walk that treated
+  cancellation as "one more unreadable directory" would walk the whole tree to
+  report it.
+
+Two details are easy to get wrong and both are load-bearing. Opaque data is not
+part of a name (§8.8): split it off before matching, carry it into every listing
+below, and report paths without it — a glob that drops the token is refused at
+the first subdirectory, and one that matches against it finds nothing. And the
+walk sorts each listing itself; a server answers `kXR_dirlist` in whatever order
+it likes, and a caller comparing two runs of the same glob should not be made to
+see that.
+
+In Go this belongs as package-level functions over `xrdfs.FileSystem`
+(`Match`, `Walk`, `Glob`, `GlobFrom`, `RGlob`) rather than as interface methods
+— §8.2 again: the native, HTTP/WebDAV and S3 filesystems all get it without any
+of them implementing anything. `Walk` honouring `io/fs.SkipDir`/`SkipAll` costs
+nothing and is what makes the walk boundable by a caller who recognizes a
+subtree they do not want.
+
 ---
 
 ## 9. Test harness and environment (unglamorous but load-bearing)
@@ -1398,6 +1444,9 @@ it deliberately differs):
 - [ ] Opaque data is split off at the *first* `?`, is never part of the name a
   server addresses, and is carried onto every child of a walk; a path with none
   arrives with no `?` at all (§8.8).
+- [ ] A namespace glob prunes to the pattern's literal prefix, answers
+  last-component magic with one listing, keeps `*` inside a component while
+  `**` crosses them, and survives a directory it may not read (§8.11).
 - [ ] A server that hangs up, goes silent or half-writes a reply fails every
   request waiting on that connection with an error that names it — in flight,
   issued afterwards, or holding an open file (§7.5).

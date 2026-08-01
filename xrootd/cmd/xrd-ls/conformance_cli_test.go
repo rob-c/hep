@@ -174,3 +174,79 @@ func TestConformance_TheFirstFailingOperandStopsTheRun(t *testing.T) {
 		t.Fatalf("the run carried on past the failing operand:\n%s", stdout)
 	}
 }
+
+// TestConformance_APatternIsExpandedAgainstTheRemoteNamespace. A local shell
+// cannot expand a remote path — there is nothing on this machine to match it
+// against — so the pattern arrives intact and the command answers it itself.
+func TestConformance_APatternIsExpandedAgainstTheRemoteNamespace(t *testing.T) {
+	url := lsServer(t)
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+		deny []string
+	}{
+		{
+			name: "a star stays inside one component",
+			args: []string{url + "/*.txt"},
+			want: []string{"/a.txt"},
+			deny: []string{"b.txt", "c.txt"},
+		},
+		{
+			name: "a double star crosses them",
+			args: []string{url + "/**/*.txt"},
+			want: []string{"/a.txt", "/sub/b.txt", "/sub/deeper/c.txt"},
+		},
+		{
+			name: "a character class selects one of them",
+			args: []string{url + "/[ab].txt"},
+			want: []string{"/a.txt"},
+			deny: []string{"sub"},
+		},
+		{
+			name: "a directory that matches is listed, as ls does",
+			args: []string{url + "/s*"},
+			want: []string{"/sub", "b.txt"},
+		},
+		{
+			name: "the flags still apply",
+			args: []string{"-R", url + "/s*"},
+			want: []string{"/sub", "b.txt", "c.txt"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout, stderr, code := runCLI(t, tc.args...)
+			if code != 0 {
+				t.Fatalf("the pattern exited %d: %s", code, stderr)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("the listing does not mention %q:\n%s", want, stdout)
+				}
+			}
+			for _, deny := range tc.deny {
+				if strings.Contains(stdout, deny) {
+					t.Errorf("the listing mentions %q, which the pattern excludes:\n%s", deny, stdout)
+				}
+			}
+		})
+	}
+}
+
+// TestConformance_APatternThatMatchesNothingIsAnError, so that a script globbing
+// for files that have not been produced yet does not carry on as if it had them.
+func TestConformance_APatternThatMatchesNothingIsAnError(t *testing.T) {
+	url := lsServer(t)
+
+	stdout, stderr, code := runCLI(t, url+"/nothing-*.root")
+	if code == 0 {
+		t.Fatalf("a pattern that matched nothing exited 0:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "no match") {
+		t.Fatalf("the failure does not say the pattern matched nothing:\n%s", stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("a pattern that matched nothing still listed something:\n%s", stdout)
+	}
+}
