@@ -1042,6 +1042,52 @@ of them implementing anything. `Walk` honouring `io/fs.SkipDir`/`SkipAll` costs
 nothing and is what makes the walk boundable by a caller who recognizes a
 subtree they do not want.
 
+### 8.12 `touch` is the create that refuses to truncate — and needs the server to say so
+
+Every reference client has a `touch`, and every one of them is the same four
+lines: open with `kXR_new | kXR_open_updt | kXR_mkpath`, treat "it already
+exists" as the successful outcome, close. Nothing else in the protocol will do.
+`kXR_delete` truncates, so the obvious implementation destroys the file a caller
+was trying to keep; and there is no request that moves a modification time, so
+the half of touch(1) that refreshes an mtime cannot be implemented at all. A
+client that fakes it by rewriting the file has turned "make sure this exists"
+into "lose a day's output" — say plainly in the doc comment that it creates and
+does not refresh, and leave it there.
+
+What makes this work is not on the client side at all. `kXR_new` is `O_EXCL`:
+the file existing is reported as a *failure*, and the client has to be able to
+tell that failure apart from a broken disk. Which means the server has to
+classify it — and a server that answers `kXR_IOError` for everything its
+filesystem reports (as this one did) makes `touch` impossible to write against
+it, along with every other exclusive-create idiom: lock files, "did somebody
+else already stage this replica", `MkdirAll` continuing past a directory that is
+already there. The mapping is small and worth transcribing exactly once, from
+the reference's `mapError()` by way of nginx-xrootd's
+`core/compat/error_mapping.c`:
+
+| errno | code |
+| --- | --- |
+| `ENOENT` | `kXR_NotFound` |
+| `EEXIST`, `ENOTEMPTY` | `kXR_ItExists` |
+| `EACCES`, `EPERM`, `EXDEV`, `ELOOP` | `kXR_NotAuthorized` |
+| `ENOTDIR` | `kXR_FSError` |
+| `ENOSPC`, `EDQUOT` | `kXR_NoSpace` |
+| `ENOMEM` | `kXR_NoMemory` |
+| `EINVAL` | `kXR_ArgInvalid` |
+| `EBUSY` | `kXR_FileLocked` |
+| `ENOTSUP`, `ENOSYS`, `EOPNOTSUPP` | `kXR_Unsupported` |
+| anything else | `kXR_IOError` |
+
+Two Go-specific notes. Write it against `io/fs`'s sentinels — `fs.ErrNotExist`,
+`fs.ErrExist`, `fs.ErrPermission`, `fs.ErrInvalid`, `errors.ErrUnsupported` —
+rather than against `syscall`, both because those are what `os` documents it
+returns and because it keeps the file portable; only `ENOTEMPTY` and `ENOSPC`
+have no sentinel and need a build-tagged helper, since Plan 9 has no errno and
+defines neither (`syscall.ENOTDIR`, oddly, every port does define). And
+`kXR_mkpath` must create the parent chain 0755, *not* with the mode of the
+request: a `touch` asking for a 0600 file would otherwise be handed a directory
+it cannot enter and fail on a path it had just created itself.
+
 ---
 
 ## 9. Test harness and environment (unglamorous but load-bearing)
@@ -1444,6 +1490,11 @@ it deliberately differs):
 - [ ] Opaque data is split off at the *first* `?`, is never part of the name a
   server addresses, and is carried onto every child of a walk; a path with none
   arrives with no `?` at all (§8.8).
+- [ ] A filesystem failure is classified before it is sent: `EEXIST` is
+  `kXR_ItExists` and not `kXR_IOError`, or no client can build the exclusive
+  create that `touch`, lock files and `MkdirAll` are all made of, and
+  `kXR_mkpath` builds the parent chain 0755 rather than with the file's mode
+  (§8.12).
 - [ ] A namespace glob prunes to the pattern's literal prefix, answers
   last-component magic with one listing, keeps `*` inside a component while
   `**` crosses them, and survives a directory it may not read (§8.11).

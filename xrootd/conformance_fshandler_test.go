@@ -21,9 +21,12 @@
 package xrootd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"go-hep.org/x/hep/xrootd/xrdfs"
@@ -185,12 +188,20 @@ func TestConformance_AClosedHandleIsGoneForGood(t *testing.T) {
 	}
 }
 
-func TestConformance_APathTheFilesystemRefusesIsAnIOError(t *testing.T) {
+func TestConformance_APathTheFilesystemRefusesSaysWhy(t *testing.T) {
 	// Every one of these is a request a client will make against a path that is
 	// not there — a stale catalogue entry, a job that ran twice, a redirector
 	// pointing at a server that no longer holds the replica. The answer has to
-	// be kXR_FSError with the reason attached, so the client can tell "not here"
+	// name the reason, so the client can tell "not here" from "already here"
 	// from "not allowed" and decide whether to try the next endpoint.
+	//
+	// Answering kXR_IOError for all of them is what makes a client retry a
+	// request that will never succeed, and it hides the one refusal that is a
+	// success: kXR_new against a file that is already there is how a client
+	// creates one without a race, and it has to come back as kXR_ItExists.
+	//
+	// The codes are the reference server's, by way of nginx-xrootd's
+	// core/compat/error_mapping.c.
 	h, dir := fsHandler(t)
 	if err := os.WriteFile(filepath.Join(dir, "f.bin"), []byte("go-hep"), 0644); err != nil {
 		t.Fatalf("could not write the file: %v", err)
@@ -198,43 +209,44 @@ func TestConformance_APathTheFilesystemRefusesIsAnIOError(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
+		code xrdproto.ServerErrorCode
 		call func() (xrdproto.Marshaler, xrdproto.ResponseStatus)
 	}{
-		{"dirlist of a directory that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"dirlist of a directory that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Dirlist(confSessionID, &dirlist.Request{Path: "/absent"})
 		}},
-		{"stat of a file that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"stat of a file that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Stat(confSessionID, &stat.Request{Path: "/absent.bin"})
 		}},
-		{"truncate of a file that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"truncate of a file that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Truncate(confSessionID, &truncate.Request{Path: "/absent.bin", Size: 1})
 		}},
-		{"open of a file that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"open of a file that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Open(confSessionID, &open.Request{Path: "/absent.bin", Options: xrdfs.OpenOptionsOpenRead})
 		}},
-		{"remove of a file that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"remove of a file that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Remove(confSessionID, &rm.Request{Path: "/absent.bin"})
 		}},
-		{"rmdir of a directory that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"rmdir of a directory that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.RemoveDir(confSessionID, &rmdir.Request{Path: "/absent"})
 		}},
-		{"rename of a file that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"rename of a file that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Rename(confSessionID, &mv.Request{OldPath: "/absent.bin", NewPath: "/other.bin"})
 		}},
-		{"mkdir below a directory that is not there", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"mkdir below a directory that is not there", xrdproto.NotFound, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Mkdir(confSessionID, &mkdir.Request{Path: "/absent/dir", Mode: 0o755})
 		}},
-		{"mkdir where a file already is", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"mkdir where a file already is", xrdproto.ItExists, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Mkdir(confSessionID, &mkdir.Request{Path: "/f.bin", Mode: 0o755})
 		}},
-		{"open of a new file below a file", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"open of a new file below a file", xrdproto.FSError, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Open(confSessionID, &open.Request{
 				Path:    "/f.bin/sub/new.bin",
 				Mode:    xrdfs.OpenModeOwnerRead | xrdfs.OpenModeOwnerWrite,
 				Options: xrdfs.OpenOptionsNew | xrdfs.OpenOptionsMkPath,
 			})
 		}},
-		{"open of a file that already exists as new", func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
+		{"open of a file that already exists as new", xrdproto.ItExists, func() (xrdproto.Marshaler, xrdproto.ResponseStatus) {
 			return h.Open(confSessionID, &open.Request{
 				Path:    "/f.bin",
 				Mode:    xrdfs.OpenModeOwnerRead | xrdfs.OpenModeOwnerWrite,
@@ -244,7 +256,7 @@ func TestConformance_APathTheFilesystemRefusesIsAnIOError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp, status := tc.call()
-			fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
+			fsRefused(t, resp, status, tc.code, "An IO error occurred")
 		})
 	}
 }
@@ -301,7 +313,7 @@ func TestConformance_AVirtualStatDescribesTheDiskNotTheFile(t *testing.T) {
 		// The filesystem cannot say how much room a disk it cannot find has,
 		// and a client told zero would route every write somewhere else.
 		resp, status := h.Stat(confSessionID, &stat.Request{Path: "/nowhere/at/all", Options: stat.OptionsVFS})
-		fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
+		fsRefused(t, resp, status, xrdproto.NotFound, "An IO error occurred")
 	})
 
 	t.Run("an unknown handle is still refused", func(t *testing.T) {
@@ -448,7 +460,9 @@ func TestConformance_OpenCreatesOnlyWhatItWasAskedTo(t *testing.T) {
 		resp, status := h.Open(confSessionID, &open.Request{
 			Path: "/keep.bin", Mode: 0o644, Options: xrdfs.OpenOptionsNew,
 		})
-		fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
+		// kXR_ItExists, not kXR_IOError: this is the answer a client turns into
+		// "the file is already there", which is what makes xrdfs.Touch work.
+		fsRefused(t, resp, status, xrdproto.ItExists, "An IO error occurred")
 
 		got, err := os.ReadFile(path)
 		if err != nil {
@@ -513,7 +527,7 @@ func TestConformance_OpenCreatesOnlyWhatItWasAskedTo(t *testing.T) {
 		resp, status := h.Open(confSessionID, &open.Request{
 			Path: "/x/y/new.bin", Mode: 0o644, Options: xrdfs.OpenOptionsNew,
 		})
-		fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
+		fsRefused(t, resp, status, xrdproto.NotFound, "An IO error occurred")
 	})
 }
 
@@ -817,4 +831,43 @@ func TestConformance_ASyncThatTheFilesystemRefusesIsAnIOError(t *testing.T) {
 
 	resp, status = h.Stat(confSessionID, &stat.Request{FileHandle: handle})
 	fsRefused(t, resp, status, xrdproto.IOError, "An IO error occurred")
+}
+
+func TestConformance_AFilesystemFailureIsClassified(t *testing.T) {
+	// The classification itself, without a filesystem in the way: the errnos a
+	// storage element actually reports and cannot be produced on demand in a
+	// temporary directory — a full disk, a read-only export, an operation the
+	// backend does not implement.
+	//
+	// Anything unrecognised stays kXR_IOError. That is the honest answer for a
+	// failure nobody has classified, and the client's retry logic reads it as
+	// "the server has a problem", which it does.
+	for _, tc := range []struct {
+		name string
+		err  error
+		want xrdproto.ServerErrorCode
+	}{
+		{"a path that is not there", os.ErrNotExist, xrdproto.NotFound},
+		{"a path that already is", os.ErrExist, xrdproto.ItExists},
+		{"a directory that still holds something", errNotEmpty, xrdproto.ItExists},
+		{"a path that may not be read", os.ErrPermission, xrdproto.NotAuthorized},
+		{"a file in the middle of a path", syscall.ENOTDIR, xrdproto.FSError},
+		{"a disk with no room left", errNoSpace, xrdproto.NoSpace},
+		{"something the backend does not do", errors.ErrUnsupported, xrdproto.Unsupported},
+		{"an argument the filesystem will not take", os.ErrInvalid, xrdproto.ArgInvalid},
+		{"anything else", errors.New("the cable fell out"), xrdproto.IOError},
+		{"and the same wrapped", fmt.Errorf("open %q: %w", "/f.bin", errNoSpace), xrdproto.NoSpace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := osError(tc.err)
+			if got.Code != tc.want {
+				t.Fatalf("%v is coded %v, want %v", tc.err, got.Code, tc.want)
+			}
+			if !strings.Contains(got.Message, tc.err.Error()) {
+				// A code without the reason leaves an operator with nothing to
+				// go on but a number.
+				t.Fatalf("the message %q does not say what went wrong", got.Message)
+			}
+		})
+	}
 }
