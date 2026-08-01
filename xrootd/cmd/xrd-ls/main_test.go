@@ -18,6 +18,18 @@ import (
 	"go-hep.org/x/hep/xrootd"
 )
 
+// noRedial turns off the connection retries a client applies by default.
+//
+// The listing is driven by a URL rather than by a client the test builds, so there is no
+// option to pass: XRD_CONNECTIONRETRY is how a program you did not write gets
+// configured. A test that means to observe one connection failure would
+// otherwise wait out five redials — about eight seconds each — measuring the
+// backoff schedule, which is pinned in xrootd's own conformance tests.
+func noRedial(t *testing.T) {
+	t.Helper()
+	t.Setenv(xrootd.EnvConnectionRetry, "0")
+}
+
 // lsServer starts an in-process XRootD server over a small tree and returns the
 // root:// prefix that reaches it. The tree is deliberately two levels deep with
 // a file at each level, which is the shape that tells a recursive listing from
@@ -129,6 +141,8 @@ func TestXrdLs_Long(t *testing.T) {
 }
 
 func TestXrdLs_Failures(t *testing.T) {
+	noRedial(t)
+
 	url := lsServer(t)
 
 	for _, tc := range []struct {

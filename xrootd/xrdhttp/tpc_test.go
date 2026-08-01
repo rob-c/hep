@@ -126,7 +126,7 @@ func TestTPCRequest(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL, WithBearerToken("local-tok"), WithInsecureBearerToken())
+			c, err := Dial(srv.URL, Unbounded(), WithBearerToken("local-tok"), WithInsecureBearerToken())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -175,7 +175,7 @@ func TestTPCAcceptedThenFailed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestTPCRefusedStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestTPCNoTokenSendsNoTransferHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

@@ -49,7 +49,10 @@ func deepLocate(t *testing.T, addr string) ([]xrdfs.Location, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	client, err := NewClient(ctx, addr, "gopher")
+	// Unbounded: one of these servers points at an address nothing is
+	// listening on, and observing that once is the test. Redialling it five
+	// times measures the backoff schedule, which is pinned elsewhere.
+	client, err := NewClient(ctx, addr, "gopher", Unbounded())
 	if err != nil {
 		t.Fatalf("could not connect: %v", err)
 	}

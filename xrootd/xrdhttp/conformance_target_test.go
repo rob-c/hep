@@ -55,7 +55,7 @@ func newTargetServer(t *testing.T, opts ...Option) (*targetServer, *Client) {
 	}))
 	t.Cleanup(srv.Close)
 
-	c, err := Dial(srv.URL, opts...)
+	c, err := Dial(srv.URL, append([]Option{Unbounded()}, opts...)...)
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestConformance_ANameIsResolvedAgainstTheBaseURL(t *testing.T) {
 		{base: "https://h:1094/store", name: "f.root", want: "/f.root"},
 	} {
 		t.Run(tc.base+" + "+tc.name, func(t *testing.T) {
-			c, err := Dial(tc.base)
+			c, err := Dial(tc.base, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -200,7 +200,7 @@ func TestConformance_ANameIsEscapedOnTheWire(t *testing.T) {
 		{name: "/100%.root", want: "/100%25.root"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := Dial("https://h:1094")
+			c, err := Dial("https://h:1094", Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -242,7 +242,7 @@ func TestConformance_ADirlistDropsItsOwnEntryWhateverTheHrefLooksLike(t *testing
 			defer srv.Close()
 			base = srv.URL
 
-			c, err := Dial(srv.URL)
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -279,7 +279,7 @@ func TestConformance_AnEntryWithoutADisplayNameIsNamedFromItsHref(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

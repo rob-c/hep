@@ -25,6 +25,8 @@ import (
 // TestConformance_ACopyRefusalNamesTheEndAndTheOperation walks the refusals a
 // caller can hit before a single byte moves.
 func TestConformance_ACopyRefusalNamesTheEndAndTheOperation(t *testing.T) {
+	noRedial(t)
+
 	dir, url := copyServer(t)
 
 	if err := os.Mkdir(filepath.Join(dir, "tree"), 0755); err != nil {
@@ -133,6 +135,8 @@ func TestConformance_AFailedCopyLeavesNoDestinationItNeverOpened(t *testing.T) {
 // classified first, so a malformed one fails without a network round trip and
 // without touching the other end.
 func TestConformance_AnUnparseableURLIsRejectedBeforeAnyConnection(t *testing.T) {
+	noRedial(t)
+
 	local := filepath.Join(t.TempDir(), "src.bin")
 	if err := os.WriteFile(local, []byte("go-hep"), 0644); err != nil {
 		t.Fatalf("could not write the local file: %v", err)

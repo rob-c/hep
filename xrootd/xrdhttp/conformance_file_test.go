@@ -65,7 +65,7 @@ func newRecordingFS(t *testing.T) (*davServer, xrdfs.FileSystem, *recorder) {
 	srv := httptest.NewServer(rec)
 	t.Cleanup(srv.Close)
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -415,7 +415,10 @@ func TestConformance_TimeoutBoundsARequest(t *testing.T) {
 		srv.Close()
 	})
 
-	c, err := Dial(srv.URL, WithTimeout(100*time.Millisecond))
+	// Unbounded first, so the only bound left is the one under test: with the
+	// default retries in place a stalled request is attempted five times, and
+	// this would be measuring the schedule rather than the timeout.
+	c, err := Dial(srv.URL, Unbounded(), WithTimeout(100*time.Millisecond))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -462,7 +465,10 @@ func TestConformance_TLSOptionsDecideWhoIsTrusted(t *testing.T) {
 		{name: "a whole TLS config", opts: []Option{WithTLSConfig(srv.Client().Transport.(*http.Transport).TLSClientConfig)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := Dial(srv.URL, tc.opts...)
+			// Unbounded: a refused certificate is a transport failure, and
+			// the default schedule would offer it again four more times
+			// before the refusal reaches the caller.
+			c, err := Dial(srv.URL, append([]Option{Unbounded()}, tc.opts...)...)
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}

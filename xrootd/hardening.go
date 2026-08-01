@@ -76,19 +76,24 @@ const (
 // loudly: a stream timeout, a bounded connection window, retried connections,
 // and TCP keepalives.
 //
-// None of it is on by default. Each setting turns an operation that would
-// otherwise wait as long as the caller's context allows into one that gives up
-// on a schedule, and choosing that schedule for every program that links this
-// package would be choosing how long their jobs are willing to hang. Hardened
-// is the answer for the one caller that knows: a program talking to grid
-// storage over the wide area.
+// [NewClient] applies it already. It is the default because the caller who has
+// not thought about how a wide-area path fails is precisely the caller who
+// should not discover it as a program that never returns: without a stream
+// timeout, a connection that stops forwarding while both kernels still believe
+// it is open blocks a read until TCP gives up, which on Linux is the better
+// part of an hour. A default that hangs is not a neutral choice.
+//
+// It is named, and exported, so that it can be spelled out where the reader of
+// a program needs to see it, and so that the settings it applies have somewhere
+// to be documented. Passing it explicitly changes nothing.
 //
 // It is an ordinary option, so anything applied after it wins:
 //
 //	cli, err := xrootd.NewClient(ctx, addr, user,
-//		xrootd.Hardened(),
 //		xrootd.WithStreamTimeout(5*time.Minute), // a site that stages from tape
 //	)
+//
+// [Unbounded] is the way back to no bounds at all.
 func Hardened() Option {
 	return func(client *Client) error {
 		for _, opt := range []Option{
@@ -101,6 +106,34 @@ func Hardened() Option {
 				return err
 			}
 		}
+		return nil
+	}
+}
+
+// Unbounded removes every bound [Hardened] applies: no stream timeout, no
+// connection window, no connection retry, no keepalives. An operation then
+// waits for as long as the caller's context allows, and a connection that has
+// stopped forwarding is noticed when TCP notices it.
+//
+// This is what the client did before the bounds became the default, and there
+// are callers who want it: a test that means to observe a hang, a program on a
+// local network where a bounded wait would only turn a slow server into a
+// failed one, a caller whose own context is the only deadline it wants. It is
+// deliberately not the default, because wanting it requires knowing it exists.
+//
+// Like any option it can be followed by another, so a caller can drop the
+// bounds and then put one back:
+//
+//	cli, err := xrootd.NewClient(ctx, addr, user,
+//		xrootd.Unbounded(),
+//		xrootd.WithKeepAlive(30*time.Second, 10*time.Second, 3),
+//	)
+func Unbounded() Option {
+	return func(client *Client) error {
+		client.streamTimeout = 0
+		client.dialTimeout = 0
+		client.connRetry = 0
+		client.keepAlive = net.KeepAliveConfig{}
 		return nil
 	}
 }

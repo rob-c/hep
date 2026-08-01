@@ -91,7 +91,7 @@ func TestMutualTLS(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 
-	c, err := Dial(srv.URL,
+	c, err := Dial(srv.URL, Unbounded(),
 		WithRootCAs(caPool),
 		WithClientCertificate(client.tlsCert),
 	)
@@ -124,7 +124,7 @@ func TestServerVerificationFailsWithoutCA(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 
-	c, err := Dial(srv.URL) // no RootCAs: system pool won't trust our test CA
+	c, err := Dial(srv.URL, Unbounded()) // no RootCAs: system pool won't trust our test CA
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

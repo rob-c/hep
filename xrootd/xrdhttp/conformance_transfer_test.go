@@ -92,7 +92,7 @@ func TestConformance_AServerThatIgnoresRangesStillGivesTheRightBytes(t *testing.
 			srv := httptest.NewServer(http.HandlerFunc(srvKind.handler))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL)
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}
@@ -155,7 +155,7 @@ func TestConformance_AnEmptyReadAsksTheServerNothing(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestConformance_AWriteDeclaresItsLengthWhenItKnowsIt(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestConformance_ARedirectIsFollowedAndBounded(t *testing.T) {
 		}))
 		defer mgr.Close()
 
-		c, err := Dial(mgr.URL)
+		c, err := Dial(mgr.URL, Unbounded())
 		if err != nil {
 			t.Fatalf("Dial: %v", err)
 		}
@@ -293,7 +293,9 @@ func TestConformance_ARedirectIsFollowedAndBounded(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		c, err := Dial(srv.URL)
+		// Unbounded: the loop is what is under test, not the retry schedule
+		// that would otherwise walk into it five times over.
+		c, err := Dial(srv.URL, Unbounded())
 		if err != nil {
 			t.Fatalf("Dial: %v", err)
 		}
@@ -332,7 +334,7 @@ func TestConformance_ARedirectIsFollowedAndBounded(t *testing.T) {
 		}))
 		defer mgr.Close()
 
-		c, err := Dial(mgr.URL, WithBearerToken("s3cr3t"), WithInsecureBearerToken())
+		c, err := Dial(mgr.URL, Unbounded(), WithBearerToken("s3cr3t"), WithInsecureBearerToken())
 		if err != nil {
 			t.Fatalf("Dial: %v", err)
 		}
@@ -369,7 +371,7 @@ func TestConformance_AnErrorStatusIsReportedNotReturnedAsData(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c, err := Dial(srv.URL)
+			c, err := Dial(srv.URL, Unbounded())
 			if err != nil {
 				t.Fatalf("Dial: %v", err)
 			}

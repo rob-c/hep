@@ -47,7 +47,7 @@ func TestDirlistWebDAV(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL)
+	c, err := Dial(srv.URL, Unbounded())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

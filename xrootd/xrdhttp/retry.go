@@ -81,21 +81,40 @@ func WithRetry(n int) Option {
 // loudly: a per-request timeout, and retries of the requests that can be
 // repeated safely.
 //
-// It is off by default because both settings decide how long a caller's program
-// is willing to wait, and that is not a decision a library should make for
-// every program that links it. Hardened is the answer for the one caller that
-// knows: a program reading from grid storage over the wide area.
+// [Dial] applies it already. It is the default because a request that is never
+// answered is indistinguishable, from the caller's side, from one that is being
+// answered slowly, and net/http will wait on it for as long as the caller's
+// context allows. A default that hangs is not a neutral choice.
+//
+// It is named, and exported, so that it can be spelled out where the reader of
+// a program needs to see it. Passing it explicitly changes nothing.
 //
 // It is an ordinary option, so anything applied after it wins:
 //
 //	cli, err := xrdhttp.Dial(url,
-//		xrdhttp.Hardened(),
 //		xrdhttp.WithTimeout(30*time.Minute), // whole-file reads of large objects
 //	)
+//
+// [Unbounded] is the way back to no timeout and no retry.
 func Hardened() Option {
 	return func(c *config) {
 		WithRetry(hardenedAttempts)(c)
 		WithTimeout(hardenedTimeout)(c)
+	}
+}
+
+// Unbounded removes what [Hardened] applies: no per-request timeout, and one
+// attempt per request. A request then waits for as long as the caller's context
+// allows, and a failure is reported the first time it happens.
+//
+// It is deliberately not the default, because wanting it requires knowing it
+// exists. The callers who do: a test that means to observe a stall, a program
+// against a local endpoint where a bounded wait would turn a slow server into a
+// failed one, a caller whose own context is the only deadline it wants.
+func Unbounded() Option {
+	return func(c *config) {
+		c.retry.attempts = 1
+		c.timeout = 0
 	}
 }
 

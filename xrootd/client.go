@@ -143,10 +143,20 @@ func NewClient(ctx context.Context, address string, username string, opts ...Opt
 
 	client.initSecurityProviders()
 
-	// The environment is applied first so that a caller's own options win: a
-	// program that configures its client explicitly should behave the same
-	// whatever shell it was started from.
-	for _, opt := range append(envOptions(), opts...) {
+	// Three layers, least specific first, so the more specific always wins:
+	// the safe defaults, then what the shell asked for, then what the program
+	// asked for. A program that configures its client explicitly behaves the
+	// same whatever shell it was started from.
+	//
+	// Hardened comes first rather than not at all because a caller who has not
+	// thought about wide-area failure is exactly the caller who should not be
+	// left waiting on a black-holed connection until their batch slot expires.
+	// Unbounded is the way back out.
+	layered := make([]Option, 0, 1+len(opts)+8)
+	layered = append(layered, Hardened())
+	layered = append(layered, envOptions()...)
+	layered = append(layered, opts...)
+	for _, opt := range layered {
 		if opt == nil {
 			continue
 		}

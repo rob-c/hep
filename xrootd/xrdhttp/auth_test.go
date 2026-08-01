@@ -43,7 +43,7 @@ func TestDialRefusesTokenOverCleartext(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := Dial(tc.url, tc.opts...)
+			_, err := Dial(tc.url, append([]Option{Unbounded()}, tc.opts...)...)
 			if got := err != nil; got != tc.want {
 				t.Fatalf("Dial(%q) error = %v, want an error: %v", tc.url, err, tc.want)
 			}
@@ -55,7 +55,7 @@ func TestDialRefusesTokenOverCleartext(t *testing.T) {
 // not get is an error, not a silently unauthenticated client.
 func TestDialReportsFailedOptions(t *testing.T) {
 	boom := errors.New("no credential here")
-	_, err := Dial("https://example.org/", func(c *config) { c.err = boom })
+	_, err := Dial("https://example.org/", Unbounded(), func(c *config) { c.err = boom })
 	if !errors.Is(err, boom) {
 		t.Fatalf("got %v, want %v", err, boom)
 	}
@@ -70,7 +70,7 @@ func TestWithDiscoveredBearerToken(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL, WithDiscoveredBearerToken(), WithInsecureBearerToken())
+	c, err := Dial(srv.URL, Unbounded(), WithDiscoveredBearerToken(), WithInsecureBearerToken())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestEveryRequestCarriesTheToken(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, err := Dial(srv.URL, WithBearerToken("tok"), WithInsecureBearerToken())
+	c, err := Dial(srv.URL, Unbounded(), WithBearerToken("tok"), WithInsecureBearerToken())
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

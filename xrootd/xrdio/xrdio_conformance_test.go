@@ -28,6 +28,18 @@ import (
 	"go-hep.org/x/hep/xrootd/xrdio"
 )
 
+// noRedial turns off the connection retries a client applies by default.
+//
+// xrdio.Open is driven by a URL rather than by a client the test builds, so there is no
+// option to pass: XRD_CONNECTIONRETRY is how a program you did not write gets
+// configured. A test that means to observe one connection failure would
+// otherwise wait out five redials — about eight seconds each — measuring the
+// backoff schedule, which is pinned in xrootd's own conformance tests.
+func noRedial(t *testing.T) {
+	t.Helper()
+	t.Setenv(xrootd.EnvConnectionRetry, "0")
+}
+
 // xrdioContent is deliberately not a round number of anything: the offsets
 // below straddle its end.
 var xrdioContent = []byte("the quick brown fox jumps over the lazy dog")
@@ -230,6 +242,8 @@ func TestFileIsAnFSFile(t *testing.T) {
 // TestOpenReportsFailures: the client is a network client, so every one of
 // these is a routine outcome rather than an exceptional one.
 func TestOpenReportsFailures(t *testing.T) {
+	noRedial(t)
+
 	url := xrdioServer(t)
 
 	t.Run("no such file", func(t *testing.T) {

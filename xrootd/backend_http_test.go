@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go-hep.org/x/hep/xrootd/xrdhttp"
 )
 
 // startHTTPFileServer serves a single file over HEAD and GET and returns the
@@ -81,7 +83,9 @@ func TestDialHTTPSchemes(t *testing.T) {
 func TestDialHTTPRewritesDavSchemes(t *testing.T) {
 	addr := startHTTPFileServer(t, "/f", []byte("x"))
 
-	be, err := DialHTTP("davs://" + addr + "/f")
+	// Unbounded: the failure below is the point of the test, and the default
+	// retry schedule would ask for it five times before reporting it.
+	be, err := DialHTTP("davs://"+addr+"/f", xrdhttp.Unbounded())
 	if err != nil {
 		t.Fatalf("DialHTTP(davs://): %v", err)
 	}

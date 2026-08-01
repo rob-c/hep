@@ -54,6 +54,19 @@ func copyServer(t *testing.T) (dir, url string) {
 	return dir, fmt.Sprintf("root://%s/", listener.Addr())
 }
 
+// noRedial turns off the connection retries a client applies by default.
+//
+// A copy is driven by a URL rather than by a client the test builds, so there
+// is no option to pass: XRD_CONNECTIONRETRY is how a program you did not write
+// gets configured, and it is the mechanism under test here as much as it is the
+// convenience. Tests that mean to observe one connection failure would
+// otherwise wait out five redials — about eight seconds each — measuring the
+// backoff schedule, which is pinned in xrootd's own conformance tests.
+func noRedial(t *testing.T) {
+	t.Helper()
+	t.Setenv(xrootd.EnvConnectionRetry, "0")
+}
+
 // copyContent is 3 bytes over 64 kiB, so every chunk size below leaves a
 // partial chunk at the end.
 func copyContent(t *testing.T) []byte {
@@ -334,6 +347,8 @@ func TestRecursiveCopy(t *testing.T) {
 // network copy, and each must be reported rather than leaving a truncated file
 // behind and returning nil.
 func TestCopyReportsFailures(t *testing.T) {
+	noRedial(t)
+
 	_, url := copyServer(t)
 
 	for _, tc := range []struct {

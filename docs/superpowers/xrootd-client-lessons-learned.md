@@ -849,12 +849,35 @@ fragment and the userinfo password at the one place every request goes through.
 `url.Redacted` covers only the password, which is the one place a grid
 credential never is.
 
-**None of it is on by default.** Each bound turns an operation that would wait
-as long as the caller's context allows into one that gives up on a schedule, and
-choosing that schedule for every program that links the library is choosing how
-long their jobs are willing to hang. What the library can offer is one option
-that bundles the settings a wide-area caller wants — `Hardened()` on both
-transports — applied like any other option, so anything after it wins.
+**All of it is on by default, and that is the harder call.** Each bound turns an
+operation that would wait as long as the caller's context allows into one that
+gives up on a schedule, and choosing that schedule for every program that links
+the library is choosing how long their jobs are willing to hang. The argument
+that settles it is that the defaults *are* the configuration nearly every
+program ships with, because the caller who would change them is the caller who
+already knows what they do. An unbounded default is therefore not the neutral
+choice it looks like: it is the choice that a first program against grid storage
+hangs for the better part of an hour with nothing in its output to say why, and
+"it looked like it was working" is the worst failure mode a client has.
+
+So `NewClient` and `Dial` apply `Hardened()` themselves, and layer three sets of
+options — the safe defaults, then `XRD_*` from the environment, then the
+caller's — least specific first, so the more specific always wins. The order of
+the upper two matters as much as the values: a default that outranked the
+environment would make the variables look supported while having no effect, and
+an environment that outranked the caller would make a program behave differently
+depending on the shell it was started from. `Unbounded()` on both transports is
+the way back out, for the caller whose own context is the only deadline they
+want, and `Hardened()` stays exported so a program can still say out loud what
+it relies on.
+
+The cost lands on the test suite, and it is worth naming because it is the shape
+of the mistake: a test that means to observe *one* connection failure now waits
+out five redials, so it measures the backoff schedule instead of the behaviour
+under test. The fix is not to weaken the default but to make each such test say
+what it means — `Unbounded()` where the test builds the client, `XRD_CONNECTIONRETRY=0`
+where it drives a whole program by URL — and to pin the schedule in one place
+that is about the schedule.
 
 ---
 

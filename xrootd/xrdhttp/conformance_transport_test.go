@@ -32,7 +32,7 @@ func deadClient(t *testing.T) *Client {
 	url := srv.URL
 	srv.Close()
 
-	c, err := Dial(url)
+	c, err := Dial(url, Unbounded())
 	if err != nil {
 		t.Fatalf("could not build a client: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestConformance_AnEndpointMustBeHTTP(t *testing.T) {
 		{"something that is not a url", "://%zz", "could not parse"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := Dial(tc.url)
+			c, err := Dial(tc.url, Unbounded())
 			if err == nil {
 				t.Fatalf("%q was accepted as an endpoint", tc.url)
 			}

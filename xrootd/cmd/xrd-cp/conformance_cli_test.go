@@ -181,6 +181,8 @@ func TestConformance_RecursiveIsOptIn(t *testing.T) {
 }
 
 func TestConformance_AFailureExitsNonZeroAndSaysSoOnStderr(t *testing.T) {
+	noRedial(t)
+
 	dir, url := cpServer(t)
 	if err := os.WriteFile(filepath.Join(dir, "src.bin"), []byte("go-hep"), 0644); err != nil {
 		t.Fatalf("could not write the remote file: %v", err)
