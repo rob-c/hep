@@ -853,9 +853,40 @@ are the only coverage of the command layer and they need the network, so they
 give nothing on a laptop or in a sealed CI. An in-process server
 (`xrootd.NewServer(xrootd.NewFSHandler(dir), …)` on `localhost:0`) covers the
 same paths in milliseconds, and it is what turned up the write-access bug below.
-Two shapes are worth the trouble: capture `os.Stdout` through a pipe for the
-listing commands, and check the *server's* directory on disk rather than reading
-back through the client, so a symmetric bug in both directions cannot hide.
+One shape is worth the trouble everywhere: check the *server's* directory on disk
+rather than reading back through the client, so a symmetric bug in both
+directions cannot hide.
+
+The other is structural, and it is worth changing the command for. A `main` that
+does its work in `main()` — package-level `flag` variables, `log.Fatal`,
+`fmt.Printf` — is reachable from a test only through a subprocess, so in
+practice it is not tested at all: the argument handling, the exit status and the
+stdout/stderr split are the part a user actually meets, and they were the part
+with no coverage. The fix is the shape `groot/cmd/root-ls` already uses:
+
+```go
+func main() { os.Exit(run(os.Stdout, os.Stderr, os.Args[1:])) }
+
+func run(stdout, stderr io.Writer, args []string) int
+```
+
+with `flag.ContinueOnError` and `errors.Is(err, flag.ErrHelp)` returning 0, since
+asking for help is not a failure. Three details matter:
+
+- Build the `FlagSet` *inside* `run`, not at package level. A package-level set
+  is fine for a process that parses once and exits; in a test binary the second
+  call inherits the first call's values and the failure looks like a flag that
+  does not work.
+- Thread the writer all the way down, not just to the top frame. `xrd-cp`'s
+  `-` destination writes the file to stdout, which is the whole reason the
+  parameter exists; a `fmt.Printf` left anywhere below `run` corrupts that
+  stream. Diagnostics — the `-v` byte count — go to stderr for the same reason.
+- Split anything that only ends on a signal. `xrd-srv`'s `run` parses, binds and
+  installs the handler; a separate `serve(stdout, stderr, listener, baseDir,
+  quit <-chan os.Signal) int` runs the loop, so a test drives shutdown with a
+  synthetic channel instead of signalling the test process. That split also
+  makes the ordering testable: arguments have to be refused *before* the listener
+  is bound, or a run that was never going to serve anything still holds a port.
 
 Watch the cost of chunk-size sweeps: `ChunkSize: 1` over a 64 KiB file is 65k
 round trips and took 190 s of a 193 s suite. Sweep realistic chunk sizes over the
@@ -898,6 +929,37 @@ the request names.
   Back-date or settle briefly after minting.
 - **Gate expensive/flaky interop behind an env flag** and skip cleanly when the
   server/tool is absent, so the normal `go test` stays green and offline.
+
+### 9.8 A credential is only tested if something verifies it
+
+The auth providers were the last surfaces with real gaps, and the reason is that
+they are easy to test *wrongly*. A credential is a byte string: it is tempting
+to assert on its fields — the right bucket present, the right length, the right
+tag — and every one of those assertions can pass on a provider that builds each
+piece correctly and assembles them wrongly. That is not a hypothetical failure
+mode; it is the one that actually happens, because the pieces come from a
+specification and the assembly comes from the author.
+
+The test that catches it takes the *server's* side. For GSI: derive the session
+key from the public key the client actually sent, decrypt the response with it,
+pull the certificate out of the message that arrived and verify the proof of
+possession against that certificate — `rsa.VerifyPKCS1v15(pub, crypto.Hash(0),
+rtag, sig)`, against the tag the test itself challenged with. For sss: decrypt
+the credential with the shared key, check the trailing CRC-32, and read the
+identity out of the TLV. Both are perhaps twenty lines of test-side code, and
+both fail on a rearrangement that no per-field assertion notices.
+
+The rest of an auth provider's behaviour is discovery, and it fails in the
+opposite direction — silently, by producing *no* credential. That deserves
+explicit cases: both environment spellings XRootD deployments use
+(`XrdSecSSSKT` and `XrdSecsssKT`, and `$KRB5CCNAME` with and without its `FILE:`
+prefix), the conventional path when the environment says nothing, and the
+distinction between a keytab that is *absent* — skip it, the next location may
+have one — and a keytab that is present and malformed, which is a configuration
+mistake that must be reported rather than hidden behind whichever credential
+happened to work next. Expiry gets the same treatment: keytabs are rotated by
+appending, so the file routinely holds dead keys ahead of the live one, and
+"first key" and "first live key" differ exactly when it matters.
 
 ---
 

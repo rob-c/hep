@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -55,35 +56,21 @@ func lsServer(t *testing.T) string {
 	return fmt.Sprintf("root://%s/", listener.Addr())
 }
 
-// captureStdout runs fn with os.Stdout redirected to a pipe and returns what it
-// printed. xrd-ls writes its listing there directly, so this is the only way to
-// see what the command actually produced.
-func captureStdout(t *testing.T, fn func() error) (string, error) {
+// lsOutput runs fn with a buffer standing in for the command's stdout and
+// returns what it printed. The listing is the whole product of xrd-ls, so every
+// test below reads it rather than only the error.
+func lsOutput(t *testing.T, fn func(w io.Writer) error) (string, error) {
 	t.Helper()
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("could not create a pipe: %v", err)
-	}
-	defer r.Close()
-
-	old := os.Stdout
-	os.Stdout = w
-	fnErr := fn()
-	os.Stdout = old
-	w.Close()
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("could not read the captured output: %v", err)
-	}
-	return string(out), fnErr
+	buf := new(bytes.Buffer)
+	err := fn(buf)
+	return buf.String(), err
 }
 
 func TestXrdLs_File(t *testing.T) {
 	url := lsServer(t)
 
-	out, err := captureStdout(t, func() error { return xrdls(url+"/a.txt", false, false) })
+	out, err := lsOutput(t, func(w io.Writer) error { return xrdls(w, url+"/a.txt", false, false) })
 	if err != nil {
 		t.Fatalf("could not list the file: %v", err)
 	}
@@ -95,7 +82,7 @@ func TestXrdLs_File(t *testing.T) {
 func TestXrdLs_Directory(t *testing.T) {
 	url := lsServer(t)
 
-	out, err := captureStdout(t, func() error { return xrdls(url+"/", false, false) })
+	out, err := lsOutput(t, func(w io.Writer) error { return xrdls(w, url+"/", false, false) })
 	if err != nil {
 		t.Fatalf("could not list the directory: %v", err)
 	}
@@ -113,7 +100,7 @@ func TestXrdLs_Directory(t *testing.T) {
 func TestXrdLs_Recursive(t *testing.T) {
 	url := lsServer(t)
 
-	out, err := captureStdout(t, func() error { return xrdls(url+"/", false, true) })
+	out, err := lsOutput(t, func(w io.Writer) error { return xrdls(w, url+"/", false, true) })
 	if err != nil {
 		t.Fatalf("could not list the tree: %v", err)
 	}
@@ -129,7 +116,7 @@ func TestXrdLs_Recursive(t *testing.T) {
 func TestXrdLs_Long(t *testing.T) {
 	url := lsServer(t)
 
-	out, err := captureStdout(t, func() error { return xrdls(url+"/a.txt", true, false) })
+	out, err := lsOutput(t, func(w io.Writer) error { return xrdls(w, url+"/a.txt", true, false) })
 	if err != nil {
 		t.Fatalf("could not list the file: %v", err)
 	}
@@ -153,7 +140,7 @@ func TestXrdLs_Failures(t *testing.T) {
 		{"not a url", "root://%zz//a.txt"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := captureStdout(t, func() error { return xrdls(tc.arg, false, false) })
+			_, err := lsOutput(t, func(w io.Writer) error { return xrdls(w, tc.arg, false, false) })
 			if err == nil {
 				t.Fatal("the listing reported success")
 			}
@@ -171,7 +158,7 @@ func TestXrdLs_Opaque(t *testing.T) {
 
 	url := lsServer(t)
 
-	out, err := captureStdout(t, func() error { return xrdls(url+"/"+token, false, true) })
+	out, err := lsOutput(t, func(w io.Writer) error { return xrdls(w, url+"/"+token, false, true) })
 	if err != nil {
 		t.Fatalf("could not list the tree: %v", err)
 	}

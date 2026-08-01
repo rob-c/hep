@@ -5,6 +5,19 @@ None of them needs a real XRootD server; the ones that need a *server* start one
 in-process. The design rules behind them are in
 `docs/superpowers/xrootd-client-lessons-learned.md` §9.
 
+Together they hold `./xrootd/...` at **91.0% statement coverage**, measured the
+only way that is meaningful across a tree of packages that test each other:
+
+```
+go test ./xrootd/... -coverpkg=./xrootd/... -coverprofile=cov.out -count=1 -timeout 550s
+go tool cover -func=cov.out | tail -1
+```
+
+Without `-coverpkg` each package is credited only for the code it exercises in
+itself, which understates a suite whose whole design is to drive one package
+through another. The largest remaining gap is `xrdproto/auth/krb5`, which needs
+a live KDC; the rest is scattered single-statement error branches.
+
 ## Wire decoding
 
 | File | Covers |
@@ -48,13 +61,44 @@ namespace suite) check the oracle itself, so `srv.check(t)` cannot pass vacuousl
 | `xrootd/xrdio/xrdio_conformance_test.go` | The `io` contracts `xrdio.File` claims: `Read` to EOF, `ReadAt` not moving the position, `Seek` in all three whences (including `SeekEnd`, whose offset counts *forward* from the end), rejection of bad arguments, `fs.File`, open failures. Runs against an in-process server. |
 | `xrootd/xrdcopy/xrdcopy_conformance_test.go` | The copy engine end to end in both directions: chunk sizes that divide the file and that do not, empty files, resume from five different partial lengths, overwrite without resume, recursive trees, failures, context cancellation. Uploads are verified on the server's disk, not read back through the client. |
 | `xrootd/fshandler_test.go` | The in-process server's handler, including `TestHandler_OpenGrantsWriteAccess`: an option set that creates, truncates or appends must yield a writable descriptor even when `kXR_open_updt` is absent. |
-| `xrootd/cmd/xrd-ls/main_test.go` | The listing command offline: file, directory, `-l`, `-R`, and the three ways it can fail. Captures `os.Stdout` through a pipe. |
+| `xrootd/cmd/xrd-ls/main_test.go` | The listing command offline: file, directory, `-l`, `-R`, and the three ways it can fail. |
 | `xrootd/cmd/xrd-cp/main_test.go` | The copy command offline: a file, a tree with and without `-r`, and failures. (The pre-existing benchmarks and `TestXrdCp` still use public remote servers.) |
 | `xrootd/xrdio/conformance_openfrom_test.go` | `OpenFrom`, which borrows a filesystem handle instead of dialling one: reading through it, the borrowed session surviving the file's `Close`, a missing file reported at open, and `Write`/`WriteAt` refused on the read-only handle it returns. |
 | `xrootd/xrdcopy/conformance_identity_test.go` | Who the copy logs in as (option, then URL, then `$USER`, then `nobody`) and when it declares a transfer corrupt: silent for a server with no checksum, a refused query or an algorithm this client cannot compute, and failing only on a real digest mismatch. |
 | `xrootd/xrdfs/conformance_compression_test.go` | `FileCompression` on the wire: eight bytes, big-endian page size then a fixed four-byte algorithm name, and a short buffer reported rather than half-decoded. It shares the `kXR_open` response area with the file handle. |
 | `xrootd/xrdsum/conformance_test.go` | That `Supported()` and `Sum()` agree in both directions, and that digests are fixed-width lower-case hex — XRootD compares checksums as strings, so a dropped leading zero fails to match the server that produced it. |
 | `xrootd/conformance_client_options_test.go` | The client's security posture before it connects: the default providers registered under their protocol names, `WithAuth` adding and replacing by name, `WithTLS`/`WithInsecureTLS`/`WithTLSConfig` composing, and the effective TLS config naming the dialled host while leaving the caller's own config untouched. |
+| `xrootd/xrdcopy/conformance_verify_test.go` | The parts of checksum verification the identity suite does not reach: every algorithm `xrdsum.Supported()` claims is actually compared and actually rejects a wrong digest of the same width; a local file that cannot be read is an error rather than a pass; and the server query is *bounded* — the copy imposes a deadline when the caller gave none, and leaves the caller's own deadline exactly as it found it. An unbounded checksum query hangs a copy that has already transferred every byte. |
+| `xrootd/xrdcopy/conformance_failure_test.go` | What a refused copy says and what it leaves behind. Seven refusals — a missing remote source, a directory without `Recursive` at either end, a local-to-local directory copy, an unreachable source server and an unreachable destination server — each naming both the end that failed and the operation. Plus: a failed copy creates no destination it never opened, an unparseable URL is rejected before any connection is made (as source *and* as destination), and a recursive copy of an empty tree succeeds rather than reporting nothing to do as an error. |
+| `xrootd/xrdcopy/conformance_upload_test.go` | The upload direction of resume, which is the half that is easy to get subtly wrong: the offset the client seeks to locally and the offset it writes to remotely have to agree, and a resume that seeks the source but writes from zero produces a file of exactly the right length holding the tail twice — which no size check catches. Also: a complete upload is not re-sent (checked on the modification time, so a retry loop cannot become an infinite transfer), a copy without `Resume` replaces a longer stale destination outright, an uploaded tree keeps its shape including an empty file three levels down, and an unreadable source leaves nothing at the far end. |
+
+## Security providers
+
+An authentication provider fails *late*: a credential built from the wrong key,
+or carrying a truncated login name, is a well-formed message that the server
+rejects as an authorization error with nothing pointing back at the keytab or
+the proxy file. These suites check the assembly, not just the pieces.
+
+| File | Covers |
+|------|--------|
+| `xrootd/xrdproto/auth/gsi/conformance_handshake_test.go` | The unsigned-DH GSI handshake verified from the *server's* side: the test derives the session key from what the client actually sent, decrypts the response, and checks the proof of possession against the certificate the client handed over. A per-piece unit test passes on a client that builds every bucket correctly and assembles them wrongly; this one does not. Plus the certificate request echoing the server's `c:`/`ca:` choices, a provider with no proxy declining to start a handshake at all, and six challenges this client must refuse — truncated, a proxy request, the wrong step, no public key, a malformed key, and a signed-DH challenge it cannot answer. |
+| `xrootd/xrdproto/auth/krb5/conformance_test.go` | Where the ticket cache is found — `$KRB5CCNAME` with and without the `FILE:` prefix, and the conventional `krb5cc_<uid>` in the temporary directory when the environment says nothing — the provider naming itself the way the server advertises it, a handshake with no service name refused rather than guessed at, and a cache that is not there reported as a failure rather than silently treated as an empty one. The handshake itself needs a live KDC and is not covered offline. |
+| `xrootd/xrdproto/auth/sss/conformance_test.go` | Where the keytab is found and what the credential says. Both environment spellings are honoured (`XrdSecSSSKT` and `XrdSecsssKT`, with the documented one winning when both are set), a stale variable pointing at a removed keytab is skipped rather than fatal, and `~/.xrd/sss.keytab` is the last resort — but a keytab that *exists* and is malformed is an error, because falling through would hide a configuration mistake behind whichever credential happened to work. Then the credential itself, read back the way a server reads it: the key it names, the login name it carries — `xrd` when the client offers none, cut to 63 bytes when it is longer than the field — a fresh nonce every time, and the expiry boundary that decides whether a client rotating on the hour sends a key the server has just dropped. |
+
+## Command-line tools
+
+The three commands are the only client surface a user meets directly, and their
+contract is the shell's: what goes on stdout, what goes on stderr, and the exit
+status. Each `main` is now `os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))`
+over a `run(stdout, stderr io.Writer, args []string) int` — the pattern already
+used by `groot/cmd/root-ls` — so the whole command is reachable from a test
+without a subprocess, a pipe or a signal.
+
+| File | Covers |
+|------|--------|
+| `xrootd/cmd/xrd-ls/conformance_cli_test.go` | Listing to a caller-supplied writer, the flags reaching the listing (`-l`, `-R` and both together — the long recursive format prints a directory heading and then base names, which is easy to assert wrongly), several operands listed in order and separated, five ways to fail with a non-zero status and a message on stderr, the usage not being an error, and the first failing operand stopping the run. |
+| `xrootd/cmd/xrd-cp/conformance_cli_test.go` | The shell contract of a copy: success is *quiet* (anything on stdout would corrupt `xrd-cp src - \| ...`), `-` writes the file to stdout, the last operand is the destination, `.` means the working directory, `-v` reports the byte count on stderr where it cannot be mistaken for data, `-r` is opt-in and refused with a message naming the missing flag, six failures exit non-zero, and the first failing source stops the run. |
+| `xrootd/cmd/xrd-srv/conformance_test.go` | The serving command: four bad argument sets refused *before* a port is bound — validating after binding leaves a socket held open on a run that was never going to serve anything — and then the real thing, a `serve` split out from `run` so the loop can be driven with a synthetic quit channel: a served directory read over `root://` by a real client, an interrupt shutting the server down rather than dropping connections, and a listener that dies underneath the loop reported as a failure rather than a clean exit. |
 
 ## HTTP data access
 
@@ -75,7 +119,9 @@ that arrived, not only on the values that came back.
 | `xrootd/xrdhttp/conformance_target_test.go` | Which URL each operation is addressed to. Nine awkward names — spaces, `+`, `%`, `?`, `#`, `&`, `:`, unicode — through HEAD, GET, ranged GET, PUT, DELETE, PROPFIND, MKCOL and MOVE, asserted on the path the server decoded and on the escaping in the request line, with MOVE's `Destination` parsed back as a URL. Plus resolution against a base URL with a path prefix, and the listing side: an href is a URI reference, so it is decoded before it is compared to the requested path or handed back as a name. |
 | `xrootd/xrdhttp/conformance_hostile_test.go` | The PROPFIND parser against a server that answers badly: thirteen malformed documents, an entity-expansion bomb, an external entity naming a local file and a URL, an endless well-formed body, and a parseable document under the wrong status. Nothing may panic, hang, allocate without bound or fetch what the document points at. |
 | `xrootd/xrdhttp/conformance_errors_test.go` | What a refusal means. Every status the client can meet, checked against *all four* of `fs.ErrNotExist`, `fs.ErrExist`, `fs.ErrPermission` and `ErrNotSupported` rather than only the one it should be — including the statuses that mean none of them, where a full disk or an overloaded gateway must not be read as a statement about the file. The verb is part of the mapping: 405 on MKCOL is "the collection is already there" and on any other verb is "this server does not speak WebDAV". Then the same through the real client: 404 on every namespace call, 401/403 not readable as a missing path, `MkdirAll` continuing past a collection that exists and stopping on a missing parent, and the status itself recoverable with `errors.As` after the layers above have wrapped it. |
+| `xrootd/xrdhttp/conformance_transport_test.go` | The one error that arrives with no status line to map. Every other HTTP suite puts a server behind the client; this one removes it. A transport failure is the most easily dropped error there is — a `Stat` returning a zero `FileInfo` and a nil error on a dead endpoint reads exactly like a file that is not there, and a `Create` returning nil reads like an upload that worked. Eight client calls and ten `xrdfs.FileSystem` calls against an endpoint that was listening and is not any more, each having to fail and name what it was working on; a failed stat not reporting the file as present; a context cancelled before the call is made; `Statx` answering per path (offline flags) rather than failing the batch and losing the answers for the paths that did work; and `root://`, `file://` and scheme-less URLs refused at `Dial` rather than dialled as if they were HTTP. |
 | `xrootd/xrds3/conformance_test.go` | The part of a SigV4 signature nobody can see: the canonical query string is sorted by name, then by value, and percent-encoded — it is hashed, not sent, so a disagreement surfaces only as a signature mismatch. Plus `WithRegion` reaching the credential scope and `WithHTTPClient` being what the request actually goes through. |
+| `xrootd/xrds3/conformance_errors_test.go` | What an S3 endpoint's answers mean. Five verbs against an unexpected 500, each failure naming the verb, the key and the status; a missing object being absence rather than failure; a delete of something already gone succeeding on 200, 204 *and* 404, because endpoints disagree about which one they send; all four success statuses accepted on PUT; a read past the end of an object reported as EOF whether the endpoint says 416 or returns a short 206; a whole-object range accepted from an endpoint that ignores `Range` entirely; an empty read touching the network not at all; an unreachable endpoint naming the verb it was attempting; a PUT of unknown length still signed, as `UNSIGNED-PAYLOAD`; and the key being path-style whatever the caller writes. |
 
 ## What is still network-bound
 
@@ -112,6 +158,20 @@ the offline coverage for those surfaces — the conformance suites above are.
   only the one it should. A mapping is useful because of the questions it says
   no to; a test that only asserts the yes passes on an error that claims to be
   everything.
+- A command is written as `run(stdout, stderr io.Writer, args []string) int` and
+  tested through that, not through a subprocess. The `flag.FlagSet` is built
+  *inside* `run` rather than at package level, so a second call in the same test
+  binary does not inherit the first one's flag values. Work that only ends on a
+  signal — `xrd-srv`'s serving loop — is split into its own function taking a
+  quit channel, so a test can stop it without signalling the test process.
+- A credential is verified by *using* it, not by inspecting it. Build the
+  provider's output, then take the server's side: derive the key from what was
+  actually sent, decrypt, check the signature against the certificate that
+  arrived. Per-piece assertions pass on a provider that gets every field right
+  and assembles them wrongly, which is the failure that actually happens.
+- Before writing a new file, `grep '^func Test'` the target package. Three of
+  the suites above started as duplicates of coverage that already existed one
+  file over; what survived was only the part that was genuinely new.
 - A behaviour both transports have is tested on both, in one table, with the
   answers compared to each other. `xrootd/conformance_errors_test.go` does this
   by running the same `xrdfs.FileSystem` calls over the native mock and over an

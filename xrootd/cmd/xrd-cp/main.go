@@ -26,10 +26,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	stdpath "path"
 
@@ -47,9 +47,7 @@ func localName(src string) string {
 	return stdpath.Base(name)
 }
 
-func init() {
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `xrd-cp copies files and directories from a remote xrootd server to local storage.
+const usage = `xrd-cp copies files and directories from a remote xrootd server to local storage.
 
 Usage:
 
@@ -65,46 +63,59 @@ Example:
  $> xrd-cp -r root://server.example.com/some/dir outdir
 
 Options:
-`)
-		flag.PrintDefaults()
-	}
-}
+`
 
 func main() {
-	log.SetPrefix("xrd-cp: ")
-	log.SetFlags(0)
-
-	var (
-		recFlag     = flag.Bool("r", false, "copy directories recursively")
-		verboseFlag = flag.Bool("v", false, "enable verbose mode")
-	)
-
-	flag.Parse()
-
-	switch n := flag.NArg(); n {
-	case 0:
-		flag.Usage()
-		log.Fatalf("missing file operand")
-	case 1:
-		flag.Usage()
-		log.Fatalf("missing destination file operand after %q", flag.Arg(0))
-	case 2:
-		err := xrdcopy(flag.Arg(1), flag.Arg(0), *recFlag, *verboseFlag)
-		if err != nil {
-			log.Fatalf("could not copy %q to %q: %v", flag.Arg(0), flag.Arg(1), err)
-		}
-	default:
-		dst := flag.Arg(flag.NArg() - 1)
-		for _, src := range flag.Args()[:flag.NArg()-1] {
-			err := xrdcopy(dst, src, *recFlag, *verboseFlag)
-			if err != nil {
-				log.Fatalf("could not copy %q to %q: %v", src, dst, err)
-			}
-		}
-	}
+	os.Exit(run(os.Stdout, os.Stderr, os.Args[1:]))
 }
 
-func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
+func run(stdout, stderr io.Writer, args []string) int {
+	fset := flag.NewFlagSet("xrd-cp", flag.ContinueOnError)
+	fset.SetOutput(stderr)
+	fset.Usage = func() {
+		fmt.Fprint(stderr, usage)
+		fset.PrintDefaults()
+	}
+
+	var (
+		recFlag     = fset.Bool("r", false, "copy directories recursively")
+		verboseFlag = fset.Bool("v", false, "enable verbose mode")
+	)
+
+	switch err := fset.Parse(args); {
+	case err == nil:
+		// ok.
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	default:
+		fmt.Fprintf(stderr, "xrd-cp: could not parse arguments: %+v\n", err)
+		return 1
+	}
+
+	switch n := fset.NArg(); n {
+	case 0:
+		fmt.Fprintf(stderr, "xrd-cp: missing file operand\n\n")
+		fset.Usage()
+		return 1
+	case 1:
+		fmt.Fprintf(stderr, "xrd-cp: missing destination file operand after %q\n\n", fset.Arg(0))
+		fset.Usage()
+		return 1
+	}
+
+	dst := fset.Arg(fset.NArg() - 1)
+	for _, src := range fset.Args()[:fset.NArg()-1] {
+		err := xrdcopy(stdout, stderr, dst, src, *recFlag, *verboseFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "xrd-cp: could not copy %q to %q: %+v\n", src, dst, err)
+			return 1
+		}
+	}
+
+	return 0
+}
+
+func xrdcopy(stdout, stderr io.Writer, dst, srcPath string, recursive, verbose bool) error {
 	cli, src, err := xrdremote(srcPath)
 	if err != nil {
 		return err
@@ -145,9 +156,10 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 			}
 		default:
 			jobs.add(job{
-				fs:  fs,
-				src: src,
-				dst: stdpath.Join(root, localName(src)),
+				fs:     fs,
+				src:    src,
+				dst:    stdpath.Join(root, localName(src)),
+				stdout: stdout,
 			})
 		}
 		return nil
@@ -198,15 +210,16 @@ func xrdcopy(dst, srcPath string, recursive, verbose bool) error {
 		}
 
 		jobs.add(job{
-			fs:  fs,
-			src: src,
-			dst: dst,
+			fs:     fs,
+			src:    src,
+			dst:    dst,
+			stdout: stdout,
 		})
 	}
 
 	n, err := jobs.run(ctx)
 	if verbose {
-		log.Printf("transferred %d bytes", n)
+		fmt.Fprintf(stderr, "xrd-cp: transferred %d bytes\n", n)
 	}
 	return err
 }
@@ -226,6 +239,8 @@ type job struct {
 	fs  xrdfs.FileSystem
 	src string
 	dst string
+	// stdout receives the transfer when the destination is "-".
+	stdout io.Writer
 }
 
 func (j job) run(ctx context.Context) (int, error) {
@@ -235,7 +250,7 @@ func (j job) run(ctx context.Context) (int, error) {
 	)
 	switch j.dst {
 	case "-", "":
-		o = os.Stdout
+		o = nopWriteCloser{j.stdout}
 	case ".":
 		j.dst = localName(j.src)
 		fallthrough
@@ -287,3 +302,9 @@ func (js *jobs) run(ctx context.Context) (int, error) {
 	}
 	return n, nil
 }
+
+// nopWriteCloser adapts the command's stdout to the WriteCloser a job writes
+// to; closing it must not close the caller's stream.
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
