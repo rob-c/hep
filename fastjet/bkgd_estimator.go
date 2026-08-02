@@ -36,9 +36,18 @@ type JetMedianBackgroundEstimator struct {
 
 // bkgConfig holds the tunable parts of a JetMedianBackgroundEstimator.
 type bkgConfig struct {
+	rapMin   float64
 	rapMax   float64
 	nExclude int
 	quantile float64
+}
+
+// rapRange renders the rapidity acceptance the way an error message wants it.
+func (cfg bkgConfig) rapRange() string {
+	if cfg.rapMin <= 0 {
+		return fmt.Sprintf("|y| < %v", cfg.rapMax)
+	}
+	return fmt.Sprintf("%v < |y| < %v", cfg.rapMin, cfg.rapMax)
 }
 
 // BkgOption configures a JetMedianBackgroundEstimator.
@@ -53,6 +62,19 @@ type BkgOption func(*bkgConfig)
 func WithBkgRapMax(v float64) BkgOption {
 	return func(cfg *bkgConfig) {
 		cfg.rapMax = v
+	}
+}
+
+// WithBkgRapRange restricts the estimate to jets whose |rapidity| falls
+// between min and max.
+//
+// It is WithBkgRapMax with a hole punched in the middle, for the case where
+// the background is measured in a band away from the central region -- a
+// forward pile-up estimate, say -- rather than out to a single limit.
+func WithBkgRapRange(min, max float64) BkgOption {
+	return func(cfg *bkgConfig) {
+		cfg.rapMin = min
+		cfg.rapMax = max
 	}
 }
 
@@ -108,6 +130,10 @@ func NewJetMedianBackgroundEstimator(csa *ClusterSequenceArea, opts ...BkgOption
 		return nil, fmt.Errorf("fastjet: negative number of jets to exclude (%d)", cfg.nExclude)
 	case cfg.quantile <= 0 || cfg.quantile >= 0.5:
 		return nil, fmt.Errorf("fastjet: sigma quantile %v out of range (0, 0.5)", cfg.quantile)
+	case cfg.rapMin < 0:
+		return nil, fmt.Errorf("fastjet: negative rapidity range minimum (%v)", cfg.rapMin)
+	case cfg.rapMin >= cfg.rapMax:
+		return nil, fmt.Errorf("fastjet: empty rapidity range (%v, %v)", cfg.rapMin, cfg.rapMax)
 	}
 
 	jets, err := csa.InclusiveJets(0)
@@ -122,7 +148,7 @@ func NewJetMedianBackgroundEstimator(csa *ClusterSequenceArea, opts ...BkgOption
 	var sel []entry
 	for i := range jets {
 		jet := &jets[i]
-		if math.Abs(jet.Rapidity()) > cfg.rapMax {
+		if rap := math.Abs(jet.Rapidity()); rap > cfg.rapMax || rap < cfg.rapMin {
 			continue
 		}
 		area := csa.Area(jet)
@@ -143,8 +169,8 @@ func NewJetMedianBackgroundEstimator(csa *ClusterSequenceArea, opts ...BkgOption
 
 	if len(sel) == 0 {
 		return nil, fmt.Errorf(
-			"fastjet: no jets left to estimate the background from (|y| < %v, %d hardest excluded)",
-			cfg.rapMax, cfg.nExclude,
+			"fastjet: no jets left to estimate the background from (%s, %d hardest excluded)",
+			cfg.rapRange(), cfg.nExclude,
 		)
 	}
 

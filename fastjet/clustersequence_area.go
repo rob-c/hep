@@ -66,11 +66,8 @@ type ClusterSequenceArea struct {
 // The zero AreaDefinition asks for an active area with the default ghosts,
 // which is the right choice for pile-up subtraction.
 func NewClusterSequenceArea(jets []Jet, def JetDefinition, area AreaDefinition) (*ClusterSequenceArea, error) {
-	switch area.typ {
-	case ActiveArea, ActiveAreaExplicitGhosts:
-		// ok
-	default:
-		return nil, fmt.Errorf("fastjet: %v is not implemented", area.typ)
+	if err := area.Validate(); err != nil {
+		return nil, err
 	}
 
 	if !def.Algorithm().usesRapPhi() {

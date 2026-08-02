@@ -33,4 +33,8 @@
 // Subtract. It needs an ActiveAreaExplicitGhosts area, so that the empty
 // regions of the event -- the ones carrying no background at all -- are counted
 // in the median rather than dropped.
+//
+// WithBkgRapMax and WithBkgRapRange restrict the estimate to a slice of the
+// detector, for the common case of a background that is not the same in the
+// forward region as in the central one.
 package fastjet // import "go-hep.org/x/hep/fastjet"

@@ -202,6 +202,25 @@ func (def AreaDefinition) GhostSpec() GhostedAreaSpec {
 	return def.ghost
 }
 
+// Validate reports whether the area definition is one that this package can
+// measure: an implemented AreaType, together with a usable ghost ensemble.
+//
+// NewClusterSequenceArea calls it, so a caller only needs it to fail early --
+// when a configuration is read, rather than when the first event goes through.
+func (def AreaDefinition) Validate() error {
+	switch def.typ {
+	case ActiveArea, ActiveAreaExplicitGhosts:
+		// ok
+	case PassiveArea, VoronoiArea:
+		return fmt.Errorf("fastjet: %v is not implemented", def.typ)
+	default:
+		return fmt.Errorf("fastjet: invalid AreaType (%d)", int(def.typ))
+	}
+
+	_, err := def.ghost.normalize()
+	return err
+}
+
 func (def AreaDefinition) String() string {
 	spec, err := def.ghost.normalize()
 	if err != nil {
