@@ -230,3 +230,51 @@ func ExampleS2D_withStepsKind_withBand() {
 		log.Fatal(err)
 	}
 }
+
+// ExampleS2D_withPreMidPostSteps_withBand draws the same points three times,
+// with a band around each of the pre-, mid- and post-step connecting lines.
+// The band follows whatever shape the line takes.
+func ExampleS2D_withPreMidPostSteps_withBand() {
+	var (
+		steps = []hplot.StepsKind{hplot.PreSteps, hplot.MidSteps, hplot.PostSteps}
+		names = []string{"pre-steps", "mid-steps", "post-steps"}
+	)
+
+	p := hplot.New()
+	p.Title.Text = "Scatter-2D (with steps and band)"
+	p.X.Label.Text = "X"
+	p.X.Min = 0
+	p.X.Max = 25
+	p.Y.Label.Text = "Y"
+	p.Y.Min = 0
+	p.Add(plotter.NewGrid())
+
+	for i, step := range steps {
+		pts := make([]hbook.Point2D, 4)
+		for j := range pts {
+			pts[j] = hbook.Point2D{
+				X:    float64(j+1) + float64(i)*10,
+				Y:    float64(j + 1),
+				ErrY: hbook.Range{Min: 0.5, Max: 0.5},
+			}
+		}
+
+		s := hplot.NewS2D(hbook.NewS2D(pts...),
+			hplot.WithStepsKind(step),
+			hplot.WithBand(true),
+		)
+		s.GlyphStyle.Shape = draw.CircleGlyph{}
+		s.GlyphStyle.Color = plotutil.Color(i + 1)
+		s.GlyphStyle.Radius = vg.Points(2)
+		s.LineStyle.Width = 1
+		s.LineStyle.Color = plotutil.Color(i + 1)
+
+		p.Add(s)
+		p.Legend.Add(names[i], s)
+	}
+
+	err := p.Save(10*vg.Centimeter, 10*vg.Centimeter, "testdata/s2d_premidpost_steps_band.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"go-hep.org/x/hep/hbook"
 	"go-hep.org/x/hep/hplot"
 	"gonum.org/v1/plot/cmpimg"
+	"gonum.org/v1/plot/plotter"
 )
 
 func TestS2D(t *testing.T) {
@@ -31,6 +32,10 @@ func TestScatter2DWithStepsKind(t *testing.T) {
 
 func TestScatter2DWithPreMidPostSteps(t *testing.T) {
 	checkPlot(cmpimg.CheckPlot)(ExampleS2D_withPreMidPostSteps, t, "s2d_premidpost_steps.png")
+}
+
+func TestScatter2DWithPreMidPostStepsWithBand(t *testing.T) {
+	checkPlot(cmpimg.CheckPlot)(ExampleS2D_withPreMidPostSteps_withBand, t, "s2d_premidpost_steps_band.png")
 }
 
 func TestScatter2DWithStepsKindWithBand(t *testing.T) {
@@ -67,7 +72,7 @@ func TestScatter2DSteps(t *testing.T) {
 			want: fmt.Errorf("s2d with HiSteps needs XErr informations for all points"),
 		},
 		{
-			name: "presteps_with_band", // TODO(sbinet)
+			name: "presteps_with_band",
 			pts: []hbook.Point2D{
 				{X: 1, Y: 1},
 				{X: 2, Y: 2},
@@ -75,10 +80,10 @@ func TestScatter2DSteps(t *testing.T) {
 				{X: 4, Y: 4},
 			},
 			opts: []hplot.Options{hplot.WithStepsKind(hplot.PreSteps), hplot.WithBand(true)},
-			want: fmt.Errorf("presteps not implemented"),
+			want: nil,
 		},
 		{
-			name: "midsteps_with_band", // TODO(sbinet)
+			name: "midsteps_with_band",
 			pts: []hbook.Point2D{
 				{X: 1, Y: 1},
 				{X: 2, Y: 2},
@@ -86,10 +91,19 @@ func TestScatter2DSteps(t *testing.T) {
 				{X: 4, Y: 4},
 			},
 			opts: []hplot.Options{hplot.WithStepsKind(hplot.MidSteps), hplot.WithBand(true)},
-			want: fmt.Errorf("midsteps not implemented"),
+			want: nil,
 		},
 		{
-			name: "poststeps_with_band", // TODO(sbinet)
+			name: "invalid_steps_kind",
+			pts: []hbook.Point2D{
+				{X: 1, Y: 1},
+				{X: 2, Y: 2},
+			},
+			opts: []hplot.Options{hplot.WithStepsKind(hplot.StepsKind(42)), hplot.WithBand(true)},
+			want: fmt.Errorf("hplot: invalid StepsKind (42)"),
+		},
+		{
+			name: "poststeps_with_band",
 			pts: []hbook.Point2D{
 				{X: 1, Y: 1},
 				{X: 2, Y: 2},
@@ -97,7 +111,7 @@ func TestScatter2DSteps(t *testing.T) {
 				{X: 4, Y: 4},
 			},
 			opts: []hplot.Options{hplot.WithStepsKind(hplot.PostSteps), hplot.WithBand(true)},
-			want: fmt.Errorf("poststeps not implemented"),
+			want: nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,4 +145,24 @@ func TestScatter2DSteps(t *testing.T) {
 			_ = hplot.NewS2D(s2d, tc.opts...)
 		})
 	}
+}
+
+// TestScatter2DHiStepsWithoutXErrors checks the message a caller gets when
+// they ask for HiSteps with data that cannot say how wide its bins are.
+func TestScatter2DHiStepsWithoutXErrors(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err == nil {
+			t.Fatalf("expected a panic")
+		}
+		got, ok := err.(string)
+		if !ok {
+			t.Fatalf("invalid recover type %T", err)
+		}
+		if want := "hplot: s2d with HiSteps needs XErr informations for all points"; got != want {
+			t.Fatalf("invalid error:\ngot= %q\nwant=%q", got, want)
+		}
+	}()
+
+	_ = hplot.NewS2D(plotter.XYs{{X: 1, Y: 1}, {X: 2, Y: 2}}, hplot.WithStepsKind(hplot.HiSteps))
 }
