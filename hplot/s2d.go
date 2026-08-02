@@ -5,6 +5,7 @@
 package hplot
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 
@@ -81,6 +82,97 @@ func (pts *S2D) withYErrBars() error {
 	return nil
 }
 
+// stepVertex is one corner of the polyline a StepsKind draws through a set of
+// data points: an abscissa, and the index of the data point whose ordinate the
+// polyline carries there.
+type stepVertex struct {
+	x float64
+	i int
+}
+
+// stepVertices returns the corners of the polyline that connects the data
+// points according to kind, in drawing order.
+//
+// Both the connecting line and the band between the error bars follow it, so
+// that the band is always the line's own shape displaced by the y-errors.
+func stepVertices(data plotter.XYer, kind StepsKind) []stepVertex {
+	n := data.Len()
+	if n == 0 {
+		return nil
+	}
+
+	xOf := func(i int) float64 {
+		x, _ := data.XY(i)
+		return x
+	}
+
+	switch kind {
+	case HiSteps:
+		// each point spans its own bin, from one x-error to the other
+		xerr, ok := data.(plotter.XErrorer)
+		if !ok {
+			panic("hplot: s2d with HiSteps needs XErr informations for all points")
+		}
+		out := make([]stepVertex, 0, 2*n)
+		for i := range n {
+			xmin, xmax := xerr.XError(i)
+			out = append(out,
+				stepVertex{x: xOf(i) - math.Abs(xmin), i: i},
+				stepVertex{x: xOf(i) + math.Abs(xmax), i: i},
+			)
+		}
+		return out
+
+	case PreSteps:
+		// rise to the new ordinate at the previous abscissa
+		out := make([]stepVertex, 0, 2*n)
+		out = append(out, stepVertex{x: xOf(0), i: 0})
+		for i := 1; i < n; i++ {
+			out = append(out,
+				stepVertex{x: xOf(i - 1), i: i},
+				stepVertex{x: xOf(i), i: i},
+			)
+		}
+		return out
+
+	case MidSteps:
+		// rise halfway between the two abscissae
+		out := make([]stepVertex, 0, 3*n)
+		out = append(out, stepVertex{x: xOf(0), i: 0})
+		for i := 1; i < n; i++ {
+			mid := 0.5 * (xOf(i-1) + xOf(i))
+			out = append(out,
+				stepVertex{x: mid, i: i - 1},
+				stepVertex{x: mid, i: i},
+				stepVertex{x: xOf(i), i: i},
+			)
+		}
+		return out
+
+	case PostSteps:
+		// hold the old ordinate until the new abscissa
+		out := make([]stepVertex, 0, 2*n)
+		out = append(out, stepVertex{x: xOf(0), i: 0})
+		for i := 1; i < n; i++ {
+			out = append(out,
+				stepVertex{x: xOf(i), i: i - 1},
+				stepVertex{x: xOf(i), i: i},
+			)
+		}
+		return out
+
+	case NoSteps:
+		out := make([]stepVertex, n)
+		for i := range out {
+			out[i] = stepVertex{x: xOf(i), i: i}
+		}
+		return out
+
+	default:
+		panic(fmt.Errorf("hplot: invalid StepsKind (%d)", int(kind)))
+	}
+}
+
 // withBand enables the band between ymin-ymax error bars.
 func (pts *S2D) withBand() error {
 	yerr, ok := pts.Data.(plotter.YErrorer)
@@ -89,53 +181,19 @@ func (pts *S2D) withBand() error {
 	}
 
 	var (
-		top plotter.XYs
-		bot plotter.XYs
+		vs  = stepVertices(pts.Data, pts.Steps)
+		top = make(plotter.XYs, len(vs))
+		bot = make(plotter.XYs, len(vs))
 	)
-
-	switch pts.Steps {
-
-	case NoSteps:
-		top = make(plotter.XYs, pts.Data.Len())
-		bot = make(plotter.XYs, pts.Data.Len())
-		for i := range top {
-			x, y := pts.Data.XY(i)
-			ymin, ymax := yerr.YError(i)
-			top[i].X = x
-			top[i].Y = y + math.Abs(ymax)
-			bot[i].X = x
-			bot[i].Y = y - math.Abs(ymin)
-		}
-
-	case HiSteps:
-		top = make(plotter.XYs, 2*pts.Data.Len())
-		bot = make(plotter.XYs, 2*pts.Data.Len())
-		xerr := pts.Data.(plotter.XErrorer)
-		for i := range top {
-			idata := i / 2
-			x, y := pts.Data.XY(idata)
-			xmin, xmax := xerr.XError(idata)
-			ymin, ymax := yerr.YError(idata)
-			switch {
-			case i%2 != 0:
-				top[i].X = x + math.Abs(xmax)
-				top[i].Y = y + math.Abs(ymax)
-				bot[i].X = x + math.Abs(xmax)
-				bot[i].Y = y - math.Abs(ymin)
-			default:
-				top[i].X = x - math.Abs(xmin)
-				top[i].Y = y + math.Abs(ymax)
-				bot[i].X = x - math.Abs(xmin)
-				bot[i].Y = y - math.Abs(ymin)
-			}
-		}
-	case PreSteps:
-		panic("presteps not implemented")
-	case MidSteps:
-		panic("midsteps not implemented")
-	case PostSteps:
-		panic("poststeps not implemented")
+	for i, v := range vs {
+		var (
+			_, y       = pts.Data.XY(v.i)
+			ymin, ymax = yerr.YError(v.i)
+		)
+		top[i] = plotter.XY{X: v.x, Y: y + math.Abs(ymax)}
+		bot[i] = plotter.XY{X: v.x, Y: y - math.Abs(ymin)}
 	}
+
 	pts.Band = NewBand(color.Gray{200}, top, bot)
 	return nil
 }
@@ -170,8 +228,12 @@ func NewS2D(data plotter.XYer, opts ...Options) *S2D {
 
 	switch s.Steps {
 	case HiSteps:
-		// check we have ErrX for all data points.
-		xerrs := s.Data.(plotter.XErrorer)
+		// HiSteps draws each point across its own bin, so it needs to know
+		// how wide that bin is.
+		xerrs, ok := s.Data.(plotter.XErrorer)
+		if !ok {
+			panic("hplot: s2d with HiSteps needs XErr informations for all points")
+		}
 		for i := range s.Data.Len() {
 			xmin, xmax := xerrs.XError(i)
 			if xmin == 0 && xmax == 0 {
@@ -203,58 +265,15 @@ func (pts *S2D) Plot(c draw.Canvas, plt *plot.Plot) {
 			panic(err)
 		}
 
-		switch pts.Steps {
-		case HiSteps:
-			xerr := pts.Data.(plotter.XErrorer)
-			dsteps := make(plotter.XYs, 0, 2*len(data))
-			for i, d := range data {
-				xmin, xmax := xerr.XError(i)
-				dsteps = append(dsteps, plotter.XY{X: d.X - xmin, Y: d.Y})
-				dsteps = append(dsteps, plotter.XY{X: d.X + xmax, Y: d.Y})
-			}
-			data = dsteps
-		case PreSteps:
+		if pts.Steps != NoSteps {
 			var (
-				prev   plotter.XY
-				dsteps = make(plotter.XYs, 0, 2*len(data))
+				vs     = stepVertices(pts.Data, pts.Steps)
+				dsteps = make(plotter.XYs, len(vs))
 			)
-			prev.X, prev.Y = data.XY(0)
-			dsteps = append(dsteps, prev)
-			for _, pt := range data[1:] {
-				dsteps = append(dsteps, plotter.XY{X: prev.X, Y: pt.Y})
-				dsteps = append(dsteps, pt)
-				prev = pt
+			for i, v := range vs {
+				dsteps[i] = plotter.XY{X: v.x, Y: data[v.i].Y}
 			}
 			data = dsteps
-		case MidSteps:
-			var (
-				prev   plotter.XY
-				dsteps = make(plotter.XYs, 0, 2*len(data))
-			)
-			prev.X, prev.Y = data.XY(0)
-			dsteps = append(dsteps, prev)
-			for _, pt := range data[1:] {
-				dsteps = append(dsteps, plotter.XY{X: 0.5 * (prev.X + pt.X), Y: prev.Y})
-				dsteps = append(dsteps, plotter.XY{X: 0.5 * (prev.X + pt.X), Y: pt.Y})
-				dsteps = append(dsteps, pt)
-				prev = pt
-			}
-			data = dsteps
-		case PostSteps:
-			var (
-				prev   plotter.XY
-				dsteps = make(plotter.XYs, 0, 2*len(data))
-			)
-			prev.X, prev.Y = data.XY(0)
-			dsteps = append(dsteps, prev)
-			for _, pt := range data[1:] {
-				dsteps = append(dsteps, plotter.XY{X: pt.X, Y: prev.Y})
-				dsteps = append(dsteps, pt)
-				prev = pt
-			}
-			data = dsteps
-		case NoSteps:
-			// ok.
 		}
 
 		line := plotter.Line{
