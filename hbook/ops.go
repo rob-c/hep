@@ -12,6 +12,13 @@ import (
 // DivideH1D divides 2 1D-histograms and returns a 2D scatter.
 // DivideH1D returns an error if the binning of the 1D histograms are not compatible.
 // If no DivOptions is passed, NaN raised during division are kept.
+//
+// The uncertainty on the ratio is obtained by adding the relative uncertainties
+// of numerator and denominator in quadrature, which assumes the two are
+// independent. They are not when the numerator counts a subset of what the
+// denominator counts, as for a trigger or reconstruction efficiency: use
+// NewEfficiency for those, or the error bars will run past 1 and will not
+// vanish where the efficiency saturates.
 func DivideH1D(num, den *H1D, opts ...DivOptions) (*S2D, error) {
 
 	cfg := newDivConfig()

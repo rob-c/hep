@@ -7,4 +7,18 @@
 // hbook is a work in progress of a concurrent friendly histogram filling toolkit.
 // It is loosely based on AIDA interfaces and concepts as well as the "simplicity"
 // of HBOOK and the previous work of YODA.
+//
+// # Ratios
+//
+// DivideH1D divides one histogram by another and propagates the two
+// uncertainties in quadrature, which is what a ratio of independent
+// measurements calls for.
+//
+// When the numerator counts a subset of what the denominator counts -- a
+// trigger efficiency, a reconstruction efficiency, a cut acceptance -- the two
+// are not independent and quadrature is the wrong answer: it gives an
+// uncertainty that reaches past 1 and that stays nonzero where the efficiency
+// saturates. NewEfficiency handles that case, with a confidence interval taken
+// from the binomial distribution the counts actually follow. BinomialInterval
+// does the same for a single pass/total pair, without a histogram.
 package hbook
