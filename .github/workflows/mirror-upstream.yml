@@ -2,12 +2,12 @@ name: Mirror upstream
 
 # Upstream go-hep lives on Codeberg, so GitHub's "Sync fork" button is of no
 # use here: it can only ever pull from the archived go-hep/hep GitHub parent.
-# This job keeps the main branch of this fork an exact copy of Codeberg's,
-# which is what makes "N commits behind" and the compare view mean anything.
+# This job keeps the "upstream" branch of this fork an exact copy of Codeberg's
+# main, which is what makes "git diff upstream main" mean exactly this fork.
 #
-# It runs from the default branch (xrootd-client-parity), not from main, so
-# force-updating main cannot delete the job that does the updating. Pushing
-# with GITHUB_TOKEN deliberately does not trigger CI on main: the mirrored
+# It runs from the default branch (main), not from the branch it writes, so
+# refreshing the mirror cannot delete the job that does the refreshing. Pushing
+# with GITHUB_TOKEN deliberately does not trigger CI on the mirror: those
 # commits are upstream's and have already been tested upstream.
 
 on:
@@ -25,7 +25,7 @@ concurrency:
 jobs:
 
   mirror:
-    name: Mirror codeberg/main to main
+    name: Mirror codeberg/main to upstream
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
@@ -38,8 +38,8 @@ jobs:
 
     - name: Report
       run: |
-        echo "upstream main: $(git rev-parse FETCH_HEAD)"
-        echo "fork     main: $(git rev-parse --verify -q origin/main || echo '<none>')"
+        echo "codeberg main:  $(git rev-parse FETCH_HEAD)"
+        echo "fork  upstream:  $(git rev-parse --verify -q origin/upstream || echo '<none>')"
 
-    - name: Push to main
-      run: git push --force origin FETCH_HEAD:refs/heads/main
+    - name: Push to upstream
+      run: git push --force origin FETCH_HEAD:refs/heads/upstream

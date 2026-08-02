@@ -1,15 +1,167 @@
 hep
 ===
 
-> **About this fork.** Upstream go-hep has moved to Codeberg, which has
-> demonstrably worse uptime than GitHub and an aggressive, somewhat
-> euro-centric set of anti-LLM policies. This fork ignores both, for the sake
-> of ***GETTING THE JOB DONE***. Work lands here when it works and is tested;
-> we do not kick the can down the road for the sake of posturing.
->
-> **All work goes on in the
-> [`xrootd-client-parity`](https://github.com/rob-c/hep/tree/xrootd-client-parity)
-> branch**, which is this repository's default branch; `main` is a plain mirror
-> of upstream. See [FORK.md](FORK.md).
+[![go.dev reference](https://pkg.go.dev/badge/go-hep.org/x/hep)](https://pkg.go.dev/go-hep.org/x/hep)
+[![License](https://img.shields.io/badge/License-BSD--3-blue.svg)](https://go-hep.org/license)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.597940.svg)](https://doi.org/10.5281/zenodo.597940)
+[![JOSS Paper](http://joss.theoj.org/papers/0b007c81073186f7c61f95ea26ad7971/status.svg)](http://joss.theoj.org/papers/0b007c81073186f7c61f95ea26ad7971)
 
-**Main development happens now on [Codeberg](https://codeberg.org/go-hep/hep)**
+> **About this fork.** Upstream go-hep has moved to
+> [Codeberg](https://codeberg.org/go-hep/hep), which has demonstrably worse
+> uptime than GitHub and an aggressive, somewhat euro-centric set of anti-LLM
+> policies. This fork ignores both, for the sake of ***GETTING THE JOB DONE***.
+> Work lands here when it works and is tested; we do not kick the can down the
+> road for the sake of posturing.
+>
+> `main` is where the work is — you are looking at it. The
+> [`upstream`](https://github.com/rob-c/hep/tree/upstream) branch is a plain
+> mirror of Codeberg's `main`, refreshed daily and never written to by hand, so
+> the two can always be compared. See [FORK.md](FORK.md).
+
+What this fork adds
+-------------------
+
+## A pure-Go XRootD client that actually does the job
+
+Upstream's `xrootd` package could open a file and read it. Grid storage asks
+for a good deal more than that, and everything below is new here:
+
+**Protocol.** In-protocol TLS (`roots://`, `xroots://`) negotiated before login;
+vector I/O (`kXR_readv`, `kXR_writev`); paged I/O with per-page CRC-32C
+(`kXR_pgread`, `kXR_pgwrite`) and recovery of a corrupt page; extended
+attributes (`kXR_fattr`); server-side checksums (`kXR_Qcksum`, `kXR_dcksm`);
+`kXR_clone`; checkpoints; deep locate; prepare/evict for tape; `kXR_status`
+framing; an admin surface; and the `XRD_*` environment.
+
+**Beyond `root://`.** `xrdhttp` speaks HTTPS and WebDAV — ranged reads, uploads,
+PROPFIND listings, HTTP third-party copy, X.509 mutual TLS — and `xrds3` speaks
+S3 with SigV4. One `Backend` interface and a scheme-aware `Dial` sit over all of
+them, so a listing or a read is the same code for `root://`, `davs://`,
+`https://` and `s3://`.
+
+**Authentication that grid sites actually run.** GSI (including the unsigned-DH
+kernel and multi-round `kXR_authmore`), bearer tokens (`ztn`), `sss` keytabs,
+and X.509 proxies. Credentials are discovered the way the stock tools discover
+them; a missing one is asked for up front rather than turning into a protocol
+error later, and proxy creation is delegated to `voms-proxy-init` so no
+passphrase is ever handled here.
+
+**Copies.** `xrdcopy` does resumable transfers and native third-party copy,
+verified end-to-end against a real XRootD server.
+
+**Safe by default, which is the point.** The failure a beginner meets on grid
+storage is not a refused connection — it is a path that goes quiet while both
+ends still believe it is up, and a read that blocks for the better part of an
+hour. `xrootd.NewClient` and `xrdhttp.Dial` apply stream timeouts, connection
+windows, bounded retries and keep-alives *without being asked*, and only ever
+retry what is safe to repeat — never a `COPY`, a `POST` or a body that cannot be
+produced twice. Response sizes from the network are bounded before allocation.
+Transport errors are stripped of query, fragment and userinfo before they are
+returned, because that is where `?authz=Bearer eyJ...` lives, and errors get
+logged. `Unbounded()` removes all of it for callers whose context is their own
+deadline.
+
+**Thirty runnable programs.** [`xrootd/example`](xrootd/example) — one directory
+each, from a first ranged read to token-authenticated WebDAV, tape recall and
+third-party copy. If you read three, read 01, 12 and 18.
+
+**A conformance suite** covering every client surface, including a fail-closed
+half that asserts what the client refuses to do, plus fixes for the client and
+server bugs it found along the way.
+
+## Elsewhere in Go-HEP
+
+- **fastjet** — jet areas (active, with explicit ghosts), median background
+  estimation and subtraction, and an *O*(*N*²) strategy that makes them
+  affordable.
+- **fads** — jet areas and background density in `FastJetFinder`, which
+  previously declared the Delphes properties and panicked behind all three of
+  them; also a fix for per-jet extents that were accumulated across the event.
+- **hbook** — efficiencies carrying the uncertainty a ratio of counts actually
+  has, rather than a Poisson one.
+- **hplot** — uncertainty bands around pre-, mid- and post-step lines.
+- **hepmc** — reads HepMC3 Asciiv3 event listings.
+- **groot, hbook** — merging 2-dimensional histograms and multigraphs; remote
+  files opened through the hardened XRootD transports.
+- **heppdt** — the constituent-flavour predicates.
+- **rio, lcio** — a corrupt stream is reported instead of mis-read; the LCIO
+  index writer exists, and its 64-bit-offset control-word tests are no longer
+  always false.
+
+Everything is tested; `gofmt`, `go vet` and `go test ./...` are clean.
+
+Go-HEP
+------
+
+`hep` is a set of libraries and tools to perform High Energy Physics analyses with ease and [Go](https://golang.org)
+
+See [go-hep.org](https://go-hep.org) for more informations.
+
+## Forum
+
+Drop an email at [~sbinet/go-hep@lists.sr.ht](mailto:~sbinet/go-hep@lists.sr.ht) or visit the web interface [lists.sr.ht/~sbinet/go-hep](https://lists.sr.ht/~sbinet/go-hep) to discuss about `Go-HEP` or ask for help.
+
+
+## License
+
+`hep` is released under the `BSD-3` license.
+
+## Documentation
+
+Documentation for `hep` is served by [GoDoc](https://pkg.go.dev/go-hep.org/x/hep).
+
+## Contributing
+
+Guidelines for contributing to [go-hep](https://go-hep.org) are available here:
+ [go-hep.org/contributing](https://go-hep.org/contributing)
+ 
+### Contributors
+
+This project exists thanks to all the people who contribute. 
+
+# Motivations
+
+Writing analyses in HEP involves many steps and one needs a few tools to
+successfully carry out such an endeavour.
+But - at minima - one needs to be able to read (and possibly write) ROOT files
+to be able to interoperate with the rest of the HEP community or to insert
+one's work into an already existing analysis pipeline.
+
+Go-HEP provides this necessary interoperability layer, in the Go programming
+language.
+This allows physicists to leverage the great concurrency primitives of Go,
+together with the surrounding tooling and software engineering ecosystem of Go,
+to implement physics analyses.
+
+## Content
+
+Go-HEP currently sports the following packages:
+
+- [go-hep.org/x/hep/brio](https://go-hep.org/x/hep/brio): a toolkit to generate serialization code
+- [go-hep.org/x/hep/fads](https://go-hep.org/x/hep/fads): a fast detector simulation toolkit
+- [go-hep.org/x/hep/fastjet](https://go-hep.org/x/hep/fastjet): a jet clustering algorithms package (WIP)
+- [go-hep.org/x/hep/fit](https://go-hep.org/x/hep/fit): a fitting function toolkit (WIP)
+- [go-hep.org/x/hep/fmom](https://go-hep.org/x/hep/fmom): a 4-vectors library
+- [go-hep.org/x/hep/fwk](https://go-hep.org/x/hep/fwk): a concurrency-enabled framework
+- [go-hep.org/x/hep/groot](https://go-hep.org/x/hep/groot): a pure [Go](https://golang.org) package for [ROOT](https://root.cern.ch) I/O (WIP)
+- [go-hep.org/x/hep/hbook](https://go-hep.org/x/hep/hbook): histograms and n-tuples (WIP)
+- [go-hep.org/x/hep/hplot](https://go-hep.org/x/hep/hplot): interactive plotting (WIP)
+- [go-hep.org/x/hep/hepmc](https://go-hep.org/x/hep/hepmc): `HepMC` in pure [Go](https://golang.org) (EDM + I/O)
+- [go-hep.org/x/hep/hepevt](https://go-hep.org/x/hep/hepevt): `HEPEVT` bindings
+- [go-hep.org/x/hep/heppdt](https://go-hep.org/x/hep/heppdt): `HEP` particle data table
+- [go-hep.org/x/hep/lcio](https://go-hep.org/x/hep/lcio): read/write support for `LCIO` event data model
+- [go-hep.org/x/hep/lhef](https://go-hep.org/x/hep/lhef): Les Houches Event File format
+- [go-hep.org/x/hep/rio](https://go-hep.org/x/hep/rio): `go-hep` record oriented I/O
+- [go-hep.org/x/hep/sio](https://go-hep.org/x/hep/sio): basic, low-level, serial I/O used by `LCIO`
+- [go-hep.org/x/hep/slha](https://go-hep.org/x/hep/slha): `SUSY` Les Houches Accord I/O
+- [go-hep.org/x/hep/xrootd](https://go-hep.org/x/hep/xrootd): [XRootD](http://xrootd.org) client in pure [Go](https://golang.org)
+
+## Installation
+
+Go-HEP packages are installable via the `go get` command:
+
+```sh
+$ go get go-hep.org/x/hep/fads
+```
+
+Just select the package you are interested in and `go get` will take care of fetching, building and installing it, as well as its dependencies, recursively.
