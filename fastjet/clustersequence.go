@@ -231,6 +231,12 @@ func (cs *ClusterSequence) run() error {
 		run = cs.runNlnN
 	case N3DumbStrategy:
 		run = cs.runN3Dumb
+	case N2PlainStrategy, BestStrategy:
+		// the e+e- algorithms measure angles, not rapidity-phi distances:
+		// they have no N2Plain implementation and fall back to N3Dumb.
+		if cs.alg.usesRapPhi() {
+			run = cs.runN2Plain
+		}
 	}
 
 	err := run()
