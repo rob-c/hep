@@ -371,13 +371,12 @@ func TestHandler_OpenGrantsWriteAccess(t *testing.T) {
 		},
 	} {
 		t.Run(tc.testName, func(t *testing.T) {
-			srv, addr, baseDir, err := createServer(func(err error) {
+			srv, addr, baseDir, err := createServer(t, func(err error) {
 				t.Error(err)
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.RemoveAll(baseDir)
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
@@ -1123,11 +1122,10 @@ func TestHandler_Ping(t *testing.T) {
 func TestHandler_OpaqueIsNotPartOfTheName(t *testing.T) {
 	const token = "?authz=tok&xrd.wantprot=unix"
 
-	srv, addr, baseDir, err := createServer(func(err error) { t.Error(err) })
+	srv, addr, baseDir, err := createServer(t, func(err error) { t.Error(err) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(baseDir)
 	defer func() { _ = srv.Shutdown(context.Background()) }()
 
 	if err := os.WriteFile(path.Join(baseDir, "f.txt"), []byte("payload"), 0644); err != nil {
