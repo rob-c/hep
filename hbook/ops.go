@@ -157,3 +157,43 @@ func AddH1D(h1, h2 *H1D) *H1D {
 func SubH1D(h1, h2 *H1D) *H1D {
 	return AddScaledH1D(h1, -1, h2)
 }
+
+// AddScaledH2D returns the histogram with the bin-by-bin h1+alpha*h2
+// operation, assuming statistical uncertainties are uncorrelated.
+func AddScaledH2D(h1 *H2D, alpha float64, h2 *H2D) *H2D {
+	if len(h1.Binning.Bins) != len(h2.Binning.Bins) {
+		panic(fmt.Errorf("hbook: h1 and h2 have different number of bins"))
+	}
+
+	if h1.XMin() != h2.XMin() || h1.XMax() != h2.XMax() ||
+		h1.YMin() != h2.YMin() || h1.YMax() != h2.YMax() {
+		panic(fmt.Errorf("hbook: h1 and h2 have different range"))
+	}
+
+	var (
+		o  = h1.Clone()
+		a2 = alpha * alpha
+	)
+
+	for i := range o.Binning.Bins {
+		o.Binning.Bins[i].addScaled(alpha, a2, h2.Binning.Bins[i])
+	}
+
+	o.Binning.Dist.addScaled(alpha, a2, h2.Binning.Dist)
+	for i := range o.Binning.Outflows {
+		o.Binning.Outflows[i].addScaled(alpha, a2, h2.Binning.Outflows[i])
+	}
+	return o
+}
+
+// AddH2D returns the bin-by-bin summed histogram of h1 and h2
+// assuming their statistical uncertainties are uncorrelated.
+func AddH2D(h1, h2 *H2D) *H2D {
+	return AddScaledH2D(h1, 1, h2)
+}
+
+// SubH2D returns the bin-by-bin subtracted histogram of h1 and h2
+// assuming their statistical uncertainties are uncorrelated.
+func SubH2D(h1, h2 *H2D) *H2D {
+	return AddScaledH2D(h1, -1, h2)
+}

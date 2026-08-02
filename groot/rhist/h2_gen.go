@@ -67,8 +67,8 @@ func NewH2FFrom(h *hbook.H2D) *H2F {
 
 	ibin := func(ix, iy int) int { return iy*nxbins + ix }
 
-	for ix := range h.Binning.Nx {
-		for iy := range h.Binning.Ny {
+	for ix := 0; ix < h.Binning.Nx; ix++ {
+		for iy := 0; iy < h.Binning.Ny; iy++ {
 			i := ibin(ix, iy)
 			bin := bins[i]
 			if ix == 0 {
@@ -318,8 +318,8 @@ func (h *H2F) AsH2D() *hbook.H2D {
 	hh.Binning.Dist.Y.Stats.SumWX2 = float64(h.SumWY2())
 	hh.Binning.Dist.Stats.SumWXY = h.SumWXY()
 
-	for ix := range nx {
-		for iy := range ny {
+	for ix := 0; ix < nx; ix++ {
+		for iy := 0; iy < ny; iy++ {
 			var (
 				i    = iy*nx + ix
 				xmin = h.XBinLowEdge(ix + 1)
@@ -353,6 +353,22 @@ func (h *H2F) UnmarshalYODA(raw []byte) error {
 	}
 
 	*h = *NewH2FFrom(&hh)
+	return nil
+}
+
+func (h *H2F) ROOTMerge(src root.Object) error {
+	hsrc, ok := src.(*H2F)
+	if !ok {
+		return fmt.Errorf("rhist: object %q is not a *rhist.H2F (%T)", src.(root.Named).Name(), src)
+	}
+
+	var (
+		h1   = h.AsH2D()
+		h2   = hsrc.AsH2D()
+		hadd = hbook.AddH2D(h1, h2)
+	)
+
+	*h = *NewH2FFrom(hadd)
 	return nil
 }
 
@@ -403,6 +419,7 @@ func init() {
 
 var (
 	_ root.Object        = (*H2F)(nil)
+	_ root.Merger        = (*H2F)(nil)
 	_ root.Named         = (*H2F)(nil)
 	_ H2                 = (*H2F)(nil)
 	_ rbytes.Marshaler   = (*H2F)(nil)
@@ -458,8 +475,8 @@ func NewH2DFrom(h *hbook.H2D) *H2D {
 
 	ibin := func(ix, iy int) int { return iy*nxbins + ix }
 
-	for ix := range h.Binning.Nx {
-		for iy := range h.Binning.Ny {
+	for ix := 0; ix < h.Binning.Nx; ix++ {
+		for iy := 0; iy < h.Binning.Ny; iy++ {
 			i := ibin(ix, iy)
 			bin := bins[i]
 			if ix == 0 {
@@ -709,8 +726,8 @@ func (h *H2D) AsH2D() *hbook.H2D {
 	hh.Binning.Dist.Y.Stats.SumWX2 = float64(h.SumWY2())
 	hh.Binning.Dist.Stats.SumWXY = h.SumWXY()
 
-	for ix := range nx {
-		for iy := range ny {
+	for ix := 0; ix < nx; ix++ {
+		for iy := 0; iy < ny; iy++ {
 			var (
 				i    = iy*nx + ix
 				xmin = h.XBinLowEdge(ix + 1)
@@ -744,6 +761,22 @@ func (h *H2D) UnmarshalYODA(raw []byte) error {
 	}
 
 	*h = *NewH2DFrom(&hh)
+	return nil
+}
+
+func (h *H2D) ROOTMerge(src root.Object) error {
+	hsrc, ok := src.(*H2D)
+	if !ok {
+		return fmt.Errorf("rhist: object %q is not a *rhist.H2D (%T)", src.(root.Named).Name(), src)
+	}
+
+	var (
+		h1   = h.AsH2D()
+		h2   = hsrc.AsH2D()
+		hadd = hbook.AddH2D(h1, h2)
+	)
+
+	*h = *NewH2DFrom(hadd)
 	return nil
 }
 
@@ -794,6 +827,7 @@ func init() {
 
 var (
 	_ root.Object        = (*H2D)(nil)
+	_ root.Merger        = (*H2D)(nil)
 	_ root.Named         = (*H2D)(nil)
 	_ H2                 = (*H2D)(nil)
 	_ rbytes.Marshaler   = (*H2D)(nil)
@@ -849,8 +883,8 @@ func NewH2IFrom(h *hbook.H2D) *H2I {
 
 	ibin := func(ix, iy int) int { return iy*nxbins + ix }
 
-	for ix := range h.Binning.Nx {
-		for iy := range h.Binning.Ny {
+	for ix := 0; ix < h.Binning.Nx; ix++ {
+		for iy := 0; iy < h.Binning.Ny; iy++ {
 			i := ibin(ix, iy)
 			bin := bins[i]
 			if ix == 0 {
@@ -1100,8 +1134,8 @@ func (h *H2I) AsH2D() *hbook.H2D {
 	hh.Binning.Dist.Y.Stats.SumWX2 = float64(h.SumWY2())
 	hh.Binning.Dist.Stats.SumWXY = h.SumWXY()
 
-	for ix := range nx {
-		for iy := range ny {
+	for ix := 0; ix < nx; ix++ {
+		for iy := 0; iy < ny; iy++ {
 			var (
 				i    = iy*nx + ix
 				xmin = h.XBinLowEdge(ix + 1)
@@ -1135,6 +1169,22 @@ func (h *H2I) UnmarshalYODA(raw []byte) error {
 	}
 
 	*h = *NewH2IFrom(&hh)
+	return nil
+}
+
+func (h *H2I) ROOTMerge(src root.Object) error {
+	hsrc, ok := src.(*H2I)
+	if !ok {
+		return fmt.Errorf("rhist: object %q is not a *rhist.H2I (%T)", src.(root.Named).Name(), src)
+	}
+
+	var (
+		h1   = h.AsH2D()
+		h2   = hsrc.AsH2D()
+		hadd = hbook.AddH2D(h1, h2)
+	)
+
+	*h = *NewH2IFrom(hadd)
 	return nil
 }
 
@@ -1185,6 +1235,7 @@ func init() {
 
 var (
 	_ root.Object        = (*H2I)(nil)
+	_ root.Merger        = (*H2I)(nil)
 	_ root.Named         = (*H2I)(nil)
 	_ H2                 = (*H2I)(nil)
 	_ rbytes.Marshaler   = (*H2I)(nil)

@@ -39,6 +39,14 @@ func NewH2DFromEdges(xedges []float64, yedges []float64) *H2D {
 	}
 }
 
+// Clone returns a deep copy of this 2-dim histogram.
+func (h *H2D) Clone() *H2D {
+	return &H2D{
+		Binning: h.Binning.clone(),
+		Ann:     h.Ann.clone(),
+	}
+}
+
 // Name returns the name of this histogram, if any
 func (h *H2D) Name() string {
 	v, ok := h.Ann["name"]

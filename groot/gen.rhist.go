@@ -388,7 +388,7 @@ func (h *{{.Name}}) UnmarshalYODA(raw []byte) error {
 func (h *{{.Name}}) ROOTMerge(src root.Object) error {
 	hsrc, ok := src.(*{{.Name}})
 	if !ok {
-		return fmt.Errorf("rhist: object %q is not a *rhist.H1F (%T)", src.(root.Named).Name(), src)
+		return fmt.Errorf("rhist: object %q is not a *rhist.{{.Name}} (%T)", src.(root.Named).Name(), src)
 	}
 
 	var (
@@ -757,6 +757,22 @@ func (h *{{.Name}}) UnmarshalYODA(raw []byte) error {
 	return nil
 }
 
+func (h *{{.Name}}) ROOTMerge(src root.Object) error {
+	hsrc, ok := src.(*{{.Name}})
+	if !ok {
+		return fmt.Errorf("rhist: object %q is not a *rhist.{{.Name}} (%T)", src.(root.Named).Name(), src)
+	}
+
+	var (
+		h1   = h.AsH2D()
+		h2   = hsrc.AsH2D()
+		hadd = hbook.AddH2D(h1, h2)
+	)
+
+	*h = *New{{.Name}}From(hadd)
+	return nil
+}
+
 func (h *{{.Name}}) MarshalROOT(w *rbytes.WBuffer) (int, error) {
 	if w.Err() != nil {
 		return 0, w.Err()
@@ -804,6 +820,7 @@ func init() {
 
 var (
 	_ root.Object        = (*{{.Name}})(nil)
+	_ root.Merger        = (*{{.Name}})(nil)
 	_ root.Named         = (*{{.Name}})(nil)
 	_ H2                 = (*{{.Name}})(nil)
 	_ rbytes.Marshaler   = (*{{.Name}})(nil)
