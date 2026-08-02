@@ -2,57 +2,141 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package http is a plugin for riofs.Open to support opening ROOT files over http(s).
+// Package http is a plugin for riofs.Open to support opening ROOT files over
+// http, https, dav and davs.
+//
+// Requests go through the hardened xrdhttp transport: bounded, jittered
+// retries for the failures a wide-area network manufactures, and transport
+// errors scrubbed of the query string where WebDAV endpoints carry
+// authorization.
+//
+// An encrypted endpoint (https, davs) is offered the ambient bearer token
+// found by the WLCG discovery sequence ($BEARER_TOKEN, $BEARER_TOKEN_FILE,
+// then the bt_u<uid> files), when there is one — the same decision xrdcp and
+// gfal2 make, taken here because riofs.Open gives the caller nowhere to make
+// it themselves. A cleartext endpoint is never offered a token: anyone who
+// can observe a bearer token can replay it.
 package http
 
 import (
+	"context"
 	"io"
-	"net/http"
 	"os"
 	"runtime"
 
-	"go-hep.org/x/hep/groot/internal/httpio"
 	"go-hep.org/x/hep/groot/riofs"
+	"go-hep.org/x/hep/xrootd"
+	"go-hep.org/x/hep/xrootd/xrdhttp"
+	"go-hep.org/x/hep/xrootd/xrdio"
+	"go-hep.org/x/hep/xrootd/xrdproto/auth/token"
 )
 
 func init() {
 	riofs.Register("http", openFile)
 	riofs.Register("https", openFile)
+	riofs.Register("dav", openFile)
+	riofs.Register("davs", openFile)
 }
 
 func openFile(path string) (riofs.Reader, error) {
-	r, err := httpio.Open(path)
+	urn, err := xrdio.Parse(path)
 	if err != nil {
-		// HTTP server may not support accept-range.
-		return tmpFileFrom(path)
+		return nil, err
 	}
-	rc, err := rcacheOf(&preader{r: r, n: runtime.NumCPU()})
+
+	be, err := xrootd.DialHTTP(path, credentialOptions(urn.Scheme)...)
 	if err != nil {
-		_ = r.Close()
-		return tmpFileFrom(path)
+		return nil, err
+	}
+
+	ctx := context.Background()
+	cli := be.(xrootd.HTTPBackend).HTTPClient()
+
+	// A ROOT file is read as scattered spans — header, streamer info, then
+	// baskets on demand — which is only affordable when the server answers
+	// range requests. One that does not still answers every span correctly,
+	// but with the whole file prefix in front of it, so fetch the file once
+	// instead.
+	ranged, err := cli.Ranges(ctx, urn.Path)
+	if err != nil {
+		_ = be.Close()
+		return nil, err
+	}
+	if !ranged {
+		defer be.Close()
+		return tmpFileFrom(ctx, cli, urn.Path)
+	}
+
+	f, err := xrdio.OpenFrom(be.FS(), urn.Path)
+	if err != nil {
+		_ = be.Close()
+		return nil, err
+	}
+	rc, err := rcacheOf(&preader{r: &remoteFile{File: f, be: be}, n: runtime.NumCPU()})
+	if err != nil {
+		_ = f.Close()
+		_ = be.Close()
+		return nil, err
 	}
 	return rc, nil
 }
 
-func tmpFileFrom(path string) (riofs.Reader, error) {
-	resp, err := http.Get(path)
+// credentialOptions returns the ambient credential the scheme may be trusted
+// with: the discovered bearer token for an encrypted endpoint, nothing for a
+// cleartext one, nothing when discovery finds no token. Anonymous access is a
+// working configuration, not an error.
+func credentialOptions(scheme string) []xrdhttp.Option {
+	switch scheme {
+	case "https", "davs":
+	default:
+		return nil
+	}
+	tok, err := token.Discover()
+	if err != nil {
+		return nil
+	}
+	return []xrdhttp.Option{xrdhttp.WithBearerToken(tok)}
+}
+
+// remoteFile owns the backend its file reads through: xrdio.OpenFrom leaves
+// the filesystem handle with the caller, and dropping it on the floor would
+// leak the transport's idle connections for the life of the process.
+type remoteFile struct {
+	*xrdio.File
+	be xrootd.Backend
+}
+
+func (f *remoteFile) Close() error {
+	err := f.File.Close()
+	if e := f.be.Close(); err == nil {
+		err = e
+	}
+	return err
+}
+
+// tmpFileFrom downloads the file through the client — credentials, retries
+// and all — into a temporary file that deletes itself on Close.
+func tmpFileFrom(ctx context.Context, cli *xrdhttp.Client, name string) (riofs.Reader, error) {
+	body, err := cli.Fetch(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer body.Close()
 
 	f, err := os.CreateTemp("", "riofs-remote-")
 	if err != nil {
 		return nil, err
 	}
-	_, err = io.CopyBuffer(f, resp.Body, make([]byte, 16*1024*1024))
+	_, err = io.Copy(f, body)
 	if err != nil {
 		f.Close()
+		os.Remove(f.Name())
 		return nil, err
 	}
 	_, err = f.Seek(0, 0)
 	if err != nil {
 		f.Close()
+		os.Remove(f.Name())
 		return nil, err
 	}
 	return &tmpFile{f}, nil
@@ -75,4 +159,5 @@ func (f *tmpFile) Close() error {
 var (
 	_ riofs.Reader = (*tmpFile)(nil)
 	_ riofs.Writer = (*tmpFile)(nil)
+	_ riofs.Reader = (*remoteFile)(nil)
 )

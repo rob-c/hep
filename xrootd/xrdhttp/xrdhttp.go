@@ -182,6 +182,22 @@ func (c *Client) Stat(ctx context.Context, name string) (FileInfo, error) {
 
 // ReadAll downloads the whole named object.
 func (c *Client) ReadAll(ctx context.Context, name string) ([]byte, error) {
+	body, err := c.Fetch(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	return io.ReadAll(body)
+}
+
+// Fetch returns the named object's bytes as a stream, for a caller who wants
+// to copy them somewhere rather than hold them: a download to disk should not
+// cost the file's size in memory. The caller must close the stream.
+//
+// The request carries the client's credentials and is retried like any other;
+// once the stream is handed over, a failure mid-body is the caller's to see,
+// because bytes already delivered cannot be taken back.
+func (c *Client) Fetch(ctx context.Context, name string) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.urlFor(name), nil)
 	if err != nil {
 		return nil, err
@@ -190,11 +206,44 @@ func (c *Client) ReadAll(ctx context.Context, name string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("xrdhttp: GET %q: %w", name, err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
 		return nil, statusError(http.MethodGet, name, resp)
 	}
-	return io.ReadAll(resp.Body)
+	return resp.Body, nil
+}
+
+// Ranges reports whether the server honours byte-range requests for the named
+// object. A server without them still answers every ReadAt correctly — a 200
+// carries the whole object and the prefix is skipped — but each such read
+// re-downloads everything before the offset, so a caller about to read
+// scattered pieces of something large would rather find out first and fetch
+// the object once.
+func (c *Client) Ranges(ctx context.Context, name string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.urlFor(name), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Range", "bytes=0-0")
+	resp, err := c.do(req)
+	if err != nil {
+		return false, fmt.Errorf("xrdhttp: GET %q range: %w", name, err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		return true, nil
+	case http.StatusOK:
+		// The whole object; a Content-Range header would mean the range was
+		// honoured after all, whatever the status says.
+		return resp.Header.Get("Content-Range") != "", nil
+	case http.StatusRequestedRangeNotSatisfiable:
+		// An empty object has no byte 0 to ask for, but the server understood
+		// the question.
+		return true, nil
+	default:
+		return false, statusError(http.MethodGet, name, resp)
+	}
 }
 
 // ReadAt reads len(p) bytes into p starting at offset off using an HTTP Range
