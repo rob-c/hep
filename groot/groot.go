@@ -32,7 +32,11 @@ func NewReader(r Reader) (*File, error) {
 	return riofs.NewReader(r)
 }
 
-// Create creates the named ROOT file for writing.
+// Create creates the named ROOT file for writing. name may be a local path or
+// a URL whose scheme has a writer plugin registered: importing
+// groot/riofs/plugin/xrootd writes ROOT files straight to remote storage over
+// root:// and roots://, and groot/riofs/plugin/http does the same over http,
+// https, dav and davs.
 func Create(name string, opts ...FileOption) (*File, error) {
 	return riofs.Create(name, opts...)
 }

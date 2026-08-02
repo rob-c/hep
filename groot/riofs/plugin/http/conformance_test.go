@@ -13,13 +13,17 @@
 package http
 
 import (
+	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"go-hep.org/x/hep/groot/rbase"
 	"go-hep.org/x/hep/groot/riofs"
 	_ "go-hep.org/x/hep/groot/ztypes" // class registrations, as a real caller has
 	"go-hep.org/x/hep/xrootd/xrdhttp"
@@ -144,5 +148,99 @@ func TestConformance_TheDiscoveredTokenReachesTheWire(t *testing.T) {
 	}
 	if auth, _ := got.Load().(string); !strings.HasPrefix(auth, "Bearer ") || !strings.Contains(auth, "sekrit-token") {
 		t.Fatalf("the token did not reach the server: Authorization=%q", auth)
+	}
+}
+
+// davDir serves a directory over HTTP with the three methods a WebDAV write
+// needs: PUT to store, GET to read back, HEAD so the reader can find out
+// whether ranges are on offer.
+func davDir(t *testing.T) (dir, url string) {
+	t.Helper()
+
+	dir = t.TempDir()
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		name := filepath.Join(dir, filepath.Clean("/"+r.URL.Path))
+		switch r.Method {
+		case stdhttp.MethodPut:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				stdhttp.Error(w, err.Error(), stdhttp.StatusBadRequest)
+				return
+			}
+			if err := os.MkdirAll(filepath.Dir(name), 0755); err != nil {
+				stdhttp.Error(w, err.Error(), stdhttp.StatusInternalServerError)
+				return
+			}
+			if err := os.WriteFile(name, body, 0644); err != nil {
+				stdhttp.Error(w, err.Error(), stdhttp.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(stdhttp.StatusCreated)
+		case stdhttp.MethodGet, stdhttp.MethodHead:
+			stdhttp.ServeFile(w, r, name)
+		default:
+			stdhttp.Error(w, "method not allowed", stdhttp.StatusMethodNotAllowed)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return dir, srv.URL
+}
+
+// TestConformance_ARootFileIsWrittenOverHTTP: riofs.Create over http buffers
+// the file and PUTs it whole, so the claim to test is not that each write
+// reached the server — none of them did — but that the file the server ends
+// up holding is the ROOT file the caller wrote, readable through the plugin.
+func TestConformance_ARootFileIsWrittenOverHTTP(t *testing.T) {
+	dir, url := davDir(t)
+
+	w, err := riofs.Create(url + "/out.root")
+	if err != nil {
+		t.Fatalf("could not create: %+v", err)
+	}
+	if err := w.Put("o1", rbase.NewObjString("v1")); err != nil {
+		t.Fatalf("could not put: %+v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("could not close: %+v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "out.root"))
+	if err != nil {
+		t.Fatalf("the server has no such file: %v", err)
+	}
+	if len(raw) < 4 || string(raw[:4]) != "root" {
+		t.Fatalf("what landed on the server is not a ROOT file (%d bytes)", len(raw))
+	}
+
+	r, err := riofs.Open(url + "/out.root")
+	if err != nil {
+		t.Fatalf("could not re-open: %+v", err)
+	}
+	defer r.Close()
+
+	obj, err := riofs.Get[*rbase.ObjString](r, "o1")
+	if err != nil {
+		t.Fatalf("could not read back: %+v", err)
+	}
+	if got, want := obj.String(), "v1"; got != want {
+		t.Fatalf("read back %q, want %q", got, want)
+	}
+}
+
+// TestConformance_EveryHTTPSchemeGoesBothWays: a scheme that can be read but
+// not written is a caller finding out at the end of a job.
+func TestConformance_EveryHTTPSchemeGoesBothWays(t *testing.T) {
+	var (
+		read  = riofs.Drivers()
+		write = riofs.WriteDrivers()
+	)
+	for _, scheme := range []string{"http", "https", "dav", "davs"} {
+		if !slices.Contains(read, scheme) {
+			t.Errorf("%q cannot be read: %v", scheme, read)
+		}
+		if !slices.Contains(write, scheme) {
+			t.Errorf("%q cannot be written: %v", scheme, write)
+		}
 	}
 }

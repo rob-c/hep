@@ -49,6 +49,15 @@ passphrase is ever handled here.
 **Copies.** `xrdcopy` does resumable transfers and native third-party copy,
 verified end-to-end against a real XRootD server.
 
+**ROOT files read *and written* over the network.** `xrdio` opens remote files
+with the `os.O_*` flags — create, truncate, append, exclusive create, parent
+directories made on the way — and `groot.Create("root://server//out.root")`
+writes a ROOT file straight to storage, seeking back over its own header the
+way a local write does. Upstream could only ever read a remote file, and only
+over `root://`; here `roots://`, `xroot://`, `xroots://`, `https://` and
+`davs://` all go both ways (over HTTP the file is buffered and PUT whole, which
+is HTTP's limitation, and is documented where you meet it).
+
 **Safe by default, which is the point.** The failure a beginner meets on grid
 storage is not a refused connection — it is a path that goes quiet while both
 ends still believe it is up, and a read that blocks for the better part of an
@@ -61,7 +70,7 @@ returned, because that is where `?authz=Bearer eyJ...` lives, and errors get
 logged. `Unbounded()` removes all of it for callers whose context is their own
 deadline.
 
-**Thirty runnable programs.** [`xrootd/example`](xrootd/example) — one directory
+**Thirty-one runnable programs.** [`xrootd/example`](xrootd/example) — one directory
 each, from a first ranged read to token-authenticated WebDAV, tape recall and
 third-party copy. If you read three, read 01, 12 and 18.
 

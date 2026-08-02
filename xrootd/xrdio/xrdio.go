@@ -2,7 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package xrdio provides a File type that implements various interfaces from the io package.
+// Package xrdio provides a File type that implements various interfaces from
+// the io package.
+//
+// Files are opened by URL, and the scheme selects the transport: root, roots,
+// xroot and xroots speak the native XRootD protocol, http, https, dav and davs
+// go over HTTP data access. Open reads, Create writes, and OpenFile takes the
+// os.O_* flags for everything in between — see OpenFile for the two places
+// where XRootD does not have the open that os does. The From variants take a
+// filesystem handle the caller already has, and leave it open.
 package xrdio // import "go-hep.org/x/hep/xrootd/xrdio"
 
 import (
@@ -24,6 +32,10 @@ import (
 //   - io.WriterAt
 //   - io.Seeker
 //   - fs.File
+//
+// It also has the Sync, Truncate and Stat methods of an os.File, so a *File
+// can stand in for one wherever the code writing to it is not fussy about the
+// concrete type.
 type File struct {
 	// backend is the endpoint this file was opened through, closed with the
 	// file. It is nil for a File opened via OpenFrom, which does not own one.
@@ -49,37 +61,7 @@ type File struct {
 // (see xrootd.Dial). A bare path with no scheme is treated as native XRootD,
 // as before.
 func Open(name string) (*File, error) {
-	ctx := context.Background()
-
-	urn, err := Parse(name)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse %q: %w", name, err)
-	}
-
-	// The whole URL is passed on, not just the address: the scheme is what
-	// selects the transport, and dropping it here is how an https:// URL used
-	// to end up dialling the native XRootD port.
-	backend, err := xrootd.Dial(ctx, name, urn.User)
-	if err != nil {
-		return nil, fmt.Errorf("xrdio: could not connect to server %q: %w", urn.Addr, err)
-	}
-
-	fs := backend.FS()
-	f, err := fs.Open(ctx, urn.Path, xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
-	if err != nil {
-		backend.Close()
-		return nil, fmt.Errorf("xrdio: could not open %q: %w", name, err)
-	}
-
-	xf := &File{backend: backend, fs: fs, f: f, name: urn.Path}
-	fi, err := xf.Stat()
-	if err != nil {
-		backend.Close()
-		return nil, fmt.Errorf("xrdio: could not stat %q: %w", name, err)
-	}
-	xf.size = fi.Size()
-
-	return xf, nil
+	return OpenFile(name, os.O_RDONLY)
 }
 
 // OpenFrom opens the file name via the given filesystem handle.
@@ -89,19 +71,7 @@ func Open(name string) (*File, error) {
 //
 //	f, err := xrdio.OpenFrom(fs, "/some/path/to/file")
 func OpenFrom(fs xrdfs.FileSystem, name string) (*File, error) {
-	f, err := fs.Open(context.Background(), name, xrdfs.OpenModeOwnerRead, xrdfs.OpenOptionsOpenRead)
-	if err != nil {
-		return nil, fmt.Errorf("xrdio: could not open %q: %w", name, err)
-	}
-
-	xf := &File{fs: fs, f: f, name: name}
-	fi, err := xf.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("xrdio: could not stat %q: %w", name, err)
-	}
-	xf.size = fi.Size()
-
-	return xf, nil
+	return OpenFileFrom(fs, name, os.O_RDONLY)
 }
 
 // Name returns the name of the file.
@@ -152,14 +122,41 @@ func (f *File) ReadAt(data []byte, offset int64) (int, error) {
 
 // Write implements io.Writer.
 func (f *File) Write(data []byte) (int, error) {
-	n, err := f.f.WriteAt(data, f.pos)
+	n, err := f.WriteAt(data, f.pos)
 	f.pos += int64(n)
 	return n, err
 }
 
 // WriteAt implements io.WriterAt.
 func (f *File) WriteAt(data []byte, offset int64) (int, error) {
-	return f.f.WriteAt(data, offset)
+	n, err := f.f.WriteAt(data, offset)
+	if end := offset + int64(n); end > f.size {
+		// Read reports io.EOF from this, so a file that has been written
+		// past its old end has to know it grew.
+		f.size = end
+	}
+	return n, err
+}
+
+// Sync commits the file's contents to storage, and reports what the server
+// says about that rather than what the local side hopes.
+func (f *File) Sync() error {
+	err := f.f.Sync(context.Background())
+	if err != nil {
+		return fmt.Errorf("xrdio: could not sync %q: %w", f.name, err)
+	}
+	return nil
+}
+
+// Truncate changes the size of the file. It does not move the offset a
+// following Write would use, which is os.File's behaviour too.
+func (f *File) Truncate(size int64) error {
+	err := f.f.Truncate(context.Background(), size)
+	if err != nil {
+		return fmt.Errorf("xrdio: could not truncate %q: %w", f.name, err)
+	}
+	f.size = size
+	return nil
 }
 
 // Seek implements io.Seeker

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package http is a plugin for riofs.Open to support opening ROOT files over
-// http, https, dav and davs.
+// Package http is a plugin for riofs.Open and riofs.Create, to read and write
+// ROOT files over http, https, dav and davs.
 //
 // Requests go through the hardened xrdhttp transport: bounded, jittered
 // retries for the failures a wide-area network manufactures, and transport
@@ -16,6 +16,13 @@
 // gfal2 make, taken here because riofs.Open gives the caller nowhere to make
 // it themselves. A cleartext endpoint is never offered a token: anyone who
 // can observe a bearer token can replay it.
+//
+// Writing is a different proposition from reading. HTTP has no ranged write
+// that servers can be relied on to implement, so a file being written is held
+// in memory and PUT whole when it is closed or synced — a ROOT file written
+// this way must fit in RAM. Where that is not acceptable, write over the
+// native protocol (root://, roots://), which addresses each write by offset
+// and streams.
 package http
 
 import (
@@ -36,6 +43,32 @@ func init() {
 	riofs.Register("https", openFile)
 	riofs.Register("dav", openFile)
 	riofs.Register("davs", openFile)
+
+	riofs.RegisterWriter("http", createFile)
+	riofs.RegisterWriter("https", createFile)
+	riofs.RegisterWriter("dav", createFile)
+	riofs.RegisterWriter("davs", createFile)
+}
+
+// createFile creates path for writing, and hands back a Writer that owns the
+// backend it writes through.
+func createFile(path string) (riofs.Writer, error) {
+	urn, err := xrdio.Parse(path)
+	if err != nil {
+		return nil, err
+	}
+
+	be, err := xrootd.DialHTTP(path, credentialOptions(urn.Scheme)...)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := xrdio.CreateFrom(be.FS(), urn.Path)
+	if err != nil {
+		_ = be.Close()
+		return nil, err
+	}
+	return &remoteFile{File: f, be: be}, nil
 }
 
 func openFile(path string) (riofs.Reader, error) {
@@ -105,6 +138,8 @@ type remoteFile struct {
 	*xrdio.File
 	be xrootd.Backend
 }
+
+var _ riofs.Writer = (*remoteFile)(nil)
 
 func (f *remoteFile) Close() error {
 	err := f.File.Close()

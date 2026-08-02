@@ -50,6 +50,73 @@ func Drivers() []string {
 	return names
 }
 
+var writers = struct {
+	sync.RWMutex
+	db map[string]func(path string) (Writer, error)
+}{
+	db: make(map[string]func(path string) (Writer, error)),
+}
+
+// RegisterWriter registers a plugin to create ROOT files, for the URL scheme
+// name. RegisterWriter panics if it is called twice with the same name or if
+// the plugin function is nil.
+func RegisterWriter(name string, f func(path string) (Writer, error)) {
+	writers.Lock()
+	defer writers.Unlock()
+	if f == nil {
+		panic("riofs: plugin function is nil")
+	}
+	if _, dup := writers.db[name]; dup {
+		panic(fmt.Errorf("riofs: RegisterWriter called twice for plugin %q", name))
+	}
+	writers.db[name] = f
+}
+
+// WriteDrivers returns a sorted list of the names of the registered plugins
+// to create ROOT files.
+func WriteDrivers() []string {
+	writers.RLock()
+	defer writers.RUnlock()
+	names := make([]string, 0, len(writers.db))
+	for name := range writers.db {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func createFile(path string) (Writer, error) {
+	writers.RLock()
+	defer writers.RUnlock()
+
+	scheme := fileScheme(path)
+	if create, ok := writers.db[scheme]; ok {
+		return create(path)
+	}
+	if scheme != "file" {
+		return nil, fmt.Errorf("riofs: no ROOT plugin to create [%s] (scheme=%s)", path, scheme)
+	}
+
+	return createLocalFile(path)
+}
+
+func createLocalFile(path string) (Writer, error) {
+	path = strings.TrimPrefix(path, "file://")
+	return os.Create(path)
+}
+
+// fileScheme is the URL scheme of path, or "file" for a local name. Unlike a
+// read, a create cannot try the local filesystem first and fall back: it would
+// make a file literally named "root://server//path". So the scheme is decided
+// up front, and a one-letter one is not a scheme but a Windows drive.
+func fileScheme(path string) string {
+	u, err := url.Parse(path)
+	if err != nil || len(u.Scheme) < 2 {
+		return "file"
+	}
+	return u.Scheme
+}
+
 func openFile(path string) (Reader, error) {
 	drivers.RLock()
 	defer drivers.RUnlock()

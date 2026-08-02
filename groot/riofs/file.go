@@ -165,9 +165,12 @@ func NewReader(r Reader) (*File, error) {
 	return f, nil
 }
 
-// Create creates the named ROOT file for writing.
+// Create creates the named ROOT file for writing. name may be a local path or
+// a URL whose scheme has a writer plugin registered (see RegisterWriter): with
+// the xrootd plugin imported, ROOT files can be written straight to remote
+// storage.
 func Create(name string, opts ...FileOption) (*File, error) {
-	fd, err := os.Create(name)
+	fd, err := createFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("riofs: unable to create %q: %w", name, err)
 	}
@@ -215,7 +218,12 @@ func Create(name string, opts ...FileOption) (*File, error) {
 	err = f.writeHeader()
 	if err != nil {
 		_ = fd.Close()
-		_ = os.RemoveAll(name)
+		// Only a local file can be taken back: a remote endpoint is reached
+		// through a plugin that hands back a Writer and nothing to remove
+		// with, and guessing at a delete would be a second failure.
+		if fileScheme(name) == "file" {
+			_ = os.RemoveAll(name)
+		}
 		return nil, fmt.Errorf("riofs: failed to write header %q: %w", name, err)
 	}
 
