@@ -27,6 +27,13 @@ type Decoder struct {
 	sigProcBc int // barcode of signal vertex
 	bp1       int // barcode of beam1
 	bp2       int // barcode of beam2
+
+	v3 struct {
+		held    tokens   // the 'E' line that ended the previous event
+		hasHeld bool     // whether held carries a line to replay
+		names   []string // weight names from the run info
+		done    bool     // the end marker has been read
+	}
 }
 
 // NewDecoder returns a new hepmc Decoder that reads from the io.Reader.
@@ -74,6 +81,12 @@ func (dec *Decoder) Decode(evt *Event) error {
 			return err
 		}
 		dec.seenEvtHdr = true
+	}
+
+	// HepMC3 listings are line-oriented in a different grammar: hand the
+	// whole event off rather than shoehorning it into the v2 dispatch below.
+	if dec.ftype == hepmcASCIIv3 {
+		return dec.decodeASCIIv3(evt)
 	}
 
 	dec.sigProcBc = 0
@@ -274,6 +287,10 @@ func (dec *Decoder) findFileType() error {
 
 		case startExtendedASCII:
 			dec.ftype = hepmcExtendedASCII
+			return nil
+
+		case startASCIIv3:
+			dec.ftype = hepmcASCIIv3
 			return nil
 
 		case startPdt:
