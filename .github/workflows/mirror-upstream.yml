@@ -29,12 +29,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
     - name: Fetch upstream
-      run: git fetch --no-tags https://codeberg.org/go-hep/hep.git main
+      # Codeberg answers 504 often enough that one attempt is not a mirror.
+      run: |
+        for i in 1 2 3 4 5; do
+          if git fetch --no-tags https://codeberg.org/go-hep/hep.git main; then
+            exit 0
+          fi
+          echo "codeberg.org: attempt $i failed, retrying in $((i * 30))s"
+          sleep $((i * 30))
+        done
+        echo "::error::codeberg.org unreachable after 5 attempts"
+        exit 1
 
     - name: Report
       run: |
