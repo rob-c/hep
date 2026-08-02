@@ -32,13 +32,12 @@ import (
 func cloneClientFS(t *testing.T) (xrdfs.FileSystem, string) {
 	t.Helper()
 
-	srv, addr, baseDir, err := createServer(func(err error) { t.Error(err) })
+	srv, addr, baseDir, err := createServer(t, func(err error) { t.Error(err) })
 	if err != nil {
 		t.Fatalf("could not create the server: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = srv.Shutdown(context.Background())
-		os.RemoveAll(baseDir)
 	})
 
 	cli, err := createClient(addr)
