@@ -3,6 +3,13 @@
 // license that can be found in the LICENSE file.
 
 // Package hepmc is a pure Go implementation of the C++ HepMC-2 library.
+//
+// Decoder reads every HepMC2 ASCII flavour (IO_GenEvent, IO_Ascii,
+// IO_ExtendedAscii) and the HepMC3 Asciiv3 event listing, detecting the
+// format from the stream; a v3 file decodes onto the same Event model, with
+// the v3 attributes (GenCrossSection, GenPdfInfo, signal process, flow,
+// polarization, ...) mapped back onto the fields HepMC2 kept for them.
+// Encoder writes IO_GenEvent.
 package hepmc // import "go-hep.org/x/hep/hepmc"
 
 import (

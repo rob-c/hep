@@ -13,6 +13,9 @@ const (
 	endASCII         = "HepMC::IO_Ascii-END_EVENT_LISTING"
 	endExtendedASCII = "HepMC::IO_ExtendedAscii-END_EVENT_LISTING"
 
+	startASCIIv3 = "HepMC::Asciiv3-START_EVENT_LISTING"
+	endASCIIv3   = "HepMC::Asciiv3-END_EVENT_LISTING"
+
 	startPdt              = "HepMC::IO_Ascii-START_PARTICLE_DATA"
 	startExtendedASCIIPdt = "HepMC::IO_ExtendedAscii-START_PARTICLE_DATA"
 	endPdt                = "HepMC::IO_Ascii-END_PARTICLE_DATA"
@@ -28,4 +31,5 @@ const (
 	hepmcExtendedASCII
 	hepmcASCIIPdt
 	hepmcExtendedASCIIPdt
+	hepmcASCIIv3
 )
