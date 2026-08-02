@@ -11,32 +11,43 @@ type Constituent struct {
 	Mul int // multiplicity
 }
 
+// isQuark reports whether this constituent is the quark of the given flavour.
+// A meson lists a quark and an antiquark, and both carry that flavour, so the
+// sign of the ID does not enter.
+func (c Constituent) isQuark(flavour PID) bool {
+	switch c.ID {
+	case flavour, -flavour:
+		return true
+	}
+	return false
+}
+
 // IsUp returns whether this is an up-quark
 func (c Constituent) IsUp() bool {
-	panic("not implemented")
+	return c.isQuark(PDG_u)
 }
 
 // IsDown returns whether this is a down-quark
 func (c Constituent) IsDown() bool {
-	return false
+	return c.isQuark(PDG_d)
 }
 
-// IsStrange returns whether this is a strqnge-quark
+// IsStrange returns whether this is a strange-quark
 func (c Constituent) IsStrange() bool {
-	panic("not implemented")
+	return c.isQuark(PDG_s)
 }
 
 // IsCharm returns whether this is a charm-quark
 func (c Constituent) IsCharm() bool {
-	panic("not implemented")
+	return c.isQuark(PDG_c)
 }
 
 // IsBottom returns whether this is a bottom-quark
 func (c Constituent) IsBottom() bool {
-	panic("not implemented")
+	return c.isQuark(PDG_b)
 }
 
 // IsTop returns whether this is a top-quark
 func (c Constituent) IsTop() bool {
-	panic("not implemented")
+	return c.isQuark(PDG_t)
 }
