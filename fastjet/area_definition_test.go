@@ -152,6 +152,61 @@ func TestAreaDefinitionString(t *testing.T) {
 	}
 }
 
+func TestAreaDefinitionValidate(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		def  AreaDefinition
+		want string
+	}{
+		{
+			name: "zero-value",
+			def:  AreaDefinition{},
+		},
+		{
+			name: "explicit-ghosts",
+			def:  NewAreaDefinition(ActiveAreaExplicitGhosts, GhostedAreaSpec{GhostMaxRap: 2}),
+		},
+		{
+			name: "passive",
+			def:  NewAreaDefinition(PassiveArea, GhostedAreaSpec{}),
+			want: "fastjet: PassiveArea is not implemented",
+		},
+		{
+			name: "voronoi",
+			def:  NewAreaDefinition(VoronoiArea, GhostedAreaSpec{}),
+			want: "fastjet: VoronoiArea is not implemented",
+		},
+		{
+			// an out-of-range type has no name to report, so it must not
+			// be reported through String.
+			name: "invalid-type",
+			def:  NewAreaDefinition(AreaType(42), GhostedAreaSpec{}),
+			want: "fastjet: invalid AreaType (42)",
+		},
+		{
+			name: "invalid-ghost-spec",
+			def:  NewAreaDefinition(ActiveArea, GhostedAreaSpec{GhostArea: -1}),
+			want: "fastjet: negative GhostArea (-1)",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tc.def.Validate()
+			switch {
+			case err == nil && tc.want != "":
+				t.Fatalf("expected an error (%v)", tc.want)
+			case err != nil && tc.want == "":
+				t.Fatalf("could not validate area definition: %+v", err)
+			case err != nil && err.Error() != tc.want:
+				t.Fatalf("got error %q, want %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
 func TestAreaDefinitionAccessors(t *testing.T) {
 	t.Parallel()
 

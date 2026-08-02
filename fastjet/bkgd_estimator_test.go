@@ -91,6 +91,82 @@ func TestJetMedianBackgroundEstimator(t *testing.T) {
 	}
 }
 
+// TestJetMedianBackgroundEstimatorRapRange checks that a background measured
+// in a band away from the centre is the background of that band, and not the
+// one of the event as a whole.
+func TestJetMedianBackgroundEstimatorRapRange(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rapSplit = 1.0 // between the central band and the forward one
+		nPart    = 600 // per band
+	)
+
+	var (
+		rnd   = rand.New(rand.NewPCG(bkgSeed, bkgSeed))
+		parts []fastjet.Jet
+		add   = func(pt, rap, phi float64) {
+			parts = append(parts, fastjet.NewJet(
+				pt*math.Cos(phi), pt*math.Sin(phi),
+				pt*math.Sinh(rap), pt*math.Cosh(rap),
+			))
+		}
+	)
+	// the two bands cover the same area, and the forward one carries twice
+	// the transverse momentum.
+	for range nPart {
+		add(bkgMeanPt, rapSplit*(2*rnd.Float64()-1), 2*math.Pi*rnd.Float64())
+
+		rap := rapSplit + (bkgRapMax-rapSplit)*rnd.Float64()
+		if rnd.Float64() < 0.5 {
+			rap = -rap
+		}
+		add(2*bkgMeanPt, rap, 2*math.Pi*rnd.Float64())
+	}
+
+	var (
+		def  = fastjet.NewJetDefinition(fastjet.KtAlgorithm, 0.5, fastjet.EScheme, fastjet.BestStrategy)
+		area = fastjet.NewAreaDefinition(fastjet.ActiveAreaExplicitGhosts, bkgGhosts)
+	)
+
+	csa, err := fastjet.NewClusterSequenceArea(parts, def, area)
+	if err != nil {
+		t.Fatalf("could not cluster with areas: %+v", err)
+	}
+
+	rhoOf := func(rapMin, rapMax float64) float64 {
+		t.Helper()
+
+		bkg, err := fastjet.NewJetMedianBackgroundEstimator(
+			csa, fastjet.WithBkgRapRange(rapMin, rapMax),
+		)
+		if err != nil {
+			t.Fatalf("could not estimate the background over (%v, %v): %+v", rapMin, rapMax, err)
+		}
+		return bkg.Rho()
+	}
+
+	var (
+		central = rhoOf(0, rapSplit)
+		forward = rhoOf(rapSplit, 1.5)
+	)
+	if central <= 0 {
+		t.Fatalf("got a central rho of %v, want a positive background", central)
+	}
+	if got := forward / central; math.Abs(got-2) > 0.4 {
+		t.Errorf("got a forward/central rho ratio of %v, want 2", got)
+	}
+
+	// the estimate over the whole region has to sit between the two.
+	bkg, err := fastjet.NewJetMedianBackgroundEstimator(csa)
+	if err != nil {
+		t.Fatalf("could not estimate the background: %+v", err)
+	}
+	if got := bkg.Rho(); got < central || got > forward {
+		t.Errorf("got rho=%v over the whole region, want it between %v and %v", got, central, forward)
+	}
+}
+
 // TestJetMedianBackgroundEstimatorSubtract checks the whole chain the areas
 // exist for: a hard jet buried in the background comes back out of it with
 // close to the transverse momentum it went in with.
@@ -289,6 +365,24 @@ func TestJetMedianBackgroundEstimatorErrors(t *testing.T) {
 			csa:  explicit,
 			opts: []fastjet.BkgOption{fastjet.WithBkgSigmaQuantile(0)},
 			want: "fastjet: sigma quantile 0 out of range (0, 0.5)",
+		},
+		{
+			name: "negative-rapidity-range",
+			csa:  explicit,
+			opts: []fastjet.BkgOption{fastjet.WithBkgRapRange(-1, 2)},
+			want: "fastjet: negative rapidity range minimum (-1)",
+		},
+		{
+			name: "empty-rapidity-range",
+			csa:  explicit,
+			opts: []fastjet.BkgOption{fastjet.WithBkgRapRange(2, 1)},
+			want: "fastjet: empty rapidity range (2, 1)",
+		},
+		{
+			name: "nothing-in-rapidity-range",
+			csa:  explicit,
+			opts: []fastjet.BkgOption{fastjet.WithBkgRapRange(10, 20)},
+			want: "fastjet: no jets left to estimate the background from (10 < |y| < 20, 0 hardest excluded)",
 		},
 		{
 			name: "nothing-to-estimate-from",
