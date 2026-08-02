@@ -82,7 +82,7 @@ func (s *Scanner) Scan() bool {
 			if len(s.filter) > 0 {
 				_, ok := s.filter[name]
 				if !ok {
-					_, err = s.seek(clen, 0)
+					err = s.skip(clen)
 					if err != nil {
 						s.err = err
 						return false
@@ -104,7 +104,7 @@ func (s *Scanner) Scan() bool {
 				return true
 
 			case false:
-				_, err = s.seek(clen, 0)
+				err = s.skip(clen)
 				if err != nil {
 					s.err = err
 					return false
@@ -113,25 +113,20 @@ func (s *Scanner) Scan() bool {
 			}
 
 		default:
-			panic(fmt.Errorf("unknown frame %v", hdr.Frame))
+			// a stream that is not a rio stream, or one that has been
+			// truncated or corrupted somewhere before this point.
+			s.err = fmt.Errorf("rio: read header corrupted (frame=%#v)", hdr.Frame)
+			return false
 		}
 	}
 }
 
-// seek sets the offset for the next Read or Write on file to offset,
-// interpreted according to whence: 0 means relative to the origin of the
-// file, 1 means relative to the current offset, and 2 means relative to
-// the end. It returns the new offset and an error, if any.
-func (s *Scanner) seek(offset int64, whence int) (ret int64, err error) {
-	switch r := s.r.r.(type) {
-	case io.Seeker:
-		return r.Seek(offset, whence)
-	default:
-		if whence != 0 {
-			panic("not implemented")
-		}
-		return io.CopyN(io.Discard, r, offset)
-	}
+// skip discards the next n bytes of the rio stream, which is how a record
+// that was not asked for, or one that was not asked to be unpacked, is
+// stepped over.
+func (s *Scanner) skip(n int64) error {
+	_, err := io.CopyN(io.Discard, s.r.r, n)
+	return err
 }
 
 // Err returns the first non-EOF error encountered by the reader.
