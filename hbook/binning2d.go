@@ -133,6 +133,26 @@ func newBinning2DFromEdges(xedges, yedges []float64) Binning2D {
 	return bng
 }
 
+// clone returns a deep copy of the binning. Bin2D, Bin1D and Dist2D hold no
+// reference types, so copying the slices copies everything.
+func (bng *Binning2D) clone() Binning2D {
+	o := Binning2D{
+		Bins:     make([]Bin2D, len(bng.Bins)),
+		Dist:     bng.Dist,
+		Outflows: bng.Outflows,
+		XRange:   bng.XRange,
+		YRange:   bng.YRange,
+		Nx:       bng.Nx,
+		Ny:       bng.Ny,
+		XEdges:   make([]Bin1D, len(bng.XEdges)),
+		YEdges:   make([]Bin1D, len(bng.YEdges)),
+	}
+	copy(o.Bins, bng.Bins)
+	copy(o.XEdges, bng.XEdges)
+	copy(o.YEdges, bng.YEdges)
+	return o
+}
+
 func (bng *Binning2D) entries() int64 {
 	return bng.Dist.Entries()
 }

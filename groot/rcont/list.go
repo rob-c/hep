@@ -60,7 +60,7 @@ func (li *List) At(i int) root.Object {
 }
 
 func (li *List) Last() int {
-	panic("not implemented")
+	return len(li.objs) - 1
 }
 
 func (li *List) Len() int {

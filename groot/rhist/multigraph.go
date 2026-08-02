@@ -7,6 +7,7 @@ package rhist
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"reflect"
 
 	"go-hep.org/x/hep/groot/rbase"
@@ -58,7 +59,20 @@ func (mg *tmultigraph) Graphs() []Graph {
 }
 
 func (mg *tmultigraph) ROOTMerge(src root.Object) error {
-	panic("not implemented")
+	switch src := src.(type) {
+	case *tmultigraph:
+		for i := range src.graphs.Len() {
+			mg.graphs.Append(src.graphs.At(i))
+		}
+		for i := range src.funcs.Len() {
+			mg.funcs.Append(src.funcs.At(i))
+		}
+		mg.ymin = math.Min(mg.ymin, src.ymin)
+		mg.ymax = math.Max(mg.ymax, src.ymax)
+		return nil
+	default:
+		return fmt.Errorf("rhist: can not merge %T into %T", src, mg)
+	}
 }
 
 // MarshalROOT implements rbytes.Marshaler

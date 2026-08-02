@@ -22,6 +22,10 @@ func (b *Bin2D) fill(x, y, w float64) {
 	b.Dist.fill(x, y, w)
 }
 
+func (b *Bin2D) addScaled(a, a2 float64, o Bin2D) {
+	b.Dist.addScaled(a, a2, o.Dist)
+}
+
 // Entries returns the number of entries in this bin.
 func (b *Bin2D) Entries() int64 {
 	return b.Dist.Entries()

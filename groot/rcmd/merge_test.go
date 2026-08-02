@@ -78,7 +78,6 @@ func TestMerge(t *testing.T) {
 			name:   "h2d-2",
 			inputs: []funcT{makeH2D(1), makeH2D(1)},
 			output: makeH2D(2),
-			panics: "not implemented", // FIXME(sbinet)
 		},
 		{
 			name:   "graph-1",

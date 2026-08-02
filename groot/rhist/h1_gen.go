@@ -238,7 +238,7 @@ func (h *H1F) AsH1D() *hbook.H1D {
 		h.dist1D(nx + 1), // overflow
 	}
 
-	for i := range nx {
+	for i := 0; i < nx; i++ {
 		bin := &hh.Binning.Bins[i]
 		xmin := h.XBinLowEdge(i + 1)
 		xmax := h.XBinWidth(i+1) + xmin
@@ -521,7 +521,7 @@ func (h *H1D) AsH1D() *hbook.H1D {
 		h.dist1D(nx + 1), // overflow
 	}
 
-	for i := range nx {
+	for i := 0; i < nx; i++ {
 		bin := &hh.Binning.Bins[i]
 		xmin := h.XBinLowEdge(i + 1)
 		xmax := h.XBinWidth(i+1) + xmin
@@ -554,7 +554,7 @@ func (h *H1D) UnmarshalYODA(raw []byte) error {
 func (h *H1D) ROOTMerge(src root.Object) error {
 	hsrc, ok := src.(*H1D)
 	if !ok {
-		return fmt.Errorf("rhist: object %q is not a *rhist.H1F (%T)", src.(root.Named).Name(), src)
+		return fmt.Errorf("rhist: object %q is not a *rhist.H1D (%T)", src.(root.Named).Name(), src)
 	}
 
 	var (
@@ -804,7 +804,7 @@ func (h *H1I) AsH1D() *hbook.H1D {
 		h.dist1D(nx + 1), // overflow
 	}
 
-	for i := range nx {
+	for i := 0; i < nx; i++ {
 		bin := &hh.Binning.Bins[i]
 		xmin := h.XBinLowEdge(i + 1)
 		xmax := h.XBinWidth(i+1) + xmin
@@ -837,7 +837,7 @@ func (h *H1I) UnmarshalYODA(raw []byte) error {
 func (h *H1I) ROOTMerge(src root.Object) error {
 	hsrc, ok := src.(*H1I)
 	if !ok {
-		return fmt.Errorf("rhist: object %q is not a *rhist.H1F (%T)", src.(root.Named).Name(), src)
+		return fmt.Errorf("rhist: object %q is not a *rhist.H1I (%T)", src.(root.Named).Name(), src)
 	}
 
 	var (

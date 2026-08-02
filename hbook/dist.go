@@ -310,6 +310,12 @@ func (d *Dist2D) fill(x, y, w float64) {
 	d.Stats.SumWXY += w * x * y
 }
 
+func (d *Dist2D) addScaled(a, a2 float64, o Dist2D) {
+	d.X.addScaled(a, a2, o.X)
+	d.Y.addScaled(a, a2, o.Y)
+	d.Stats.SumWXY += a * o.Stats.SumWXY
+}
+
 func (d *Dist2D) scaleW(f float64) {
 	d.X.scaleW(f)
 	d.Y.scaleW(f)
