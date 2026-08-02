@@ -13,6 +13,12 @@ name: Mirror upstream
 on:
   schedule:
     - cron: '0 6 * * *'
+  # GitHub disables a scheduled workflow after 60 days without activity in the
+  # repository, so the daily job is also hung off pushes to main: any work at
+  # all restarts that clock, and the mirror is current when it matters, which
+  # is when someone is about to rebase onto it.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
