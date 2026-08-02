@@ -1,6 +1,6 @@
 # xrootd examples
 
-Thirty small programs, one directory each. Every one compiles and passes
+Thirty-one small programs, one directory each. Every one compiles and passes
 `go vet` as written; change the endpoint and the path at the top and run it.
 
 ```sh
@@ -23,6 +23,7 @@ If you read three, read **01**, **12** and **18**.
 | [xrd-ex-08-root-checksum](xrd-ex-08-root-checksum) | server-side checksum, verified against the bytes you got |
 | [xrd-ex-09-root-namespace-ops](xrd-ex-09-root-namespace-ops) | mkdir, touch, rename, truncate, remove |
 | [xrd-ex-10-root-xattr](xrd-ex-10-root-xattr) | extended attributes — and why their errors hide inside a success |
+| [xrd-ex-31-root-groot-write](xrd-ex-31-root-groot-write) | write a **ROOT file** to storage with `groot`, and read it back |
 
 ## b) Listing files and folders
 
