@@ -5,6 +5,9 @@
 package lcio
 
 import (
+	"fmt"
+	"math"
+
 	"go-hep.org/x/hep/sio"
 )
 
@@ -55,10 +58,18 @@ type RandomAccess struct {
 	RecordSize     int32
 }
 
+// Index control word bits. They describe the layout of the offsets that
+// follow, so reading or writing one without them is not possible.
+const (
+	IndexSingleRun   uint32 = 1 << iota // all the offsets belong to Index.RunMin
+	IndexInt64Offset                    // locations are stored on 64 bits
+	IndexParams                         // offsets carry the user parameters
+)
+
 type Index struct {
 	// Bit 0 = single run.
 	// Bit 1 = int64 offset required
-	// Bit 2 = Params included (not yet implemented)
+	// Bit 2 = Params included
 	ControlWord uint32
 	RunMin      int32
 	BaseOffset  int64
@@ -66,7 +77,37 @@ type Index struct {
 }
 
 func (idx *Index) MarshalSio(w sio.Writer) error {
-	panic("not implemented")
+	enc := sio.NewEncoder(w)
+	enc.Encode(&idx.ControlWord)
+	enc.Encode(&idx.RunMin)
+	enc.Encode(&idx.BaseOffset)
+	enc.Encode(int32(len(idx.Offsets)))
+	for i := range idx.Offsets {
+		v := &idx.Offsets[i]
+		if idx.ControlWord&IndexSingleRun == 0 {
+			enc.Encode(&v.RunOffset)
+		}
+
+		enc.Encode(&v.EventNumber)
+		switch {
+		case idx.ControlWord&IndexInt64Offset != 0:
+			enc.Encode(&v.Location)
+		default:
+			if v.Location > math.MaxInt32 || v.Location < math.MinInt32 {
+				return fmt.Errorf(
+					"lcio: offset %d does not fit on 32 bits: set the %d bit of the index control word",
+					v.Location, IndexInt64Offset,
+				)
+			}
+			enc.Encode(int32(v.Location))
+		}
+		if idx.ControlWord&IndexParams != 0 {
+			enc.Encode(&v.Ints)
+			enc.Encode(&v.Floats)
+			enc.Encode(&v.Strings)
+		}
+	}
+	return enc.Err()
 }
 
 func (idx *Index) UnmarshalSio(r sio.Reader) error {
@@ -79,20 +120,20 @@ func (idx *Index) UnmarshalSio(r sio.Reader) error {
 	idx.Offsets = make([]Offset, int(n))
 	for i := range idx.Offsets {
 		v := &idx.Offsets[i]
-		if idx.ControlWord&1 == 0 {
+		if idx.ControlWord&IndexSingleRun == 0 {
 			dec.Decode(&v.RunOffset)
 		}
 
 		dec.Decode(&v.EventNumber)
 		switch {
-		case idx.ControlWord&2 == 1:
+		case idx.ControlWord&IndexInt64Offset != 0:
 			dec.Decode(&v.Location)
 		default:
 			var loc int32
 			dec.Decode(&loc)
 			v.Location = int64(loc)
 		}
-		if idx.ControlWord&4 == 1 {
+		if idx.ControlWord&IndexParams != 0 {
 			dec.Decode(&v.Ints)
 			dec.Decode(&v.Floats)
 			dec.Decode(&v.Strings)
