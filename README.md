@@ -26,6 +26,25 @@ What this fork adds
 Upstream's `xrootd` package could open a file and read it. Grid storage asks
 for a good deal more than that, and everything below is new here:
 
+**One function per job, for people whose job is physics.** The
+[`xrd`](xrootd/xrd) package is the whole of grid storage with nothing to set up
+first — no connections to open, no `context`, no options:
+
+```go
+data, err := xrd.ReadFile("root://storage.example.org//store/user/gopher/runs.txt")
+files, err := xrd.Glob("root://storage.example.org//store/user/gopher/run*/AOD*.root")
+err = xrd.Download(files[0], "run.root")
+err = xrd.WriteFile(out, summary)   // creates the directories it needs
+```
+
+Every one of those names can be a plain local path instead of a URL, so a
+program written against a file on your laptop runs against the grid by changing
+the string. Connections are opened once and reused, a connection that dies is
+replaced without you hearing about it, credentials are found where the
+command-line tools look for them, and when something does go wrong the error
+says what to check — `xrd.List` the directory above, or your token, or the
+port. The packages underneath are still there for when you need the control.
+
 **Protocol.** In-protocol TLS (`roots://`, `xroots://`) negotiated before login;
 vector I/O (`kXR_readv`, `kXR_writev`); paged I/O with per-page CRC-32C
 (`kXR_pgread`, `kXR_pgwrite`) and recovery of a corrupt page; extended
@@ -70,9 +89,11 @@ returned, because that is where `?authz=Bearer eyJ...` lives, and errors get
 logged. `Unbounded()` removes all of it for callers whose context is their own
 deadline.
 
-**Thirty-one runnable programs.** [`xrootd/example`](xrootd/example) — one directory
-each, from a first ranged read to token-authenticated WebDAV, tape recall and
-third-party copy. If you read three, read 01, 12 and 18.
+**Thirty-two runnable programs.** [`xrootd/example`](xrootd/example) — one
+directory each, from a first ranged read to token-authenticated WebDAV, tape
+recall and third-party copy. If you have never written Go before, read
+[32](xrootd/example/xrd-ex-32-simple-api) and stop there; otherwise read 01, 12
+and 18.
 
 **A conformance suite** covering every client surface, including a fail-closed
 half that asserts what the client refuses to do, plus fixes for the client and
