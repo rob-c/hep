@@ -48,8 +48,8 @@
 // for. Printing it is enough:
 //
 //	xrd: could not read "root://…//store/x.root": file does not exist
-//	(the server has no such path: xrd.List of the directory above it shows
-//	what it does have)
+//	(the server has no such path: list the directory above it to see what it
+//	does have)
 //
 // # When to use something else
 //
