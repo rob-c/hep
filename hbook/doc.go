@@ -21,4 +21,12 @@
 // saturates. NewEfficiency handles that case, with a confidence interval taken
 // from the binomial distribution the counts actually follow. BinomialInterval
 // does the same for a single pass/total pair, without a histogram.
+//
+// # Binning without deciding first
+//
+// NewH1D has to be given a range and a number of bins before it has seen any
+// data, and what falls outside is counted but not drawn.
+// [go-hep.org/x/hep/hplot/quick] takes both from the sample instead --
+// quick.Bin returns the H1D, quick.Hist draws it -- which is the shorter way
+// in when the numbers are already in hand.
 package hbook

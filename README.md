@@ -145,6 +145,28 @@ plugin for scheme=""* instead of the reason the filesystem gave, so
 `errors.Is(err, fs.ErrNotExist)` — the check every Go program makes — was
 false. It is now the filesystem's own error.
 
+## And a plot of them, in one more call
+
+A histogram has to be given a range and a number of bins before it has seen any
+data — `hbook.NewH1D(100, 0, 100)` quietly drops everything outside — and a
+plot then needs a plotter, a canvas and a size in `vg.Inch`. The
+[`hplot/quick`](hplot/quick) package takes those decisions from the numbers
+themselves:
+
+```go
+err := quick.Hist("px.png", px, quick.Title("px of every event"))
+```
+
+The bin width comes from the Freedman–Diaconis rule, the range from the data,
+rounded outward so the axis reads 0, 20, 40 rather than 3.7, 23.1, 42.5, and
+the kind of file from the name — `.png`, `.pdf`, `.svg`. Nothing lands in the
+overflow, which is the trap a fixed range sets. `Hists` overlays several
+samples on one binning with a legend, `Hist2D` draws one quantity against
+another as a map of counts, and `Scatter` and `Line` do the two other things
+anybody wants. `Bins`, `Range`, `LogY`, `NoStats` and the rest take any of
+those choices back, and `hbook` and `hplot` are underneath for the plots this
+does not make.
+
 ## Elsewhere in Go-HEP
 
 - **fastjet** — jet areas (active, with explicit ghosts), median background

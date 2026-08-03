@@ -66,6 +66,13 @@
 //		rdata.Column{Name: "ok", Data: flags},
 //	)
 //
+// # Looking at the numbers
+//
+// [go-hep.org/x/hep/hplot/quick] draws a column, binning and all, in one call:
+//
+//	px, err := t.Floats("px")
+//	err = quick.Hist("px.png", px, quick.Title("px"))
+//
 // # When more control is needed
 //
 // This package is a front door, not a wall: [go-hep.org/x/hep/groot] opens the
