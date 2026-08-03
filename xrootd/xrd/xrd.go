@@ -198,7 +198,9 @@ func dial(u xrootd.URL, name string) (xrootd.Backend, error) {
 	case "http", "https", "dav", "davs":
 		return xrootd.DialHTTP(name, credentials(u.Scheme)...)
 	default:
-		return xrootd.Dial(context.Background(), name, user(u))
+		// The empty login name is filled in by the client: the user in the
+		// URL, then $USER, then the anonymous one.
+		return xrootd.Dial(context.Background(), name, "")
 	}
 }
 
@@ -217,18 +219,6 @@ func credentials(scheme string) []xrdhttp.Option {
 		return nil
 	}
 	return []xrdhttp.Option{xrdhttp.WithBearerToken(tok)}
-}
-
-// user is the login name to present: the one in the URL, then $USER, then the
-// name every site accepts for anonymous access.
-func user(u xrootd.URL) string {
-	if u.User != "" {
-		return u.User
-	}
-	if v := os.Getenv("USER"); v != "" {
-		return v
-	}
-	return "nobody"
 }
 
 // local reports whether name is a plain path on this machine rather than a URL.

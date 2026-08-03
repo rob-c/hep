@@ -6,6 +6,9 @@
 // local filesystem and a remote XRootD server (download and upload), copies
 // directory trees recursively, and can verify a transfer against the server's
 // checksum. It is the programmatic core of an xrdcp-equivalent.
+// [go-hep.org/x/hep/xrootd/xrd] wraps this package with the settings most
+// copies want already chosen — xrd.Download, xrd.Upload and xrd.DownloadAll —
+// and the command xrd-cp does it from a shell.
 package xrdcopy // import "go-hep.org/x/hep/xrootd/xrdcopy"
 
 import (
@@ -91,17 +94,7 @@ func remoteURL(name string) (bool, xrootd.URL, error) {
 }
 
 func (o Options) user(u xrootd.URL) string {
-	switch {
-	case o.Username != "":
-		return o.Username
-	case u.User != "":
-		return u.User
-	default:
-		if v := os.Getenv("USER"); v != "" {
-			return v
-		}
-		return "nobody"
-	}
+	return xrootd.Username(o.Username, u.User)
 }
 
 func download(ctx context.Context, src xrootd.URL, dst string, opts Options) error {

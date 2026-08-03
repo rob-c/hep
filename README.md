@@ -70,7 +70,9 @@ kernel and multi-round `kXR_authmore`), bearer tokens (`ztn`), `sss` keytabs,
 and X.509 proxies. Credentials are discovered the way the stock tools discover
 them; a missing one is asked for up front rather than turning into a protocol
 error later, and proxy creation is delegated to `voms-proxy-init` so no
-passphrase is ever handled here.
+passphrase is ever handled here. A URL that names no user — which is nearly
+every URL — logs in as `$XRD_USERNAME`, or as the person running the program,
+rather than asserting an empty name at a site that maps it to nothing.
 
 **Copies.** `xrdcopy` does resumable transfers and native third-party copy,
 verified end-to-end against a real XRootD server.

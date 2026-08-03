@@ -11,6 +11,9 @@
 // os.O_* flags for everything in between — see OpenFile for the two places
 // where XRootD does not have the open that os does. The From variants take a
 // filesystem handle the caller already has, and leave it open.
+// For a program that only needs the contents of a file, and not a handle with
+// os.File semantics, [go-hep.org/x/hep/xrootd/xrd] is shorter: xrd.ReadFile,
+// xrd.WriteFile and xrd.Download take a name and nothing else.
 package xrdio // import "go-hep.org/x/hep/xrootd/xrdio"
 
 import (
