@@ -1,13 +1,20 @@
 # xrootd examples
 
-Thirty-one small programs, one directory each. Every one compiles and passes
+Thirty-two small programs, one directory each. Every one compiles and passes
 `go vet` as written; change the endpoint and the path at the top and run it.
 
 ```sh
 go run ./xrootd/example/xrd-ex-01-root-read
 ```
 
-If you read three, read **01**, **12** and **18**.
+**New to Go, or in a hurry?** Read
+[xrd-ex-32-simple-api](xrd-ex-32-simple-api) and nothing else: it does the
+whole job — list, glob, read, write, download — with the
+[`xrd`](../xrd) package, which has no connections to open, no contexts and no
+options. Everything else here uses the packages underneath, where you get
+control of all three.
+
+If you read three more, read **01**, **12** and **18**.
 
 ## a) Files over `root://`
 
@@ -24,6 +31,7 @@ If you read three, read **01**, **12** and **18**.
 | [xrd-ex-09-root-namespace-ops](xrd-ex-09-root-namespace-ops) | mkdir, touch, rename, truncate, remove |
 | [xrd-ex-10-root-xattr](xrd-ex-10-root-xattr) | extended attributes — and why their errors hide inside a success |
 | [xrd-ex-31-root-groot-write](xrd-ex-31-root-groot-write) | write a **ROOT file** to storage with `groot`, and read it back |
+| [xrd-ex-32-simple-api](xrd-ex-32-simple-api) | the same jobs in one screen, with the `xrd` package — **start here** |
 
 ## b) Listing files and folders
 
