@@ -6,6 +6,19 @@ hplot
 `hplot` is a WIP package relying on `gonum/plot` to plot histograms,
 n-tuples and functions.
 
+## One call, from numbers to a file
+
+If the binning, the range and the size of the plot are not the point,
+[`hplot/quick`](quick) decides them from the data:
+
+```go
+err := quick.Hist("px.png", px, quick.Title("px of every event"))
+```
+
+`Hists` overlays several samples on one binning, `Hist2D`, `Scatter` and `Line`
+draw one quantity against another, and everything below is still here for the
+plots it does not make.
+
 ## Installation
 
 ```sh
