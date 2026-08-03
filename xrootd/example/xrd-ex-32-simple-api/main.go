@@ -28,6 +28,12 @@ const (
 )
 
 func main() {
+	// Can we get there at all? Ask first, so that a wrong server name or an
+	// expired proxy is a message now rather than a puzzle later.
+	if err := xrd.Check(server + "/" + base); err != nil {
+		log.Fatal(err)
+	}
+
 	// What is in my directory?
 	entries, err := xrd.List(server + "/" + base)
 	if err != nil {
@@ -50,13 +56,9 @@ func main() {
 
 	// Add up what they weigh. The sizes came with the listing, so this costs
 	// one request per directory rather than one per file.
-	var total int64
-	for _, name := range files {
-		fi, err := xrd.Stat(name)
-		if err != nil {
-			log.Fatal(err)
-		}
-		total += fi.Size()
+	total, err := xrd.Size(server + "/" + base)
+	if err != nil {
+		log.Fatal(err)
 	}
 	fmt.Printf("%.2f GB in total\n", float64(total)/(1<<30))
 
@@ -75,12 +77,12 @@ func main() {
 	}
 	fmt.Printf("it says: %s", data)
 
-	// Bring the first file down to work on locally. An interrupted transfer
-	// resumes where it stopped, and is checked against the server's checksum.
-	if len(files) > 0 {
-		if err := xrd.Download(files[0], "run.root"); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("downloaded run.root")
+	// Bring them down to work on locally, a few at a time. An interrupted
+	// transfer resumes where it stopped, and is checked against the server's
+	// checksum.
+	local, err := xrd.DownloadAll(files, "data")
+	if err != nil {
+		log.Fatal(err)
 	}
+	fmt.Printf("downloaded %d files into data/\n", len(local))
 }

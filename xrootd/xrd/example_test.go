@@ -101,3 +101,46 @@ func Example_rootFiles() {
 		f.Close()
 	}
 }
+
+// Before a long job, ask whether it can work at all. This is the cheapest way
+// to find an expired proxy: now, rather than in an hour.
+func ExampleCheck() {
+	if err := xrd.Check("root://storage.example.org//store/user/gopher"); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// Bringing a whole dataset down, a few files at a time, into a directory that
+// does not have to exist yet.
+func ExampleDownloadAll() {
+	files, err := xrd.Glob("root://storage.example.org//store/user/gopher/*.root")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	local, err := xrd.DownloadAll(files, "data")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%d files under data/\n", len(local))
+}
+
+// How big is it? One call, whether it is a file or a tree of them.
+func ExampleSize() {
+	n, err := xrd.Size("root://storage.example.org//store/user/gopher/mc")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%.1f GB\n", float64(n)/(1<<30))
+}
+
+// A list of runs, one per line, is how such a list usually arrives.
+func ExampleLines() {
+	runs, err := xrd.Lines("root://storage.example.org//store/user/gopher/runs.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, run := range runs {
+		fmt.Println(run)
+	}
+}

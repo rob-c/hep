@@ -9,7 +9,7 @@ go run ./xrootd/example/xrd-ex-01-root-read
 
 **New to Go, or in a hurry?** Read
 [xrd-ex-32-simple-api](xrd-ex-32-simple-api) and nothing else: it does the
-whole job — list, glob, read, write, download — with the
+whole job — check, list, glob, measure, read, write, download — with the
 [`xrd`](../xrd) package, which has no connections to open, no contexts and no
 options. Everything else here uses the packages underneath, where you get
 control of all three.

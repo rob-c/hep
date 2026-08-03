@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -593,5 +594,304 @@ func TestConformance_ManyGoroutinesShareOneConnection(t *testing.T) {
 	sessions.Unlock()
 	if n != 1 {
 		t.Fatalf("%d connections for one server, want 1", n)
+	}
+}
+
+// TestConformance_AFailureHereReadsLikeAFailureThere is the other half of one
+// name working in both places: the errors have to look the same too, and say
+// the thing that is worth saying about the place the file actually was.
+func TestConformance_AFailureHereReadsLikeAFailureThere(t *testing.T) {
+	dir, url := server(t)
+
+	for _, tc := range []struct {
+		what string
+		name string
+		says string
+		not  string
+	}{
+		{
+			what: "local",
+			name: filepath.Join(dir, "missing.txt"),
+			says: "on this machine",
+			not:  "proxy",
+		},
+		{
+			what: "remote",
+			name: url + "missing.txt",
+			says: "the server has no such path",
+			not:  "on this machine",
+		},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			_, err := ReadFile(tc.name)
+			if err == nil {
+				t.Fatalf("reading a file that is not there did not fail")
+			}
+			if !errors.Is(err, fs.ErrNotExist) {
+				t.Fatalf("error is not fs.ErrNotExist: %v", err)
+			}
+
+			var xerr *Error
+			if !errors.As(err, &xerr) {
+				t.Fatalf("error is not a *xrd.Error: %v", err)
+			}
+			if got, want := xerr.Name, tc.name; got != want {
+				t.Fatalf("error names %q, want %q", got, want)
+			}
+
+			msg := err.Error()
+			if !strings.Contains(msg, tc.says) {
+				t.Fatalf("error does not say %q: %s", tc.says, msg)
+			}
+			if strings.Contains(msg, tc.not) {
+				t.Fatalf("error should not mention %q: %s", tc.not, msg)
+			}
+			// The path is in the error once, not twice: the local error the
+			// operating system gave carried it too.
+			if n := strings.Count(msg, tc.name); n != 1 {
+				t.Fatalf("error names the file %d times, want once: %s", n, msg)
+			}
+		})
+	}
+}
+
+// TestConformance_LinesAreTheShapeAListArrivesIn covers the text file that
+// holds one thing per line, which is how a list of runs or of datasets is
+// nearly always handed over.
+func TestConformance_LinesAreTheShapeAListArrivesIn(t *testing.T) {
+	dir, url := server(t)
+
+	for _, name := range []string{
+		filepath.Join(dir, "lists", "runs.txt"),
+		url + "lists/runs.txt",
+	} {
+		want := []string{"run1.root", "run2.root", "run3.root"}
+		if err := WriteLines(name, want); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+
+		got, err := Lines(name)
+		if err != nil {
+			t.Fatalf("could not read %q: %v", name, err)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("%q: got %q, want %q", name, got, want)
+		}
+
+		// A trailing newline is an ending, not an empty last line, and a file
+		// written on Windows does not leave a carriage return on each one.
+		if err := WriteFile(name, []byte("a\r\nb\r\n")); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+		got, err = Lines(name)
+		if err != nil {
+			t.Fatalf("could not read %q: %v", name, err)
+		}
+		if want := []string{"a", "b"}; !slices.Equal(got, want) {
+			t.Fatalf("%q: got %q, want %q", name, got, want)
+		}
+
+		// An empty file is no lines rather than one empty one.
+		if err := WriteFile(name, nil); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+		got, err = Lines(name)
+		if err != nil {
+			t.Fatalf("could not read %q: %v", name, err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("%q: an empty file gave %q, want nothing", name, got)
+		}
+	}
+}
+
+// TestConformance_DownloadAllBringsTheWholeListDown is the loop nobody should
+// have to write: several files at once, into a directory that does not have to
+// exist yet, in the order they were asked for.
+func TestConformance_DownloadAllBringsTheWholeListDown(t *testing.T) {
+	dir, url := server(t)
+
+	var names []string
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		if err := WriteFile(url+"data/"+name+".root", []byte("this is "+name)); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+		names = append(names, url+"data/"+name+".root")
+	}
+
+	into := filepath.Join(dir, "..", "local", "into")
+	got, err := DownloadAll(names, into)
+	if err != nil {
+		t.Fatalf("could not download: %v", err)
+	}
+	if len(got) != len(names) {
+		t.Fatalf("got %d files, want %d", len(got), len(names))
+	}
+	for i, name := range got {
+		if want := filepath.Join(into, string(rune('a'+i))+".root"); name != want {
+			t.Fatalf("file %d is %q, want %q (order is the order it was asked for)", i, name, want)
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("could not read %q: %v", name, err)
+		}
+		if want := "this is " + string(rune('a'+i)); string(data) != want {
+			t.Fatalf("%q holds %q, want %q", name, data, want)
+		}
+	}
+}
+
+// TestConformance_DownloadAllRefusesToOverwriteItsOwnWork: two files with the
+// same name in different directories would land on top of each other, and
+// losing one of them silently is worse than being told before anything moves.
+func TestConformance_DownloadAllRefusesToOverwriteItsOwnWork(t *testing.T) {
+	dir, url := server(t)
+
+	for _, name := range []string{"run1/AOD.root", "run2/AOD.root"} {
+		if err := WriteFile(url+name, []byte(name)); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+	}
+
+	into := filepath.Join(dir, "into")
+	_, err := DownloadAll([]string{url + "run1/AOD.root", url + "run2/AOD.root"}, into)
+	if err == nil {
+		t.Fatalf("two files with the same name were accepted")
+	}
+	if !strings.Contains(err.Error(), "already taken") {
+		t.Fatalf("error does not say what the trouble is: %v", err)
+	}
+	// Nothing was transferred, and the directory was not even created: the
+	// check happens before any of it.
+	if _, err := os.Stat(into); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("something was written before the names were checked")
+	}
+}
+
+// TestConformance_SizeAddsUpWhatIsThere: "how big is this dataset" without
+// writing the recursion or the addition.
+func TestConformance_SizeAddsUpWhatIsThere(t *testing.T) {
+	dir, url := server(t)
+
+	files := map[string]int{
+		"ds/a.root":     10,
+		"ds/b.root":     20,
+		"ds/sub/c.root": 30,
+	}
+	for name, n := range files {
+		if err := WriteFile(url+name, make([]byte, n)); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		want int64
+	}{
+		{name: url + "ds", want: 60},
+		{name: url + "ds/a.root", want: 10},
+		{name: filepath.Join(dir, "ds"), want: 60},
+		{name: filepath.Join(dir, "ds", "a.root"), want: 10},
+	} {
+		got, err := Size(tc.name)
+		if err != nil {
+			t.Fatalf("could not size %q: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Fatalf("%q is %d bytes, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestConformance_CheckAnswersTheQuestionBeforeTheJobStarts covers the
+// function whose whole job is to fail early and say why.
+func TestConformance_CheckAnswersTheQuestionBeforeTheJobStarts(t *testing.T) {
+	dir, url := server(t)
+
+	if err := WriteFile(url+"ds/a.root", []byte("x")); err != nil {
+		t.Fatalf("could not write: %v", err)
+	}
+
+	for _, name := range []string{url + "ds", url + "ds/a.root", url, dir} {
+		if err := Check(name); err != nil {
+			t.Fatalf("%q should be usable: %v", name, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		says string
+	}{
+		{name: url + "nope", says: "the server has no such path"},
+		{name: filepath.Join(dir, "nope"), says: "on this machine"},
+	} {
+		err := Check(tc.name)
+		if err == nil {
+			t.Fatalf("%q should not be usable", tc.name)
+		}
+		if !strings.Contains(err.Error(), tc.says) {
+			t.Fatalf("%q: error does not say %q: %v", tc.name, tc.says, err)
+		}
+	}
+
+	// A server nobody is listening on is a connection failure, told apart from
+	// a file that is not there.
+	t.Setenv(xrootd.EnvConnectionRetry, "0")
+	err := Check("root://localhost:1/store")
+	if err == nil {
+		t.Fatalf("an endpoint with nothing behind it passed the check")
+	}
+	if !strings.Contains(err.Error(), "1094") {
+		t.Fatalf("error does not mention the usual port: %v", err)
+	}
+}
+
+// TestConformance_WalkHandsBackTheCallersOwnError: stopping a walk early is
+// how you say "I have found it", and the error you stopped with has to be the
+// one you get back — the same here as on a server.
+func TestConformance_WalkHandsBackTheCallersOwnError(t *testing.T) {
+	dir, url := server(t)
+
+	for _, name := range []string{"tree/a.root", "tree/sub/b.root", "tree/sub/c.root"} {
+		if err := WriteFile(url+name, []byte(name)); err != nil {
+			t.Fatalf("could not write %q: %v", name, err)
+		}
+	}
+
+	found := errors.New("found it")
+
+	for _, name := range []string{url + "tree", filepath.Join(dir, "tree")} {
+		err := Walk(name, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				return found
+			}
+			return nil
+		})
+		if !errors.Is(err, found) {
+			t.Fatalf("%q: walk returned %v, want the caller's own error", name, err)
+		}
+	}
+
+	// fs.SkipDir is not a caller's error: the walk swallows it and finishes.
+	for _, name := range []string{url + "tree", filepath.Join(dir, "tree")} {
+		var seen int
+		err := Walk(name, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() && filepath.Base(path) == "sub" {
+				return fs.SkipDir
+			}
+			if !info.IsDir() {
+				seen++
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("%q: skipping a directory failed the walk: %v", name, err)
+		}
+		if seen != 1 {
+			t.Fatalf("%q: saw %d files, want the 1 outside the skipped directory", name, seen)
+		}
 	}
 }

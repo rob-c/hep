@@ -10,7 +10,7 @@
 //
 //	data, err := xrd.ReadFile("root://storage.example.org//store/user/gopher/run.dat")
 //	files, err := xrd.Glob("root://storage.example.org//store/user/gopher/*.root")
-//	err = xrd.Download("root://storage.example.org//store/user/gopher/run.dat", "run.dat")
+//	here, err := xrd.DownloadAll(files, "data")
 //
 // A name is either a URL or a plain local path, and every function accepts
 // both, so the same program runs against a file on your laptop and a file on
@@ -34,6 +34,22 @@
 // connection; it fails by going quiet, and an unguarded read then blocks for
 // most of an hour. Every connection here is opened with stream timeouts,
 // bounded retries and keep-alives already applied.
+//
+// # When it does not work
+//
+// Start with [Check]: given the directory you mean to use, it says whether
+// this machine can reach the server, whether the credentials were accepted and
+// whether the path is there — and it is worth calling before a long job, so
+// that an expired proxy is found now rather than in an hour.
+//
+// Every error from this package is an [*Error]. It names the operation and the
+// file, keeps the underlying error so errors.Is(err, fs.ErrNotExist) still
+// works, and adds the sentence you would otherwise have to ask a colleague
+// for. Printing it is enough:
+//
+//	xrd: could not read "root://…//store/x.root": file does not exist
+//	(the server has no such path: xrd.List of the directory above it shows
+//	what it does have)
 //
 // # When to use something else
 //
@@ -92,6 +108,45 @@ func Close() error {
 		}
 		delete(sessions.db, key)
 	}
+	return err
+}
+
+// Check reports whether this program can reach a name and be allowed at it. It
+// is the first thing to run when something is not working, and the thing to
+// run before a long job starts, so that a missing credential is found now
+// rather than after an hour of processing:
+//
+//	if err := xrd.Check(dir); err != nil {
+//		log.Fatal(err)
+//	}
+//
+// A nil error means the connection was made, the credentials were accepted and
+// the path is there. Anything else is the error the attempt produced, with the
+// usual cause named: a wrong port, an expired proxy, a path that does not
+// exist.
+//
+// Give Check the file or directory you mean to work on rather than the server
+// on its own. Named a server alone, it can only report that the connection and
+// the login worked — and an https or davs endpoint is not contacted at all
+// until something is asked of it, so there it reports nothing useful.
+func Check(name string) error {
+	isLocal, u, err := local(name)
+	if err != nil {
+		return &Error{Op: "check", Name: name, Err: err}
+	}
+	if isLocal {
+		_, err := os.Stat(name)
+		return wrap("check", name, err)
+	}
+
+	if u.Path == "" || u.Path == "/" {
+		if _, _, err := connect(u, name); err != nil {
+			return &Error{Op: "connect to", Name: name, Err: err}
+		}
+		return nil
+	}
+
+	_, err = Stat(name)
 	return err
 }
 
