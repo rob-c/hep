@@ -7,6 +7,7 @@ package xrootd // import "go-hep.org/x/hep/xrootd"
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 )
 
@@ -99,4 +100,25 @@ func parseUser(s string) string {
 		return s
 	}
 	return usr
+}
+
+// Username is the login name to present to a server: the one the caller asked
+// for, then the one the URL carried, then $USER, then the name sites accept
+// for anonymous access.
+//
+// It exists so that the client, the copy engine and the command-line tools all
+// answer "who am I?" the same way, and so that a caller with nothing to say
+// about it can pass an empty string and get the sensible answer rather than an
+// empty login name.
+func Username(want, fromURL string) string {
+	switch {
+	case want != "":
+		return want
+	case fromURL != "":
+		return fromURL
+	}
+	if v := os.Getenv("USER"); v != "" {
+		return v
+	}
+	return "nobody"
 }

@@ -121,10 +121,21 @@ func (client *Client) initSecurityProviders() {
 // Options opts configure the client and are applied in the order they were specified.
 // When the context expires, a response handling is stopped, however, it is
 // necessary to call Cancel to correctly free resources.
+//
+// An empty username is filled in rather than sent as it is: $XRD_USERNAME if
+// the shell set one, then the user in the address if it carries one, then
+// $USER, then "nobody", which is the name sites accept for anonymous access.
+// This is what the command-line tools do, and it is what makes a URL that
+// names no user — which is nearly all of them — log in as the person running
+// the program.
 func NewClient(ctx context.Context, address string, username string, opts ...Option) (*Client, error) {
 	dialAddr, schemeTLS, err := addressAndTLS(address)
 	if err != nil {
 		return nil, err
+	}
+	var urlUser string
+	if u, err := ParseURL(address); err == nil {
+		urlUser = u.User
 	}
 	address = dialAddr
 
@@ -164,6 +175,14 @@ func NewClient(ctx context.Context, address string, username string, opts ...Opt
 			client.Close()
 			return nil, err
 		}
+	}
+
+	// Last of all, because every layer above may have named a user and this
+	// one cannot tell "nobody said" from "somebody said nothing": a URL that
+	// carries no user is nearly every URL, and asserting an empty login name
+	// is not what the command-line tools do or what a site's mapping expects.
+	if client.username == "" {
+		client.username = Username("", urlUser)
 	}
 
 	// Options run first so an explicit WithInsecureTLS/WithTLSConfig applies;

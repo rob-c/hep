@@ -7,6 +7,10 @@
 // X.509 client-certificate (mutual TLS) authentication. It provides the
 // alternative-protocol backend that the copy engine and CLIs target through a
 // protocol-neutral interface.
+//
+// A program that only wants a file over https or davs can name it that way and
+// use [go-hep.org/x/hep/xrootd/xrd], which picks this transport from the URL
+// scheme and finds the bearer token where the command-line tools leave it.
 package xrdhttp // import "go-hep.org/x/hep/xrootd/xrdhttp"
 
 import (

@@ -3,6 +3,10 @@
 // license that can be found in the LICENSE file.
 
 // Package xrdfs contains structures representing the XRootD-based filesystem.
+//
+// It is the interface a backend implements, and takes a context and a path on
+// a server that has already been connected to. To list, glob or walk storage
+// from a program that has neither, see [go-hep.org/x/hep/xrootd/xrd].
 package xrdfs
 
 import (

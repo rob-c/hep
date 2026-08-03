@@ -8,6 +8,12 @@
 //
 // Package xrootd provides a Client and a Server.
 //
+// If what you want is to read, write or list a file on grid storage, start at
+// [go-hep.org/x/hep/xrootd/xrd] instead: one function per job, no connection
+// to open and no options to choose. The command xrd-fs does the same jobs from
+// a shell. This package is what they are written on, and is where to come when
+// you need control of the protocol itself.
+//
 // The NewClient function connects to a server:
 //
 //	ctx := context.Background()
