@@ -6,10 +6,20 @@ package ntroot_test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"go-hep.org/x/hep/hbook/ntup/ntroot"
 )
+
+// missing is the error the filesystem gives for a name that is not there,
+// which is what opening a local ROOT file that is not there now reports. Its
+// wording belongs to the operating system, so it is asked for rather than
+// spelled out.
+func missing(name string) error {
+	_, err := os.Open(name)
+	return err
+}
 
 func TestOpen(t *testing.T) {
 	for _, tc := range []struct {
@@ -34,7 +44,10 @@ func TestOpen(t *testing.T) {
 		{
 			name: "../../../groot/testdata/simple.rootXXX",
 			tree: "tree",
-			err:  fmt.Errorf(`could not open ROOT file: riofs: unable to open "../../../groot/testdata/simple.rootXXX": riofs: no ROOT plugin to open [../../../groot/testdata/simple.rootXXX] (scheme=)`),
+			err: fmt.Errorf("could not open ROOT file: riofs: unable to open %q: %v",
+				"../../../groot/testdata/simple.rootXXX",
+				missing("../../../groot/testdata/simple.rootXXX"),
+			),
 		},
 	} {
 		t.Run(tc.name+":"+tc.tree, func(t *testing.T) {

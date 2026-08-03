@@ -4,6 +4,12 @@
 
 // Package groot provides a pure-go read/write-access to ROOT files.
 //
+// If what you want is the numbers out of a tree, start at
+// [go-hep.org/x/hep/groot/rdata] instead: rdata.Open finds the tree, and
+// Table.Floats hands back a column, with no keys, casts or read-variables to
+// arrange first. This package is where to come back to for everything else a
+// ROOT file can hold.
+//
 // A typical usage is as follows:
 //
 //	f, err := groot.Open("ntup.root")

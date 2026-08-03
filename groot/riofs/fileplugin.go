@@ -105,10 +105,15 @@ func createLocalFile(path string) (Writer, error) {
 	return os.Create(path)
 }
 
-// fileScheme is the URL scheme of path, or "file" for a local name. Unlike a
-// read, a create cannot try the local filesystem first and fall back: it would
-// make a file literally named "root://server//path". So the scheme is decided
-// up front, and a one-letter one is not a scheme but a Windows drive.
+// fileScheme is the URL scheme of path, or "file" for a local name: a name
+// with no scheme at all is a path on this machine, and a one-letter scheme is
+// not a scheme but a Windows drive.
+//
+// A create decides the scheme this way because it cannot try the local
+// filesystem first and fall back — it would make a file literally named
+// "root://server//path". A read decides it this way so that the reason a local
+// file could not be opened is the one the filesystem gave, rather than a
+// complaint about plugins.
 func fileScheme(path string) string {
 	u, err := url.Parse(path)
 	if err != nil || len(u.Scheme) < 2 {
@@ -125,10 +130,7 @@ func openFile(path string) (Reader, error) {
 		return f, nil
 	}
 
-	scheme := "file"
-	if u, err := url.Parse(path); err == nil {
-		scheme = u.Scheme
-	}
+	scheme := fileScheme(path)
 	if open, ok := drivers.db[scheme]; ok {
 		return open(path)
 	}
