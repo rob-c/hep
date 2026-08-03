@@ -80,13 +80,13 @@ func hint(e *Error) string {
 	if e.here {
 		switch {
 		case errors.Is(e.Err, fs.ErrNotExist):
-			return "there is nothing at that path on this machine: xrd.List of the directory above it shows what is there"
+			return "there is nothing at that path on this machine: list the directory above it to see what is there"
 
 		case errors.Is(e.Err, fs.ErrPermission):
 			return "this account is not allowed to read or write that path"
 
 		case errors.Is(e.Err, fs.ErrExist):
-			return "the file is already there: xrd.WriteFile replaces one, xrd.Remove deletes it"
+			return "the file is already there: writing to it replaces it, and it can be removed first if that is not what you want"
 		}
 		return ""
 	}
@@ -99,13 +99,13 @@ func hint(e *Error) string {
 		return "check the server name and port — 1094 is the XRootD default, 443 the HTTPS one — and whether this machine is allowed to reach it"
 
 	case errors.Is(e.Err, fs.ErrNotExist):
-		return "the server has no such path: xrd.List of the directory above it shows what it does have"
+		return "the server has no such path: list the directory above it to see what it does have"
 
 	case errors.Is(e.Err, fs.ErrPermission):
 		return "the server refused the credentials it was offered: check your proxy with voms-proxy-info, or your token in $BEARER_TOKEN or $BEARER_TOKEN_FILE"
 
 	case errors.Is(e.Err, fs.ErrExist):
-		return "the file is already there: xrd.WriteFile replaces one, xrd.Remove deletes it"
+		return "the file is already there: writing to it replaces it, and it can be removed first if that is not what you want"
 
 	case errors.Is(e.Err, xrootd.ErrUnsupportedScheme):
 		return schemeHint

@@ -45,8 +45,12 @@ the string — errors included, which say the same thing about a missing file
 either way. Connections are opened once and reused, a connection that dies is
 replaced without you hearing about it, credentials are found where the
 command-line tools look for them, and when something does go wrong the error
-says what to check — `xrd.List` the directory above, or your token, or the
-port. The packages underneath are still there for when you need the control.
+says what to check — the directory above, your token, or the port. The packages
+underneath are still there for when you need the control.
+
+And none of it has to be a program at all: `xrd-fs` does the same jobs from a
+shell — `check`, `stat`, `du`, `cat`, `find`, `mkdir`, `rm`, `mv` — with
+`xrd-ls` for listings and `xrd-cp` for copies.
 
 **Protocol.** In-protocol TLS (`roots://`, `xroots://`) negotiated before login;
 vector I/O (`kXR_readv`, `kXR_writev`); paged I/O with per-page CRC-32C

@@ -455,7 +455,7 @@ func TestConformance_TheErrorSaysWhatToDo(t *testing.T) {
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("errors.Is(err, fs.ErrNotExist) is false for %v", err)
 	}
-	if !strings.Contains(err.Error(), "xrd.List") {
+	if !strings.Contains(err.Error(), "list the directory above") {
 		t.Fatalf("the error does not say what to try next: %v", err)
 	}
 	var xerr *Error
