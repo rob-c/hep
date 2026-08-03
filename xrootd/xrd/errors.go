@@ -18,8 +18,9 @@ import (
 var errNotRemote = errors.New("not a remote URL")
 
 // Error is what every function in this package returns when something goes
-// wrong. It says which operation failed, on what, and why — and, for the
-// handful of failures that have a usual cause, what that cause usually is.
+// wrong, whether the file was on a server or on this machine. It says which
+// operation failed, on what, and why — and, for the handful of failures that
+// have a usual cause, what that cause usually is.
 //
 // The underlying error is kept, so the standard tests still work:
 //
@@ -28,6 +29,26 @@ type Error struct {
 	Op   string // the operation: "read", "list", "connect to", …
 	Name string // the file or directory it was attempted on
 	Err  error  // what went wrong
+
+	// here records that the name was a path on this machine, which changes
+	// what is worth suggesting: nothing about servers, proxies or tokens can
+	// be the cause of a local failure.
+	here bool
+}
+
+// wrap gives an error from the local filesystem the same shape as one from a
+// server, so that a program moved between the two keeps reporting failures the
+// same way. A *fs.PathError is unwrapped first: it repeats the name, which
+// Error already has.
+func wrap(op, name string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var perr *fs.PathError
+	if errors.As(err, &perr) {
+		err = perr.Err
+	}
+	return &Error{Op: op, Name: name, Err: err, here: true}
 }
 
 func (e *Error) Error() string {
@@ -40,10 +61,36 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
+// fail is wrap for an operation whose name may be on either side — a copy, in
+// practice, where the same call covers both.
+func fail(op, name string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if isLocal, _, e := local(name); e == nil && isLocal {
+		return wrap(op, name, err)
+	}
+	return &Error{Op: op, Name: name, Err: err}
+}
+
 // hint is the sentence a physicist meeting this failure for the first time
 // would otherwise have to ask a colleague for. It is deliberately empty for
 // anything whose cause is not usually the same.
 func hint(e *Error) string {
+	if e.here {
+		switch {
+		case errors.Is(e.Err, fs.ErrNotExist):
+			return "there is nothing at that path on this machine: xrd.List of the directory above it shows what is there"
+
+		case errors.Is(e.Err, fs.ErrPermission):
+			return "this account is not allowed to read or write that path"
+
+		case errors.Is(e.Err, fs.ErrExist):
+			return "the file is already there: xrd.WriteFile replaces one, xrd.Remove deletes it"
+		}
+		return ""
+	}
+
 	switch {
 	case e.Op == "connect to":
 		if errors.Is(e.Err, xrootd.ErrUnsupportedScheme) {

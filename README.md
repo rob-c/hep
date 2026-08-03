@@ -31,15 +31,18 @@ for a good deal more than that, and everything below is new here:
 first — no connections to open, no `context`, no options:
 
 ```go
-data, err := xrd.ReadFile("root://storage.example.org//store/user/gopher/runs.txt")
-files, err := xrd.Glob("root://storage.example.org//store/user/gopher/run*/AOD*.root")
-err = xrd.Download(files[0], "run.root")
+err = xrd.Check(dir)                // is it reachable, am I allowed, is it there?
+runs, err := xrd.Lines(dir + "/runs.txt")
+files, err := xrd.Glob(dir + "/run*/AOD*.root")
+size, err := xrd.Size(dir)          // the whole tree, one call
+here, err := xrd.DownloadAll(files, "data")   // four at a time, resumable
 err = xrd.WriteFile(out, summary)   // creates the directories it needs
 ```
 
 Every one of those names can be a plain local path instead of a URL, so a
 program written against a file on your laptop runs against the grid by changing
-the string. Connections are opened once and reused, a connection that dies is
+the string — errors included, which say the same thing about a missing file
+either way. Connections are opened once and reused, a connection that dies is
 replaced without you hearing about it, credentials are found where the
 command-line tools look for them, and when something does go wrong the error
 says what to check — `xrd.List` the directory above, or your token, or the

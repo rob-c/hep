@@ -6,9 +6,15 @@ package xrd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/sync/errgroup"
 
 	"go-hep.org/x/hep/xrootd/xrdcopy"
 	"go-hep.org/x/hep/xrootd/xrdfs"
@@ -53,7 +59,8 @@ func ReadFile(name string) ([]byte, error) {
 		return nil, &Error{Op: "read", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.ReadFile(name)
+		data, err := os.ReadFile(name)
+		return data, wrap("read", name, err)
 	}
 
 	f, err := Open(name)
@@ -80,10 +87,10 @@ func WriteFile(name string, data []byte) error {
 	if isLocal {
 		if dir := dirOf(name); dir != "" {
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return &Error{Op: "write", Name: name, Err: err}
+				return wrap("write", name, err)
 			}
 		}
-		return os.WriteFile(name, data, 0644)
+		return wrap("write", name, os.WriteFile(name, data, 0644))
 	}
 
 	f, err := Create(name)
@@ -118,7 +125,11 @@ func Open(name string) (File, error) {
 		return nil, &Error{Op: "open", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.Open(name)
+		f, err := os.Open(name)
+		if err != nil {
+			return nil, wrap("open", name, err)
+		}
+		return f, nil
 	}
 
 	return run("open", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) (File, error) {
@@ -140,10 +151,14 @@ func Create(name string) (File, error) {
 	if isLocal {
 		if dir := dirOf(name); dir != "" {
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return nil, &Error{Op: "create", Name: name, Err: err}
+				return nil, wrap("create", name, err)
 			}
 		}
-		return os.Create(name)
+		f, err := os.Create(name)
+		if err != nil {
+			return nil, wrap("create", name, err)
+		}
+		return f, nil
 	}
 
 	const flag = os.O_RDWR | os.O_CREATE | os.O_TRUNC | xrdio.MkPath
@@ -160,7 +175,11 @@ func Append(name string) (File, error) {
 		return nil, &Error{Op: "append to", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, wrap("append to", name, err)
+		}
+		return f, nil
 	}
 
 	const flag = os.O_WRONLY | os.O_CREATE | os.O_APPEND | xrdio.MkPath
@@ -180,19 +199,13 @@ func Download(src, dst string) error {
 		Resume: true,
 		Verify: true,
 	})
-	if err != nil {
-		return &Error{Op: "download", Name: src, Err: err}
-	}
-	return nil
+	return fail("download", src, err)
 }
 
 // Upload copies a local file to a remote one.
 func Upload(src, dst string) error {
 	err := xrdcopy.Copy(context.Background(), dst, src, xrdcopy.Options{Resume: true})
-	if err != nil {
-		return &Error{Op: "upload", Name: src, Err: err}
-	}
-	return nil
+	return fail("upload", src, err)
 }
 
 // Copy copies src to dst. Either may be a URL or a local path, so this covers
@@ -206,10 +219,7 @@ func Copy(dst, src string) error {
 		Recursive: true,
 		Resume:    true,
 	})
-	if err != nil {
-		return &Error{Op: "copy", Name: src, Err: err}
-	}
-	return nil
+	return fail("copy", src, err)
 }
 
 // dirOf is the parent directory of a local name, or "" when the name is in the
@@ -220,4 +230,106 @@ func dirOf(name string) string {
 		return ""
 	}
 	return dir
+}
+
+// Lines reads a text file and returns it split into lines, with the line
+// endings removed. It is the shape a list of runs, of file names or of dataset
+// names usually arrives in:
+//
+//	for _, name := range must(xrd.Lines("files.txt")) { ... }
+//
+// A file ending in a newline does not produce an empty last line, and a file
+// written on Windows does not leave a stray carriage return on each one.
+func Lines(name string) ([]string, error) {
+	data, err := ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+
+	text := strings.TrimSuffix(string(data), "\n")
+	if text == "" {
+		return nil, nil
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSuffix(line, "\r")
+	}
+	return lines, nil
+}
+
+// WriteLines writes lines to the named file, one per line, replacing whatever
+// it held. It is the other half of Lines.
+func WriteLines(name string, lines []string) error {
+	var buf strings.Builder
+	for _, line := range lines {
+		buf.WriteString(line)
+		buf.WriteString("\n")
+	}
+	return WriteFile(name, []byte(buf.String()))
+}
+
+// DefaultParallel is how many files DownloadAll fetches at once. It is chosen
+// to be quicker than one at a time without being the reason a site's network
+// people come looking for you.
+const DefaultParallel = 4
+
+// DownloadAll copies several remote files into a local directory, a few at a
+// time, and returns the local names in the order they were given. The
+// directory is created if it is not there.
+//
+// This is the loop that is worth not writing yourself: doing it one file at a
+// time wastes most of the network, and doing it all at once is how a laptop
+// annoys a storage element. Each transfer is resumable, so a run interrupted
+// halfway can simply be repeated.
+//
+// Files are named by the last element of their path. Two files that would land
+// on the same local name are refused before anything is transferred, rather
+// than one of them silently replacing the other: pass Download the names you
+// want in that case.
+func DownloadAll(names []string, dir string) ([]string, error) {
+	out := make([]string, len(names))
+	seen := make(map[string]string, len(names))
+	for i, name := range names {
+		base, err := baseOf(name)
+		if err != nil {
+			return nil, err
+		}
+		if first, dup := seen[base]; dup {
+			return nil, &Error{Op: "download", Name: name, Err: fmt.Errorf("would be saved as %q, which is already taken by %q", base, first)}
+		}
+		seen[base] = name
+		out[i] = filepath.Join(dir, base)
+	}
+
+	if err := Mkdir(dir); err != nil {
+		return nil, err
+	}
+
+	var grp errgroup.Group
+	grp.SetLimit(DefaultParallel)
+	for i, name := range names {
+		grp.Go(func() error { return Download(name, out[i]) })
+	}
+	if err := grp.Wait(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// baseOf is the file name at the end of a name, whichever kind of name it is.
+func baseOf(name string) (string, error) {
+	isLocal, u, err := local(name)
+	if err != nil {
+		return "", &Error{Op: "download", Name: name, Err: err}
+	}
+
+	base := path.Base(u.Path)
+	if isLocal {
+		base = filepath.Base(name)
+	}
+	switch base {
+	case "", ".", "/", `\`:
+		return "", &Error{Op: "download", Name: name, Err: errors.New("there is no file name at the end of it")}
+	}
+	return base, nil
 }

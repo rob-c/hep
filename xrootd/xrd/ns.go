@@ -24,7 +24,11 @@ func Stat(name string) (os.FileInfo, error) {
 		return nil, &Error{Op: "stat", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.Stat(name)
+		fi, err := os.Stat(name)
+		if err != nil {
+			return nil, wrap("stat", name, err)
+		}
+		return fi, nil
 	}
 
 	return run("stat", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) (os.FileInfo, error) {
@@ -63,7 +67,11 @@ func List(name string) ([]os.FileInfo, error) {
 		return nil, &Error{Op: "list", Name: name, Err: err}
 	}
 	if isLocal {
-		return listLocal(name)
+		out, err := listLocal(name)
+		if err != nil {
+			return nil, wrap("list", name, err)
+		}
+		return out, nil
 	}
 
 	return run("list", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) ([]os.FileInfo, error) {
@@ -112,7 +120,11 @@ func Glob(pattern string) ([]string, error) {
 		return nil, &Error{Op: "glob", Name: pattern, Err: err}
 	}
 	if isLocal {
-		return filepath.Glob(pattern)
+		out, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, wrap("glob", pattern, err)
+		}
+		return out, nil
 	}
 
 	return run("glob", pattern, func(ctx context.Context, fsys xrdfs.FileSystem, path string) ([]string, error) {
@@ -168,14 +180,29 @@ func Walk(name string, fn func(path string, info os.FileInfo, err error) error) 
 		return filepath.Walk(name, fn)
 	}
 
-	return do("walk", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) error {
+	// An error from fn is the caller's own, and is handed back as it is: it is
+	// how a walk says "I have found what I came for", and wrapping it would
+	// stop them recognising it. fs.SkipDir and fs.SkipAll are not that — the
+	// walk consumes them and carries on.
+	var stop error
+	err = do("walk", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) error {
 		return xrdfs.Walk(ctx, fsys, path, func(p string, entry xrdfs.EntryStat, err error) error {
+			var e error
 			if err != nil {
-				return fn(urlOf(u, p), nil, err)
+				e = fn(urlOf(u, p), nil, err)
+			} else {
+				e = fn(urlOf(u, p), entry, nil)
 			}
-			return fn(urlOf(u, p), entry, nil)
+			if e != nil && !errors.Is(e, fs.SkipDir) && !errors.Is(e, fs.SkipAll) {
+				stop = e
+			}
+			return e
 		})
 	})
+	if stop != nil {
+		return stop
+	}
+	return err
 }
 
 // Mkdir creates a directory, together with any of its parents that are
@@ -187,7 +214,7 @@ func Mkdir(name string) error {
 		return &Error{Op: "create directory", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.MkdirAll(name, 0755)
+		return wrap("create directory", name, os.MkdirAll(name, 0755))
 	}
 
 	return do("create directory", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) error {
@@ -204,7 +231,7 @@ func Remove(name string) error {
 		return &Error{Op: "remove", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.Remove(name)
+		return wrap("remove", name, os.Remove(name))
 	}
 
 	return do("remove", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) error {
@@ -224,7 +251,7 @@ func RemoveAll(name string) error {
 		return &Error{Op: "remove", Name: name, Err: err}
 	}
 	if isLocal {
-		return os.RemoveAll(name)
+		return wrap("remove", name, os.RemoveAll(name))
 	}
 
 	return do("remove", name, func(ctx context.Context, fsys xrdfs.FileSystem, path string) error {
@@ -248,7 +275,7 @@ func Rename(oldname, newname string) error {
 
 	switch {
 	case oldLocal && newLocal:
-		return os.Rename(oldname, newname)
+		return wrap("rename", oldname, os.Rename(oldname, newname))
 	case oldLocal != newLocal:
 		return &Error{Op: "rename", Name: oldname, Err: errors.New("cannot rename between this machine and a server: copy it, then remove the original")}
 	case endpoint(oldURL) != endpoint(newURL):
@@ -258,4 +285,34 @@ func Rename(oldname, newname string) error {
 	return do("rename", oldname, func(ctx context.Context, fsys xrdfs.FileSystem, path string) error {
 		return fsys.Rename(ctx, path, newURL.Path)
 	})
+}
+
+// Size returns how many bytes something takes up: the size of a file, or the
+// size of everything under a directory, however deep. name is a URL or a local
+// path.
+//
+// The sizes come with the directory listings, so this costs one request per
+// directory rather than one per file. A corner of the tree that cannot be read
+// is left out rather than fatal, exactly as in Find.
+func Size(name string) (int64, error) {
+	fi, err := Stat(name)
+	if err != nil {
+		return 0, err
+	}
+	if !fi.IsDir() {
+		return fi.Size(), nil
+	}
+
+	var total int64
+	err = Walk(name, func(_ string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
 }
