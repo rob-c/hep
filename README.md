@@ -108,6 +108,43 @@ and 18.
 half that asserts what the client refuses to do, plus fixes for the client and
 server bugs it found along the way.
 
+## The numbers out of a ROOT file, in one call
+
+Storage was only half the wall. Getting a column out of a `TTree` meant
+`groot.Open`, a key lookup, a type assertion, a `[]rtree.ReadVar` bound to
+pointers of exactly the right Go type, a reader and a callback — five concepts
+before the first number. The [`rdata`](groot/rdata) package is that job in one
+line:
+
+```go
+t, err := rdata.Open("root://server//data/run*.root")  // a path, a URL, or a pattern
+defer t.Close()
+
+pt, err := t.Floats("pt")           // one number per event, whatever the file stores it as
+jets, err := t.Arrays("jet_pt")     // several per event; the length is how many there were
+names := t.Columns()                // for a file nobody documented
+
+err = rdata.Save("out.root", "results",  // and the answer goes back out the same way
+    rdata.Column{Name: "mass", Data: masses},
+)
+```
+
+The tree need not be named when the file holds one, which is the usual case;
+when it holds more, the error says what they are called, sub-directories
+included. Many files — named, or matched by a pattern, local or on the grid —
+read end to end as one table. `Each` walks an event at a time and holds
+nothing, for when the file is larger than the machine. And because the audience
+is people who have not written Go before, a wrong call says which call would
+have worked: ask for text as a number and the error names `Strings`; ask for a
+jet collection as one number and it names `Arrays`.
+
+Underneath, it is still `groot` and `rtree`, and both are one import away for
+the cases this deliberately does not cover. One thing did have to be fixed on
+the way down: opening a local ROOT file that was not there reported *no ROOT
+plugin for scheme=""* instead of the reason the filesystem gave, so
+`errors.Is(err, fs.ErrNotExist)` — the check every Go program makes — was
+false. It is now the filesystem's own error.
+
 ## Elsewhere in Go-HEP
 
 - **fastjet** — jet areas (active, with explicit ghosts), median background

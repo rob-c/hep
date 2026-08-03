@@ -18,6 +18,10 @@
 // XRootD ones, roots and xroots are the same with the connection encrypted,
 // and https, http, davs and dav go over WebDAV. Local names have no scheme.
 //
+// This package moves files about. What is inside them is
+// [go-hep.org/x/hep/groot/rdata], which reads a ROOT file straight off the
+// same storage without downloading it first.
+//
 // # What is taken care of for you
 //
 // Connections. You never open or close one: the first call to a server dials

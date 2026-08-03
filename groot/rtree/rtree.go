@@ -4,6 +4,12 @@
 
 // Package rtree contains the interfaces and types to decode, read, concatenate
 // and iterate over ROOT Trees.
+//
+// This is the full surface: read-variables bound to branches, chains, joins,
+// formulas and the writer. For the everyday job of getting a column of numbers
+// out of a tree — one call, no read-variables — see
+// [go-hep.org/x/hep/groot/rdata], which is built on this package and hands back
+// here when more control is needed.
 package rtree // import "go-hep.org/x/hep/groot/rtree"
 
 import (
