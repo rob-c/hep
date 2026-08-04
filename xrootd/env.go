@@ -200,10 +200,14 @@ func envError(name, value string) Option {
 // The bounds on parallel data connections.
 const (
 	// defaultSubStreams is how many a client opens to one server unless it is
-	// told otherwise. Enough to keep several transfers from queueing behind
-	// each other, few enough that a client fanning out over a federation does
-	// not arrive at each server as a small crowd.
-	defaultSubStreams = 8
+	// told otherwise: one extra data connection beside the request connection,
+	// so a plain read or write already travels in parallel with control
+	// traffic without a client fanning out over a federation arriving at each
+	// server as a crowd. It matches the cross-language default (the Rust and
+	// Python clients' data_streams=1, one extra link); raise it with
+	// WithSubStreams or XRD_SUBSTREAMSPERCHANNEL when one connection is the
+	// bottleneck, or set 0 to keep every transfer on the request connection.
+	defaultSubStreams = 1
 	// maxPathID is the largest path id a kXR_bind can hand out: the field is
 	// one byte and 0 names the connection the request travelled on.
 	maxPathID = 255
