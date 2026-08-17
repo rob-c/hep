@@ -7,7 +7,8 @@ package xrootd
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/binary"
 	"net"
@@ -25,8 +26,10 @@ import (
 )
 
 // keyedAuther is a security provider that completes in one round and agrees a
-// session key with the server. GSI is the only real one that does; a test needs
-// one it can drive without a Diffie-Hellman exchange and a proxy certificate.
+// session cipher with the server. GSI is the only real one that does; a test
+// needs one it can drive without a Diffie-Hellman exchange and a proxy
+// certificate. It signs the way the real gsi provider does on the unsigned-DH
+// path: AES-CBC with a zero IV and PKCS#7 padding.
 type keyedAuther struct{ key []byte }
 
 func (*keyedAuther) Provider() string { return "fake" }
@@ -35,8 +38,24 @@ func (*keyedAuther) Request([]string) (*auth.Request, error) {
 	return &auth.Request{Type: [4]byte{'f', 'a', 'k', 'e'}, Credentials: "fake\x00"}, nil
 }
 
-// SessionKey implements auth.SessionKeyer.
-func (a *keyedAuther) SessionKey() []byte { return a.key }
+// SignEncrypt implements auth.SessionSigner.
+func (a *keyedAuther) SignEncrypt(hash []byte) ([]byte, error) { return aesCBCZeroIV(a.key, hash) }
+
+// aesCBCZeroIV is the unsigned-DH session cipher: AES-CBC with a zero IV and
+// PKCS#7 padding, byte for byte what the gsi provider and the reference server
+// use. keyedAuther signs with it and the test verifies with it.
+func aesCBCZeroIV(key, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	n := block.BlockSize()
+	pad := n - len(plaintext)%n
+	padded := append(append([]byte(nil), plaintext...), bytes.Repeat([]byte{byte(pad)}, pad)...)
+	out := make([]byte, len(padded))
+	cipher.NewCBCEncrypter(block, make([]byte, n)).CryptBlocks(out, padded)
+	return out, nil
+}
 
 // bootAuth answers the one authentication round keyedAuther takes.
 func bootAuth(t *testing.T, conn net.Conn) {
@@ -61,13 +80,13 @@ func readRawRequest(conn net.Conn) []byte {
 	return data
 }
 
-func TestConformance_ASignatureIsKeyedWithTheSessionKey(t *testing.T) {
+func TestConformance_ASignatureIsEncryptedWithTheSessionCipher(t *testing.T) {
 	// A signature is meant to prove that the request came from the party that
 	// authenticated. Every byte it covers travels on the wire in the clear, so
 	// a plain digest of them proves nothing: anyone who saw the connection can
-	// recompute it and put it in front of a request of their own. The key
-	// agreed during authentication is the only thing in the computation an
-	// observer does not have, and the server verifies with the same key.
+	// recompute it and put it in front of a request of their own. Encrypting
+	// that digest with the cipher agreed during authentication is the only step
+	// an observer cannot reproduce, and the server verifies with the same cipher.
 	key := []byte("0123456789abcdef")
 
 	type signature struct {
@@ -131,23 +150,24 @@ func TestConformance_ASignatureIsKeyedWithTheSessionKey(t *testing.T) {
 		t.Fatalf("the signature covers request %d, want kXR_rm (%d)", sent.sig.ID, rm.RequestID)
 	}
 
-	// What the server computes: the sequence number, then the request as it
-	// read it, keyed with the session key.
-	mac := hmac.New(sha256.New, key)
+	// What the server computes: a SHA-256 over the sequence number and the
+	// request as it read it, encrypted with the session cipher.
+	h := sha256.New()
 	var seq [8]byte
 	binary.BigEndian.PutUint64(seq[:], uint64(sent.sig.SeqID))
-	_, _ = mac.Write(seq[:])
-	_, _ = mac.Write(sent.raw)
-	want := mac.Sum(nil)
+	_, _ = h.Write(seq[:])
+	_, _ = h.Write(sent.raw)
+	hash := h.Sum(nil)
 
+	want, err := aesCBCZeroIV(key, hash)
+	if err != nil {
+		t.Fatalf("could not encrypt the expected signature: %v", err)
+	}
 	if !bytes.Equal(sent.sig.Signature, want) {
 		t.Fatalf("the server cannot verify the signature:\ngot  = %x\nwant = %x", sent.sig.Signature, want)
 	}
 
-	unkeyed := sha256.New()
-	_, _ = unkeyed.Write(seq[:])
-	_, _ = unkeyed.Write(sent.raw)
-	if bytes.Equal(sent.sig.Signature, unkeyed.Sum(nil)) {
+	if bytes.Equal(sent.sig.Signature, hash) {
 		t.Fatal("the signature is a plain hash of what an observer already has")
 	}
 }
@@ -188,7 +208,7 @@ func TestConformance_ASessionWithNoKeyWillNotPretendToSign(t *testing.T) {
 	if err == nil {
 		t.Fatal("a request that had to be signed was sent unsigned")
 	}
-	if !strings.Contains(err.Error(), "signing key") {
+	if !strings.Contains(err.Error(), "signing cipher") {
 		t.Fatalf("the failure does not say what is missing: %v", err)
 	}
 }

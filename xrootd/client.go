@@ -55,6 +55,9 @@ type Client struct {
 	tlsConfig   *tls.Config // TLS configuration for in-protocol TLS upgrades; nil means defaults.
 	wantTLS     bool        // request TLS during protocol negotiation (roots:// or WithTLS).
 	insecureTLS bool        // skip server-certificate verification (testing only).
+	// allowCleartextToken permits sending a ztn bearer token over an
+	// unencrypted connection; off by default because the token can be replayed.
+	allowCleartextToken bool
 
 	// errorHandler receives the failures that happen where no caller is
 	// waiting to be told about them; nil discards them.
@@ -106,6 +109,21 @@ func WithAuth(a auth.Auther) Option {
 func (client *Client) addAuth(auth auth.Auther) error {
 	client.auths[auth.Provider()] = auth
 	return nil
+}
+
+// WithCleartextBearerToken permits the client to send a ztn bearer token to a
+// server over an unencrypted connection.
+//
+// By default the client refuses to: a bearer token is replayable, so an
+// eavesdropper who reads it off the wire can present it as its own. The refusal
+// is lifted for a TLS connection (roots:// or WithTLS), which is the right fix.
+// This option is the escape hatch for a deployment that has decided the network
+// is trusted — a private link, a test rig — and accepts the exposure.
+func WithCleartextBearerToken() Option {
+	return func(client *Client) error {
+		client.allowCleartextToken = true
+		return nil
+	}
 }
 
 func (client *Client) initSecurityProviders() {

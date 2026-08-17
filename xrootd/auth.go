@@ -79,6 +79,16 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 				continue
 			}
 		}
+		if provider == "ztn" && !sess.tls && !sess.client.allowCleartextToken {
+			// A ztn credential is a bearer token: whoever reads it off the wire
+			// can replay it. Sent in the clear it is a password shouted across
+			// the room, so refuse unless the connection is encrypted — or the
+			// caller has explicitly accepted the exposure.
+			err := fmt.Errorf("refusing to send a bearer token over an unencrypted connection to %q; use roots:// or WithTLS, or WithCleartextBearerToken to override", sess.sessionID)
+			sess.client.noteUnavailable(provider, err)
+			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
+			continue
+		}
 		r, err := auther.Request(params)
 		if err != nil {
 			sess.client.noteUnavailable(provider, err)
@@ -90,10 +100,10 @@ func (sess *cliSession) auth(ctx context.Context, securityInformation []byte) er
 			errs = append(errs, fmt.Errorf("xrootd: could not authorize using %s: %w", provider, err))
 			continue
 		}
-		if keyer, ok := auther.(auth.SessionKeyer); ok {
-			// The secret the exchange agreed is what signatures are keyed with
-			// from here on. Only a provider that agrees one has it to give.
-			sess.signKey = keyer.SessionKey()
+		if signer, ok := auther.(auth.SessionSigner); ok {
+			// The cipher the exchange agreed is what signatures are encrypted
+			// with from here on. Only a provider that agrees one has it to give.
+			sess.signer = signer.SignEncrypt
 		}
 		sess.client.noteAuth(provider)
 		return nil

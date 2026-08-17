@@ -6,12 +6,12 @@
 package sigver // import "go-hep.org/x/hep/xrootd/xrdproto/sigver"
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
-	"go-hep.org/x/hep/xrootd/xrdproto/verifyw"
+	"go-hep.org/x/hep/xrootd/xrdproto/pgwrite"
 	"go-hep.org/x/hep/xrootd/xrdproto/write"
 )
 
@@ -93,32 +93,59 @@ func signedLength(data []byte) int {
 	return len(data)
 }
 
+// An Encrypter encrypts a signature hash with the session cipher the security
+// provider agreed with the server while authenticating. It is the encryption
+// half of the stock XrdSecProtect secver-0 scheme: gsi supplies AES-128-CBC
+// with a zero IV (the unsigned-DH path). A provider that agrees no cipher
+// supplies no Encrypter, and such a session cannot sign.
+type Encrypter func(hash []byte) ([]byte, error)
+
 // NewRequest builds the kXR_sigver that authenticates the marshalled request
 // data, whose request id is requestID, as the seqID'th request of the session.
 //
-// key is the session key agreed with the server while authenticating. It is
-// what makes the signature worth anything: the covered bytes are all on the
-// wire, so an unkeyed digest of them is one any observer can recompute and put
-// in front of a request of their own. A caller with no key has nothing to
-// authenticate with and must not send the request at all.
-func NewRequest(key []byte, requestID uint16, seqID int64, data []byte) Request {
-	mac := hmac.New(sha256.New, key)
+// It implements the stock XrdSecProtect secver-0 scheme: a SHA-256 hash is
+// taken over the sequence number, the 24-byte request header, and the payload
+// the frame declares, and that hash is then encrypted with the session cipher
+// (encrypt). The hash is what binds the request; the encryption is what makes
+// it evidence, because the covered bytes are all on the wire in the clear and
+// only the two ends of the authenticated exchange hold the cipher key. A
+// plain — HMAC or bare — digest of those bytes is one any observer can
+// recompute and put in front of a request of their own, which is why the
+// signature must be the encrypted form and why a caller with no Encrypter has
+// nothing to authenticate with and must not send the request at all.
+//
+// The payload is excluded from the hash — and the kXR_nodata flag set — for
+// kXR_write and kXR_pgwrite, whose payloads may be large, unless the server
+// asked for it with kXR_secOData (secOData). Every other request covers the
+// bytes its length field declares; data streamed past that point (kXR_writev
+// segments, a checkpoint's write) is not part of the request the server reads
+// and so is not signed.
+func NewRequest(encrypt Encrypter, requestID uint16, seqID int64, secOData bool, data []byte) (Request, error) {
+	h := sha256.New()
 
 	var s [8]byte
 	binary.BigEndian.PutUint64(s[:], uint64(seqID))
-	_, _ = mac.Write(s[:])
+	_, _ = h.Write(s[:])
 
-	if requestID == write.RequestID || requestID == verifyw.RequestID {
-		_, _ = mac.Write(data[:requestFrameLength])
-	} else {
-		_, _ = mac.Write(data[:signedLength(data)])
+	nodata := (requestID == write.RequestID || requestID == pgwrite.RequestID) && !secOData
+	switch {
+	case len(data) < requestFrameLength:
+		_, _ = h.Write(data)
+	case nodata:
+		_, _ = h.Write(data[:requestFrameLength])
+	default:
+		_, _ = h.Write(data[:signedLength(data)])
 	}
-	signature := mac.Sum(nil)
+
+	signature, err := encrypt(h.Sum(nil))
+	if err != nil {
+		return Request{}, fmt.Errorf("xrootd: could not encrypt the kXR_sigver signature: %w", err)
+	}
 
 	var f Flags
-	if requestID == write.RequestID {
+	if nodata {
 		f |= NoData
 	}
 
-	return Request{ID: requestID, SeqID: seqID, Crypto: 0x01, Signature: signature[:], Flags: f}
+	return Request{ID: requestID, SeqID: seqID, Crypto: 0x01, Signature: signature, Flags: f}, nil
 }

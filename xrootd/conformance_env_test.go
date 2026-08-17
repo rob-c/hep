@@ -153,15 +153,17 @@ func TestConformance_TheEnvironmentConfiguresTheClient(t *testing.T) {
 			want: func(c *Client) (string, bool) { return "maxRedirections", c.maxRedirections == 3 },
 		},
 		{
+			// The count includes the request connection, as the C++ client's
+			// does, so three total is two extra data connections.
 			name: "a sub-stream count",
-			env:  map[string]string{EnvSubStreams: "2"},
+			env:  map[string]string{EnvSubStreams: "3"},
 			want: func(c *Client) (string, bool) { return "maxSubs", c.maxSubs == 2 },
 		},
 		{
-			// Zero is a setting, not an absence: it asks for every transfer to
-			// share the request connection.
-			name: "no sub-streams at all",
-			env:  map[string]string{EnvSubStreams: "0"},
+			// One total is the request connection and nothing more, which asks
+			// for every transfer to share it — the reference client's default.
+			name: "no extra data connections",
+			env:  map[string]string{EnvSubStreams: "1"},
 			want: func(c *Client) (string, bool) { return "maxSubs", c.maxSubs == 0 },
 		},
 		{

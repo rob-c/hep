@@ -30,7 +30,8 @@ const (
 	// EnvRedirectLimit bounds how many redirections are followed in a row.
 	EnvRedirectLimit = "XRD_REDIRECTLIMIT"
 	// EnvSubStreams bounds how many parallel data connections are opened to a
-	// single server.
+	// single server. Following the C++ client, the count includes the request
+	// connection, so a value of one opens no extra data connection.
 	EnvSubStreams = "XRD_SUBSTREAMSPERCHANNEL"
 )
 
@@ -146,7 +147,7 @@ func envOptions() []Option {
 	opts = append(opts, envSeconds(EnvRequestTimeout, WithRequestTimeout))
 
 	opts = append(opts, envCount(EnvRedirectLimit, WithRedirectLimit))
-	opts = append(opts, envCount(EnvSubStreams, WithSubStreams))
+	opts = append(opts, envSubStreams(EnvSubStreams))
 
 	opts = append(opts, hardeningEnvOptions()...)
 
@@ -165,6 +166,25 @@ func envCount(name string, opt func(int) Option) Option {
 		return envError(name, v)
 	}
 	return opt(n)
+}
+
+// envSubStreams turns XRD_SUBSTREAMSPERCHANNEL into the sub-stream option.
+//
+// The C++ client counts the request connection in this total, so its value is
+// one more than the number of extra data connections go-hep opens: a setting of
+// one — the reference client's default — asks for no extra connection at all.
+// Mapping the value to that count, floored at none, keeps a given setting
+// meaning the same thing to every client that shares the variable.
+func envSubStreams(name string) Option {
+	v, ok := os.LookupEnv(name)
+	if !ok || strings.TrimSpace(v) == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return envError(name, v)
+	}
+	return WithSubStreams(max(0, n-1))
 }
 
 // envBool reports whether the named variable asks for something. The spellings

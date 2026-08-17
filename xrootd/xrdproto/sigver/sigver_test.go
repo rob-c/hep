@@ -6,9 +6,9 @@ package sigver_test
 
 import (
 	"bytes"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"testing"
 
 	"go-hep.org/x/hep/xrootd/internal/xrdenc"
@@ -31,15 +31,28 @@ func frame(reqID uint16, params []byte, payload, trailing []byte) []byte {
 	return append(raw, trailing...)
 }
 
-// key is the session key the exchange agreed with the server; every signature
-// in this suite is keyed with it.
-var key = []byte("0123456789abcdef")
+// passthrough is the identity Encrypter: it returns the hash unchanged, so a
+// request's signature is exactly the SHA-256 the scheme hashes. It lets these
+// tests state what the hash covers without a cipher in the way; the encryption
+// itself is checked against the reference server in the conformance suite.
+func passthrough(hash []byte) ([]byte, error) { return hash, nil }
 
-// digest is what a server computes for a request it has read: the sequence
-// number, then the frame and exactly the payload the frame declares, all keyed
-// with the session key.
+// mustSign signs with passthrough and fails the test on error, for the cases
+// that are about what the hash covers rather than about signing failing.
+func mustSign(t *testing.T, requestID uint16, seqID int64, secOData bool, data []byte) sigver.Request {
+	t.Helper()
+	req, err := sigver.NewRequest(passthrough, requestID, seqID, secOData, data)
+	if err != nil {
+		t.Fatalf("could not sign request: %v", err)
+	}
+	return req
+}
+
+// digest is what a server computes for a request it has read: a SHA-256 over
+// the sequence number, then the frame and exactly the payload the frame
+// declares.
 func digest(seqID int64, framed []byte) []byte {
-	h := hmac.New(sha256.New, key)
+	h := sha256.New()
 	var s [8]byte
 	binary.BigEndian.PutUint64(s[:], uint64(seqID))
 	_, _ = h.Write(s[:])
@@ -61,7 +74,7 @@ func TestSignatureStopsAtTheDeclaredLength(t *testing.T) {
 	)
 
 	raw := frame(chkpoint.RequestID, params, payload, trailing)
-	got := sigver.NewRequest(key, chkpoint.RequestID, seqID, raw)
+	got := mustSign(t, chkpoint.RequestID, seqID, false, raw)
 	want := digest(seqID, raw[:24+len(payload)])
 
 	if !bytes.Equal(got.Signature, want) {
@@ -82,7 +95,7 @@ func TestSignatureCoversTheWholePayloadWhenNothingTrails(t *testing.T) {
 	)
 
 	raw := frame(3010, params, payload, nil)
-	got := sigver.NewRequest(key, 3010, seqID, raw)
+	got := mustSign(t, 3010, seqID, false, raw)
 
 	if want := digest(seqID, raw); !bytes.Equal(got.Signature, want) {
 		t.Fatalf("signature:\ngot  = %x\nwant = %x", got.Signature, want)
@@ -101,7 +114,7 @@ func TestAWriteIsSignedByItsHeaderAlone(t *testing.T) {
 	)
 
 	raw := frame(write.RequestID, params, payload, nil)
-	got := sigver.NewRequest(key, write.RequestID, seqID, raw)
+	got := mustSign(t, write.RequestID, seqID, false, raw)
 
 	if want := digest(seqID, raw[:24]); !bytes.Equal(got.Signature, want) {
 		t.Fatalf("signature:\ngot  = %x\nwant = %x", got.Signature, want)
@@ -111,11 +124,32 @@ func TestAWriteIsSignedByItsHeaderAlone(t *testing.T) {
 	}
 }
 
+func TestAWriteCoversItsPayloadWhenTheServerAsksForIt(t *testing.T) {
+	// A server that advertised kXR_secOData wants even a write's payload signed;
+	// the header-alone shortcut is off, kXR_nodata is not set, and the signature
+	// covers the whole frame like any other request.
+	var (
+		params  = bytes.Repeat([]byte{0x02}, 16)
+		payload = bytes.Repeat([]byte{0x03}, 512)
+		seqID   = int64(11)
+	)
+
+	raw := frame(write.RequestID, params, payload, nil)
+	got := mustSign(t, write.RequestID, seqID, true, raw)
+
+	if want := digest(seqID, raw); !bytes.Equal(got.Signature, want) {
+		t.Fatalf("signature:\ngot  = %x\nwant = %x", got.Signature, want)
+	}
+	if got.Flags&sigver.NoData != 0 {
+		t.Fatal("the server asked for the payload to be signed, so kXR_nodata would tell it to skip what it must hash")
+	}
+}
+
 func TestAShortBufferIsHashedWhole(t *testing.T) {
 	// Nothing on the wire is this short, but the length arithmetic must not
 	// reach past a buffer that does not hold a whole frame.
 	raw := []byte{0x00, 0x01, 0x0b, 0xc2}
-	got := sigver.NewRequest(key, 3010, 1, raw)
+	got := mustSign(t, 3010, 1, false, raw)
 
 	if want := digest(1, raw); !bytes.Equal(got.Signature, want) {
 		t.Fatalf("signature:\ngot  = %x\nwant = %x", got.Signature, want)
@@ -127,14 +161,14 @@ func TestADeclaredLengthPastTheBufferIsHashedWhole(t *testing.T) {
 	raw := frame(3010, bytes.Repeat([]byte{0x00}, 16), nil, nil)
 	binary.BigEndian.PutUint32(raw[20:24], 1<<20)
 
-	got := sigver.NewRequest(key, 3010, 1, raw)
+	got := mustSign(t, 3010, 1, false, raw)
 	if want := digest(1, raw); !bytes.Equal(got.Signature, want) {
 		t.Fatalf("signature:\ngot  = %x\nwant = %x", got.Signature, want)
 	}
 }
 
 func TestRequest(t *testing.T) {
-	want := sigver.NewRequest(key, write.RequestID, 42, make([]byte, 24))
+	want := mustSign(t, write.RequestID, 42, false, make([]byte, 24))
 
 	var (
 		w   xrdenc.WBuffer
@@ -154,27 +188,42 @@ func TestRequest(t *testing.T) {
 	}
 }
 
-func TestTheSignatureIsKeyedByTheSession(t *testing.T) {
-	// Every byte a signature covers travels on the wire in the clear, so an
-	// unkeyed digest of them is one anybody who saw the request can recompute:
-	// they could put it in front of a request of their own and the server would
-	// take it. What makes the signature evidence is the session key, which only
-	// the two ends of the authenticated exchange hold.
+func TestTheSignatureIsWhateverTheCipherReturns(t *testing.T) {
+	// The hash binds the request; the encryption is what makes it evidence,
+	// because the hashed bytes are all on the wire and only the session cipher
+	// is secret. NewRequest must hand the hash to the cipher and sign with what
+	// comes back — not the bare hash — so a sentinel cipher proves the hash
+	// reaches it and its output is what ends up in the signature.
 	raw := frame(3010, bytes.Repeat([]byte{0x04}, 16), []byte("/tmp/file.dat"), nil)
 
-	got := sigver.NewRequest(key, 3010, 5, raw)
-	other := sigver.NewRequest([]byte("fedcba9876543210"), 3010, 5, raw)
-	if bytes.Equal(got.Signature, other.Signature) {
-		t.Fatal("two sessions sign the same request identically: the key is not used")
+	var handed []byte
+	enc := func(hash []byte) ([]byte, error) {
+		handed = hash
+		return []byte("the ciphertext"), nil
+	}
+	got, err := sigver.NewRequest(enc, 3010, 5, false, raw)
+	if err != nil {
+		t.Fatalf("could not sign request: %v", err)
 	}
 
-	unkeyed := sha256.New()
-	var s [8]byte
-	binary.BigEndian.PutUint64(s[:], 5)
-	_, _ = unkeyed.Write(s[:])
-	_, _ = unkeyed.Write(raw)
-	if bytes.Equal(got.Signature, unkeyed.Sum(nil)) {
-		t.Fatal("the signature is a plain hash of what is already on the wire")
+	if want := digest(5, raw); !bytes.Equal(handed, want) {
+		t.Fatalf("the cipher was handed the wrong hash:\ngot  = %x\nwant = %x", handed, want)
+	}
+	if want := []byte("the ciphertext"); !bytes.Equal(got.Signature, want) {
+		t.Fatalf("the signature is not the cipher's output:\ngot  = %x\nwant = %x", got.Signature, want)
+	}
+	if bytes.Equal(got.Signature, digest(5, raw)) {
+		t.Fatal("the signature is the bare hash, the cipher was not applied")
+	}
+}
+
+func TestACipherErrorFailsTheSignature(t *testing.T) {
+	// A session that cannot encrypt cannot sign, and the failure must surface
+	// rather than a request going out with a signature the server will reject.
+	boom := errors.New("no cipher")
+	_, err := sigver.NewRequest(func([]byte) ([]byte, error) { return nil, boom }, 3010, 1, false, make([]byte, 24))
+	if !errors.Is(err, boom) {
+		t.Fatalf("the cipher error did not surface: %v", err)
 	}
 }
 
@@ -200,7 +249,7 @@ func TestAVectorWriteIsSignedOverItsWriteList(t *testing.T) {
 	raw := wbuf.Bytes()
 
 	const seqID = int64(5)
-	got := sigver.NewRequest(key, writev.RequestID, seqID, raw)
+	got := mustSign(t, writev.RequestID, seqID, false, raw)
 
 	// The write_list is two 16-byte descriptors; the 31 bytes of segment data
 	// that follow them are not part of the request the server read.

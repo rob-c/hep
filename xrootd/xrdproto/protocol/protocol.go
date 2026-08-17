@@ -42,8 +42,13 @@ const (
 type SecurityOptions byte
 
 const (
+	// SecOData specifies that the signature of a signed write must cover the
+	// write payload, not just the request header. Wire value kXR_secOData.
+	// When it is absent, kXR_write / kXR_pgwrite are signed over their header
+	// alone (the kXR_nodata_sig flag).
+	SecOData SecurityOptions = 0x01
 	// ForceSecurity specifies that signing is required even if the authentication
-	// protocol does not support generic encryption.
+	// protocol does not support generic encryption. Wire value kXR_secOFrce.
 	ForceSecurity SecurityOptions = 0x02
 )
 
@@ -191,6 +196,14 @@ func (resp *Response) ForceSecurity() bool {
 	return resp.SecurityOptions&ForceSecurity != 0
 }
 
+// SignData reports whether the server asks that a signed write's payload be
+// covered by the signature (kXR_secOData). When it is not set, kXR_write and
+// kXR_pgwrite are signed over their header alone; see
+// [go-hep.org/x/hep/xrootd/xrdproto/sigver].
+func (resp *Response) SignData() bool {
+	return resp.SecurityOptions&SecOData != 0
+}
+
 func (resp *Response) flagBits() uint32 { return uint32(resp.Flags) }
 
 // HasTLS reports whether the server supports in-protocol TLS (kXR_haveTLS).
@@ -246,6 +259,17 @@ func (resp *Response) NeedsTLS(wantTLS bool) bool {
 	return resp.GotoTLS() || (wantTLS && resp.HasTLS())
 }
 
+// RequiresTLS reports whether the server mandates TLS for this connection
+// regardless of what the client asked for: it either wants the upgrade
+// immediately (kXR_gotoTLS) or names some phase or request kind that must be
+// encrypted (kXR_tlsAny). The second case is the per-plane requirement a server
+// advertises without a blanket gotoTLS — xrootd.tls / brix_tls_require — where
+// a client that ignored it would send the affected requests in the clear and
+// have them refused one at a time with kXR_TLSRequired.
+func (resp *Response) RequiresTLS() bool {
+	return resp.GotoTLS() || resp.TLSForAnything()
+}
+
 // MarshalXrd implements xrdproto.Marshaler.
 func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 	wBuffer.WriteI32(o.BinaryProtocolVersion)
@@ -272,23 +296,59 @@ func (o Response) MarshalXrd(wBuffer *xrdenc.WBuffer) error {
 func (o *Response) UnmarshalXrd(rBuffer *xrdenc.RBuffer) error {
 	o.BinaryProtocolVersion = rBuffer.ReadI32()
 	o.Flags = Flags(rBuffer.ReadI32())
-	if rBuffer.Len() == 0 {
+
+	// The security-requirements record ('S') is optional and does not always sit
+	// where the bare spec puts it: a vendor server (nginx-xrootd/BriX) prefixes
+	// it with a security-methods header, and some servers append a trailer this
+	// client does not model. Locate the record wherever it is, and treat a
+	// trailer with none — or one shaped in a way we do not recognise — as a
+	// server asking for no signatures, the way the reference client does, rather
+	// than failing the whole handshake over bytes past what we came to read.
+	rec := findSecurityReqs(rBuffer.Bytes())
+	if rec == nil {
 		return rBuffer.Err()
 	}
 	o.HasSecurityInfo = true
-	rBuffer.Skip(1)
-	rBuffer.Skip(1)
-	o.SecurityVersion = rBuffer.ReadU8()
-	o.SecurityOptions = SecurityOptions(rBuffer.ReadU8())
-	o.SecurityLevel = xrdproto.SecurityLevel(rBuffer.ReadU8())
-	o.SecurityOverrides = make([]xrdproto.SecurityOverride, rBuffer.ReadU8())
-	for i := range o.SecurityOverrides {
-		err := o.SecurityOverrides[i].UnmarshalXrd(rBuffer)
-		if err != nil {
-			return err
-		}
+
+	// ServerResponseReqs_Protocol: 'S', reserved, secver, secopt, seclvl,
+	// secvsz, then secvsz (request-index, level) pairs.
+	o.SecurityVersion = rec[2]
+	o.SecurityOptions = SecurityOptions(rec[3])
+	o.SecurityLevel = xrdproto.SecurityLevel(rec[4])
+	n := int(rec[5])
+	o.SecurityOverrides = make([]xrdproto.SecurityOverride, 0, n)
+	for i, pos := 0, 6; i < n && pos+2 <= len(rec); i, pos = i+1, pos+2 {
+		o.SecurityOverrides = append(o.SecurityOverrides, xrdproto.SecurityOverride{
+			RequestIndex: rec[pos],
+			RequestLevel: xrdproto.RequestLevel(rec[pos+1]),
+		})
 	}
 	return rBuffer.Err()
+}
+
+// findSecurityReqs locates the ServerResponseReqs_Protocol record — the one
+// tagged 'S' — inside a kXR_protocol response's post-flags trailer and returns
+// the bytes from that tag onward, or nil when the trailer carries no record this
+// client recognises.
+//
+// Two on-wire shapes carry it. In the spec shape the record is the whole
+// trailer, 'S' at offset 0. A vendor shape (nginx-xrootd/BriX) prefixes it with
+// a 4-byte security-methods header — [reserved, required, method count,
+// reserved] — followed by that many 8-byte method entries, and only then the
+// record. Returning nil for anything else lets the caller fall back to "no
+// security requirements" instead of failing the handshake.
+func findSecurityReqs(trailer []byte) []byte {
+	const minRecord = 6 // 'S', reserved, secver, secopt, seclvl, secvsz
+	if len(trailer) >= minRecord && trailer[0] == 'S' {
+		return trailer
+	}
+	if len(trailer) >= 4 {
+		off := 4 + int(trailer[2])*8
+		if len(trailer) >= off+minRecord && trailer[off] == 'S' {
+			return trailer[off:]
+		}
+	}
+	return nil
 }
 
 // RespID implements xrdproto.Response.RespID.

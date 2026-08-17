@@ -58,6 +58,11 @@ func confPromptRun(t *testing.T, secinfo string, p CredentialPrompter, provs ...
 			client.auths[prov.name] = prov
 		}
 		client.prompter = p
+		// These tests exercise credential selection over a plaintext mock, so a
+		// ztn credential must be allowed to go out; the refusal to send a bearer
+		// token in the clear is exercised on its own in
+		// TestConformance_ABearerTokenIsNotSentInTheClear.
+		client.allowCleartextToken = true
 		sess := client.sessions[client.initialSessionID]
 		sess.sessionID = client.initialSessionID
 		got = sess.auth(context.Background(), []byte(secinfo))
@@ -175,6 +180,64 @@ func TestConformance_APrompterThatSuppliesNothingIsNotACredential(t *testing.T) 
 	if len(p.reqs) != 1 {
 		t.Fatalf("the user was asked %d times, want once", len(p.reqs))
 	}
+}
+
+func TestConformance_ABearerTokenIsNotSentInTheClear(t *testing.T) {
+	// A ztn credential is a bearer token: read off the wire, it can be replayed.
+	// Over an unencrypted connection the client refuses to send one, and walks
+	// on to whatever else the server offers rather than putting a replayable
+	// secret on the network.
+	t.Run("the token is skipped and the reason is the exposure", func(t *testing.T) {
+		ztn := &confAuther{name: "ztn", creds: "ok"}
+		unix := &confAuther{name: "unix", creds: "ok"}
+
+		var (
+			seen *Client
+			err  error
+		)
+		testClientWithMockServer(confAuthServer(t), func(cancel func(), client *Client) {
+			client.auths = map[string]auth.Auther{"ztn": ztn, "unix": unix}
+			sess := client.sessions[client.initialSessionID]
+			err = sess.auth(context.Background(), []byte("&P=ztn&P=unix"))
+			seen = client
+		})
+		if err != nil {
+			t.Fatalf("the negotiation could still succeed on unix but failed: %v", err)
+		}
+		// The token provider is refused before it ever builds a request, so its
+		// credential never reaches the marshaller, let alone the wire.
+		if ztn.calls != 0 {
+			t.Fatalf("the token provider built %d requests; it must be refused before that", ztn.calls)
+		}
+		if unix.calls != 1 {
+			t.Fatalf("the fallback identity was tried %d times, want once", unix.calls)
+		}
+		reason := seen.unusedAuth["ztn"]
+		if reason == nil {
+			t.Fatal("the skipped token was not recorded")
+		}
+		if !strings.Contains(reason.Error(), "unencrypted connection") {
+			t.Fatalf("the recorded reason does not name the exposure: %v", reason)
+		}
+	})
+
+	t.Run("the escape hatch sends it anyway", func(t *testing.T) {
+		ztn := &confAuther{name: "ztn", creds: "ok"}
+
+		var err error
+		testClientWithMockServer(confAuthServer(t), func(cancel func(), client *Client) {
+			client.auths = map[string]auth.Auther{"ztn": ztn}
+			client.allowCleartextToken = true
+			sess := client.sessions[client.initialSessionID]
+			err = sess.auth(context.Background(), []byte("&P=ztn"))
+		})
+		if err != nil {
+			t.Fatalf("the token was refused even though the caller accepted the exposure: %v", err)
+		}
+		if ztn.calls != 1 {
+			t.Fatalf("the token provider built %d requests, want one", ztn.calls)
+		}
+	})
 }
 
 func TestConformance_AUserIsAskedOncePerClient(t *testing.T) {
