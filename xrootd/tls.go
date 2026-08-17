@@ -83,6 +83,7 @@ func (sess *cliSession) upgradeTLS(ctx context.Context) error {
 		return fmt.Errorf("xrootd: TLS handshake failed: %w", err)
 	}
 	sess.conn = tconn
+	sess.tls = true
 	return nil
 }
 

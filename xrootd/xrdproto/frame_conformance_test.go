@@ -91,8 +91,20 @@ var (
 	frameData    = []byte("go-hep")
 )
 
+// mustSigver builds a kXR_sigver request for the conformance tables. What the
+// signature contains does not matter to a marshalling round-trip, so it signs
+// with an identity cipher; the signing scheme itself is checked in the sigver
+// package's own tests and in the client conformance suite.
+func mustSigver(reqID uint16, seqID int64, data []byte) sigver.Request {
+	r, err := sigver.NewRequest(func(h []byte) ([]byte, error) { return h, nil }, reqID, seqID, false, data)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
 func frameCases() []frameCase {
-	sigverReq := sigver.NewRequest([]byte("key"), open.RequestID, 0x0102030405060708, frameData)
+	sigverReq := mustSigver(open.RequestID, 0x0102030405060708, frameData)
 	return []frameCase{
 		{
 			name: "admin", req: &admin.Request{Req: "query stats"}, id: 3020,

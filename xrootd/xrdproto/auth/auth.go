@@ -60,17 +60,19 @@ type Continuer interface {
 	More(challenge []byte) (*Request, error)
 }
 
-// SessionKeyer is an optional interface implemented by a security provider
+// SessionSigner is an optional interface implemented by a security provider
 // whose exchange agrees a secret with the server — GSI does, over
 // Diffie-Hellman.
 //
-// The key is what a session signs its requests with once the server asks for
-// signatures (kXR_sigver). SessionKey is called after the exchange has
-// completed and returns nil for a provider that establishes no shared secret;
-// a session authenticated by such a provider cannot sign, and a server that
-// requires signatures cannot be used with it.
-type SessionKeyer interface {
-	SessionKey() []byte
+// SignEncrypt is the encryption half of the stock XrdSecProtect secver-0
+// signing scheme: once the server asks for signatures (kXR_sigver), each
+// request is authenticated by a SHA-256 hash of its bytes encrypted with the
+// session cipher, and this is what encrypts it. It is called after the
+// exchange has completed. A provider that establishes no shared secret
+// implements no SessionSigner; a session authenticated by such a provider
+// cannot sign, and a server that requires signatures cannot be used with it.
+type SessionSigner interface {
+	SignEncrypt(hash []byte) ([]byte, error)
 }
 
 // Missing reports that a security provider has no credential to offer.

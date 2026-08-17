@@ -49,11 +49,11 @@ type cliSession struct {
 	protocolVersion  int32
 	signRequirements signing.Requirements
 	seqID            int64
-	// signKey is the session key the security provider agreed with the server,
-	// and is what kXR_sigver signatures are keyed with. It is nil for a session
-	// that authenticated with a provider agreeing no secret (unix, host, sss,
-	// ztn), and such a session cannot sign.
-	signKey  []byte
+	// signer encrypts kXR_sigver signature hashes with the session cipher the
+	// security provider agreed with the server. It is nil for a session that
+	// authenticated with a provider agreeing no secret (unix, host, sss, ztn),
+	// and such a session cannot sign.
+	signer   sigver.Encrypter
 	mu       sync.RWMutex
 	requests map[xrdproto.StreamID]pendingRequest
 
@@ -73,6 +73,7 @@ type cliSession struct {
 	pathID    xrdproto.PathID
 
 	wantTLS      bool              // client requested TLS (roots:// or WithTLS)
+	tls          bool              // conn has been upgraded to TLS
 	protocolInfo protocol.Response // cached kXR_protocol response from bootstrap
 }
 
@@ -161,10 +162,11 @@ func newSession(ctx context.Context, address, username, token string, client *Cl
 	sess.signRequirements = signing.New(protocolInfo.SecurityLevel, protocolInfo.SecurityOverrides)
 
 	// TLS decision, mirroring the reference C client: upgrade when the server
-	// mandates it (kXR_gotoTLS) or when the client wanted TLS and the server
-	// supports it; refuse to continue in cleartext when TLS was wanted but the
-	// server offers none (no silent downgrade).
-	if sess.protocolInfo.NeedsTLS(sess.wantTLS) {
+	// mandates it — either an immediate kXR_gotoTLS or a per-plane requirement
+	// it named without one (kXR_tlsAny, i.e. xrootd.tls) — or when the client
+	// wanted TLS and the server supports it; refuse to continue in cleartext
+	// when TLS was wanted but the server offers none (no silent downgrade).
+	if sess.protocolInfo.RequiresTLS() || sess.protocolInfo.NeedsTLS(sess.wantTLS) {
 		if err := sess.upgradeTLS(bootCtx); err != nil {
 			sess.Close()
 			return nil, err
@@ -848,19 +850,22 @@ func (sess *cliSession) logf(format string, args ...any) {
 }
 
 func (sess *cliSession) sign(streamID xrdproto.StreamID, requestID uint16, data []byte) ([]byte, error) {
-	if len(sess.signKey) == 0 {
-		// Signing without a key would be a formality: every byte a signature
-		// covers is on the wire, so an unkeyed digest of them proves only that
-		// the sender could read the request they are sending. The server
-		// rejects it, and it is a clearer failure to say why here than to have
-		// the request come back unauthorized for no visible reason.
+	if sess.signer == nil {
+		// Signing without a session cipher would be a formality: every byte a
+		// signature covers is on the wire, so an unencrypted digest of them
+		// proves only that the sender could read the request they are sending.
+		// The server rejects it, and it is a clearer failure to say why here
+		// than to have the request come back unauthorized for no visible reason.
 		return nil, fmt.Errorf(
-			"xrootd: server %q requires request %d to be signed, but the session established no signing key (only gsi does)",
+			"xrootd: server %q requires request %d to be signed, but the session established no signing cipher (only gsi does)",
 			sess.sessionID, requestID,
 		)
 	}
 	seqID := atomic.AddInt64(&sess.seqID, 1)
-	signRequest := sigver.NewRequest(sess.signKey, requestID, seqID, data)
+	signRequest, err := sigver.NewRequest(sess.signer, requestID, seqID, sess.protocolInfo.SignData(), data)
+	if err != nil {
+		return nil, err
+	}
 	header := xrdproto.RequestHeader{StreamID: streamID, RequestID: signRequest.ReqID()}
 
 	var wBuffer xrdenc.WBuffer
@@ -912,6 +917,18 @@ func newSubSession(ctx context.Context, parent *cliSession) (*cliSession, error)
 	if err := sess.handshakeBootstrap(bootCtx); err != nil {
 		sess.Close()
 		return nil, err
+	}
+
+	// A data sub-stream must be as protected as the control stream it serves:
+	// upgrade it to TLS whenever the parent runs over TLS or the server requires
+	// TLS for the data plane (kXR_tlsData). The handshake ran in the clear, as it
+	// does on the main session; the upgrade happens before consume() takes the
+	// socket, so kXR_bind and every data byte after it travel encrypted.
+	if parent.tls || parent.protocolInfo.TLSForData() {
+		if err := sess.upgradeTLS(bootCtx); err != nil {
+			sess.Close()
+			return nil, err
+		}
 	}
 
 	go sess.consume()

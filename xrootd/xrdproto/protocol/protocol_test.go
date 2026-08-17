@@ -4,7 +4,13 @@
 
 package protocol
 
-import "testing"
+import (
+	"encoding/binary"
+	"testing"
+
+	"go-hep.org/x/hep/xrootd/internal/xrdenc"
+	"go-hep.org/x/hep/xrootd/xrdproto"
+)
 
 func TestNewRequestTLSOptions(t *testing.T) {
 	req := NewRequestTLS(0x310, true, true, true)
@@ -17,6 +23,92 @@ func TestNewRequestTLSOptions(t *testing.T) {
 	want = ReturnSecurityRequirements | AbleTLS
 	if req.Options != want {
 		t.Fatalf("options mismatch (no wantTLS): got=%#x want=%#x", req.Options, want)
+	}
+}
+
+// decodeResponse marshals a kXR_protocol response body — version, flags, then
+// whatever trailer the server sent — and decodes it back.
+func decodeResponse(t *testing.T, trailer []byte) *Response {
+	t.Helper()
+	raw := make([]byte, 8, 8+len(trailer))
+	binary.BigEndian.PutUint32(raw[0:4], 0x310) // the protocol version
+	binary.BigEndian.PutUint32(raw[4:8], 0)     // the flags
+	raw = append(raw, trailer...)
+
+	resp := &Response{}
+	if err := resp.UnmarshalXrd(xrdenc.NewRBuffer(raw)); err != nil {
+		t.Fatalf("could not unmarshal response: %v", err)
+	}
+	if resp.BinaryProtocolVersion != 0x310 {
+		t.Fatalf("BinaryProtocolVersion = %#x, want 0x310", resp.BinaryProtocolVersion)
+	}
+	return resp
+}
+
+func TestResponseParsesTheSecurityRecordWhereverItSits(t *testing.T) {
+	// 'S', reserved, secver, secopt, seclvl, secvsz, then one (index, level) pair.
+	record := []byte{'S', 0x00, 1, 0x01, 2, 1, 3, 4}
+
+	for _, tc := range []struct {
+		name    string
+		trailer []byte
+	}{
+		{
+			name:    "spec shape, record first",
+			trailer: record,
+		},
+		{
+			name: "vendor shape, record after a security-methods header",
+			// A 4-byte header [reserved, required, method count, reserved] and
+			// then that many 8-byte method entries precede the record.
+			trailer: append([]byte{
+				0x00, 0x01, 0x02, 0x00,
+				'p', 's', 's', '3', 0, 0, 0, 0,
+				'z', 't', 'n', 0, 0, 0, 0, 0,
+			}, record...),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := decodeResponse(t, tc.trailer)
+			if !resp.HasSecurityInfo {
+				t.Fatal("HasSecurityInfo = false, want true")
+			}
+			if resp.SecurityVersion != 1 {
+				t.Fatalf("SecurityVersion = %d, want 1", resp.SecurityVersion)
+			}
+			if resp.SecurityLevel != xrdproto.SecurityLevel(2) {
+				t.Fatalf("SecurityLevel = %d, want 2", resp.SecurityLevel)
+			}
+			if len(resp.SecurityOverrides) != 1 {
+				t.Fatalf("got %d overrides, want 1", len(resp.SecurityOverrides))
+			}
+			if got := resp.SecurityOverrides[0]; got.RequestIndex != 3 || got.RequestLevel != xrdproto.RequestLevel(4) {
+				t.Fatalf("override = %+v, want {RequestIndex:3 RequestLevel:4}", got)
+			}
+		})
+	}
+}
+
+func TestResponseWithoutARecognisedRecordAsksForNoSignatures(t *testing.T) {
+	// A response with no security record — or a trailer shaped in a way this
+	// client does not model — must read as a server asking for no signatures,
+	// the way the reference client reads it, rather than failing the handshake.
+	for _, tc := range []struct {
+		name    string
+		trailer []byte
+	}{
+		{"no trailer at all", nil},
+		{"a trailer we do not model", []byte{0x00, 0x01, 0x02, 0x03, 0x04}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := decodeResponse(t, tc.trailer)
+			if resp.HasSecurityInfo {
+				t.Fatal("HasSecurityInfo = true, want false")
+			}
+			if len(resp.SecurityOverrides) != 0 {
+				t.Fatalf("got %d overrides, want none", len(resp.SecurityOverrides))
+			}
+		})
 	}
 }
 

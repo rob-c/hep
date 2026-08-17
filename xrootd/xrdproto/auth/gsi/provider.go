@@ -122,11 +122,14 @@ type Auth struct {
 	sessionKey []byte
 }
 
-// SessionKey implements auth.SessionKeyer: it returns the key agreed with the
-// server over Diffie-Hellman during the certificate exchange, or nil before
-// that exchange has happened. It is the AES key the exchange encrypts with,
-// and it is also what the session signs its requests with.
-func (a *Auth) SessionKey() []byte { return a.sessionKey }
+// SignEncrypt implements auth.SessionSigner: it encrypts a kXR_sigver
+// signature hash with the session cipher agreed with the server over
+// Diffie-Hellman during the certificate exchange. The cipher is AES-128-CBC
+// with a zero IV and PKCS#7 padding — the unsigned-DH path of the stock
+// scheme, the same cipher the certificate exchange itself encrypts with.
+func (a *Auth) SignEncrypt(hash []byte) ([]byte, error) {
+	return aesCBCEncrypt(a.sessionKey, hash)
+}
 
 // Provider returns the name of the security provider.
 func (*Auth) Provider() string { return "gsi" }
