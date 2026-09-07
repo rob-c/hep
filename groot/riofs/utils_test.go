@@ -156,3 +156,14 @@ func TestDecodeNameCycle(t *testing.T) {
 		})
 	}
 }
+
+func Test_nowUTC(t *testing.T) {
+	// Verify that nowUTC is NOT pinned. Subsequent calls should
+	// return different times.
+	a := nowUTC()
+	time.Sleep(time.Microsecond)
+	b := nowUTC()
+	if a == b {
+		t.Error("nowUTC is fixed")
+	}
+}

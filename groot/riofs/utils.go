@@ -69,3 +69,5 @@ func time2datime(t time.Time) uint32 {
 
 	return (year-1995)<<26 | month<<22 | day<<17 | hour<<12 | min<<6 | sec
 }
+
+func nowUTC() time.Time { return time.Now().UTC() }
