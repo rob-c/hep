@@ -571,6 +571,11 @@ func TestTopLevelString(t *testing.T) {
 // We create v1.root with TMyObjString-v1, implemented in ROOT/C++ and in groot.
 // We create v2.root with TMyObjString-v2, only implemented in ROOT/C++.
 //
+// Both files are written twice over: once by ROOT/C++, when there is a ROOT
+// installation to write them with, and once by groot, which needs none. A
+// version skew is a property of the bytes in the file, so either writer
+// produces it, and the test below is the same for both.
+//
 // We try to read+copy v1.root: that should obviously succeed.
 // We try to read+copy v2.root: that should fail (panic) at the `read` step.
 // We try to read+copy v1.root: that should still succeed, and we should still
@@ -585,14 +590,31 @@ func TestTopLevelString(t *testing.T) {
 // or file: rbytes.WBuffer will prevent that, and riofs.File.findDepStreamers
 // only looks for streamers in the file-local cache of streamers.
 func TestVersionSkew(t *testing.T) {
-	tmp := t.TempDir()
+	for _, tc := range []struct {
+		name string
+		gen  func(t *testing.T, v1name, v2name string)
+	}{
+		// C++ ROOT is the reference generator: run it first, while the global
+		// registry of streamers still holds nothing about TMyObjString.
+		{name: "cxx-root", gen: genVersionSkewFilesWithROOT},
+		{name: "groot", gen: genVersionSkewFilesWithGroot},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testVersionSkew(t, tc.gen)
+		})
+	}
+}
+
+// genVersionSkewFilesWithROOT writes the two version-skewed files with a
+// C++ ROOT installation, from the very C++ code rdatatest.MyObjString mirrors.
+func genVersionSkewFilesWithROOT(t *testing.T, v1name, v2name string) {
+	t.Helper()
+
+	if !rtests.HasROOT {
+		t.Skip("skip test with ROOT/C++")
+	}
 
 	const tmyobjstring = rdatatest.MyObjStringSrc
-
-	var (
-		v1name = filepath.Join(tmp, "v1.root")
-		v2name = filepath.Join(tmp, "v2.root")
-	)
 
 	for _, tc := range []struct {
 		name string
@@ -610,6 +632,66 @@ func TestVersionSkew(t *testing.T) {
 			t.Fatalf("could not run ROOT/C++ for %q:\n%s\nerror: %v", tc.name, out, err)
 		}
 	}
+}
+
+// genVersionSkewFilesWithGroot writes the two version-skewed files with groot
+// alone, so that the test still runs where no C++ ROOT is installed.
+func genVersionSkewFilesWithGroot(t *testing.T, v1name, v2name string) {
+	t.Helper()
+
+	for _, tc := range []struct {
+		name string
+		vers int
+	}{
+		{name: v1name, vers: rdatatest.MyObjStringVersion},
+		{name: v2name, vers: rdatatest.MyObjStringVersion + 1},
+	} {
+		genVersionSkewFile(t, tc.name, tc.vers)
+	}
+}
+
+// genVersionSkewFile writes a single file holding a TMyObjString at class
+// version vers, together with a TMyObjRope deriving from it.
+func genVersionSkewFile(t *testing.T, fname string, vers int) {
+	t.Helper()
+
+	// C++ ROOT knows those two classes from their dictionary. groot has no
+	// dictionary to consult, so hand it the streamers its writer will look up.
+	rdict.StreamerInfos.Add(rdatatest.MyObjStringStreamer(vers))
+	rdict.StreamerInfos.Add(rdatatest.MyObjRopeStreamer(vers))
+
+	f, err := groot.Create(fname)
+	if err != nil {
+		t.Fatalf("could not create ROOT file %q: %+v", fname, err)
+	}
+
+	// the C++ code hangs both objects off the list of functions of a TH1F.
+	// A TList holds them just as well, and puts the very same demand on the
+	// writer: find the streamers of objects nested inside a written value.
+	str := fmt.Sprintf("my-%d", vers)
+	err = f.Put("h", rcont.NewList("h", []root.Object{
+		rdatatest.NewMyObjStringVers(str, vers),
+		rdatatest.NewMyObjRopeVers(str, vers),
+	}))
+	if err != nil {
+		t.Fatalf("could not write to ROOT file %q: %+v", fname, err)
+	}
+
+	err = f.Close()
+	if err != nil {
+		t.Fatalf("could not close ROOT file %q: %+v", fname, err)
+	}
+}
+
+func testVersionSkew(t *testing.T, gen func(t *testing.T, v1name, v2name string)) {
+	tmp := t.TempDir()
+
+	var (
+		v1name = filepath.Join(tmp, "v1.root")
+		v2name = filepath.Join(tmp, "v2.root")
+	)
+
+	gen(t, v1name, v2name)
 
 	oname := filepath.Join(tmp, "copy.root")
 

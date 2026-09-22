@@ -9,6 +9,8 @@ import (
 
 	"go-hep.org/x/hep/groot/rbase"
 	"go-hep.org/x/hep/groot/rbytes"
+	"go-hep.org/x/hep/groot/rdict"
+	"go-hep.org/x/hep/groot/rmeta"
 	"go-hep.org/x/hep/groot/root"
 	"go-hep.org/x/hep/groot/rtypes"
 )
@@ -170,6 +172,179 @@ var (
 	_ rbytes.Marshaler   = (*MyObjRope)(nil)
 	_ rbytes.Unmarshaler = (*MyObjRope)(nil)
 )
+
+// MyObjStringVers is a TMyObjString at an arbitrary class version.
+//
+// Only MyObjStringVersion is a class version groot knows how to read: the
+// point of MyObjStringVers is to write files holding a TMyObjString at a
+// class version groot doesn't handle, and thus to exercize version skew
+// without a C++ ROOT installation.
+//
+// MyObjStringVers is deliberately not registered with rtypes.Factory: reading
+// back a TMyObjString should always go through MyObjString.
+type MyObjStringVers struct {
+	obj  rbase.Object
+	str  string
+	vers int16
+}
+
+// NewMyObjStringVers creates a new MyObjStringVers at class version vers.
+func NewMyObjStringVers(s string, vers int) *MyObjStringVers {
+	return &MyObjStringVers{
+		obj:  *rbase.NewObject(),
+		str:  s,
+		vers: int16(vers),
+	}
+}
+
+func (obj *MyObjStringVers) RVersion() int16 {
+	return obj.vers
+}
+
+func (*MyObjStringVers) Class() string {
+	return "TMyObjString"
+}
+
+func (obj *MyObjStringVers) UID() uint32 {
+	return obj.obj.UID()
+}
+
+func (obj *MyObjStringVers) Name() string {
+	return obj.str
+}
+
+func (*MyObjStringVers) Title() string {
+	return "Collectable string class"
+}
+
+func (obj *MyObjStringVers) String() string {
+	return obj.str
+}
+
+func (obj *MyObjStringVers) MarshalROOT(w *rbytes.WBuffer) (int, error) {
+	if w.Err() != nil {
+		return 0, w.Err()
+	}
+
+	hdr := w.WriteHeader(obj.Class(), obj.RVersion())
+	w.WriteObject(&obj.obj)
+	w.WriteString(obj.str)
+	return w.SetHeader(hdr)
+}
+
+var (
+	_ root.Object      = (*MyObjStringVers)(nil)
+	_ root.UIDer       = (*MyObjStringVers)(nil)
+	_ root.Named       = (*MyObjStringVers)(nil)
+	_ root.ObjString   = (*MyObjStringVers)(nil)
+	_ rbytes.Marshaler = (*MyObjStringVers)(nil)
+)
+
+// MyObjRopeVers is a TMyObjRope whose TMyObjString base class sits at an
+// arbitrary class version. Like MyObjStringVers, it only ever writes.
+//
+// TMyObjRope itself keeps its class version: it is the base class that skews,
+// just like in the C++ code of MyObjStringSrc.
+type MyObjRopeVers struct {
+	base MyObjStringVers
+}
+
+// NewMyObjRopeVers creates a new MyObjRopeVers whose base class sits at
+// class version vers.
+func NewMyObjRopeVers(s string, vers int) *MyObjRopeVers {
+	return &MyObjRopeVers{
+		base: *NewMyObjStringVers(s, vers),
+	}
+}
+
+func (*MyObjRopeVers) RVersion() int16 {
+	return ((*MyObjRope)(nil)).RVersion()
+}
+
+func (*MyObjRopeVers) Class() string {
+	return "TMyObjRope"
+}
+
+func (obj *MyObjRopeVers) UID() uint32 {
+	return obj.base.UID()
+}
+
+func (obj *MyObjRopeVers) Name() string {
+	return obj.base.Name()
+}
+
+func (*MyObjRopeVers) Title() string {
+	return "Collectable rope class"
+}
+
+func (obj *MyObjRopeVers) String() string {
+	return obj.base.String()
+}
+
+func (obj *MyObjRopeVers) MarshalROOT(w *rbytes.WBuffer) (int, error) {
+	if w.Err() != nil {
+		return 0, w.Err()
+	}
+
+	hdr := w.WriteHeader(obj.Class(), obj.RVersion())
+	n, err := obj.base.MarshalROOT(w)
+	if err != nil {
+		return n, err
+	}
+	return w.SetHeader(hdr)
+}
+
+var (
+	_ root.Object      = (*MyObjRopeVers)(nil)
+	_ root.UIDer       = (*MyObjRopeVers)(nil)
+	_ root.Named       = (*MyObjRopeVers)(nil)
+	_ root.ObjString   = (*MyObjRopeVers)(nil)
+	_ rbytes.Marshaler = (*MyObjRopeVers)(nil)
+)
+
+// MyObjStringStreamer returns the StreamerInfo of TMyObjString at class
+// version vers, as C++ ROOT would have written it for MyObjStringSrc.
+//
+// The class checksum is left at zero: it is what C++ ROOT compares two
+// dictionaries with, and there is no second dictionary here to compare to.
+//
+// Please keep it in sync with MyObjString and MyObjStringSrc.
+func MyObjStringStreamer(vers int) *rdict.StreamerInfo {
+	return rdict.NewCxxStreamerInfo("TMyObjString", int32(vers), 0, []rbytes.StreamerElement{
+		rdict.NewStreamerBase(rdict.Element{
+			Name:   *rbase.NewNamed("TObject", "Basic ROOT object"),
+			Type:   rmeta.Base,
+			MaxIdx: [5]int32{0, tobjectCheckSum, 0, 0, 0},
+			EName:  "BASE",
+		}.New(), 1),
+		&rdict.StreamerString{StreamerElement: rdict.Element{
+			Name:  *rbase.NewNamed("fString", "wrapped TString"),
+			Type:  rmeta.TString,
+			Size:  24,
+			EName: "TString",
+		}.New()},
+	})
+}
+
+// MyObjRopeStreamer returns the StreamerInfo of TMyObjRope whose TMyObjString
+// base class sits at class version base, as C++ ROOT would have written it
+// for MyObjStringSrc.
+//
+// Please keep it in sync with MyObjRope and MyObjStringSrc.
+func MyObjRopeStreamer(base int) *rdict.StreamerInfo {
+	rope := (*MyObjRope)(nil)
+	return rdict.NewCxxStreamerInfo("TMyObjRope", int32(rope.RVersion()), 0, []rbytes.StreamerElement{
+		rdict.NewStreamerBase(rdict.Element{
+			Name:  *rbase.NewNamed("TMyObjString", "Collectable string class"),
+			Type:  rmeta.Base,
+			EName: "BASE",
+		}.New(), int32(base)),
+	})
+}
+
+// tobjectCheckSum is the C++ ROOT checksum of TObject, as found in the
+// TStreamerBase of every class deriving from it.
+const tobjectCheckSum = -1877229523
 
 // MyObjStringSrc is the ROOT/C++ code corresponding to rdatatest.MyObjString.
 //
