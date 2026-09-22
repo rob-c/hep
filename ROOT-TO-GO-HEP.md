@@ -139,6 +139,47 @@ from the published descriptions of them. It is not a translation of MINUIT's
 Fortran nor of ROOT's C++, both of which are GPL and could not be carried in
 a BSD tree.
 
+RooFit
+------
+
+| RooFit | go-hep |
+|---|---|
+| `RooGaussian`, `RooExponential` | `pdf.Gaussian()`, `pdf.Exponential()` |
+| `RooPolynomial`, `RooChebychev` | `pdf.Polynomial(n)`, `pdf.Chebychev(n, lo, hi)` |
+| `RooCBShape`, `RooBifurGauss` | `pdf.CrystalBall()`, `pdf.BifurGauss()` |
+| `RooBreitWigner`, `RooVoigtian` | `pdf.BreitWigner()`, `pdf.Voigtian()` |
+| `RooArgusBG`, `RooLandau`, `RooPoisson` | `pdf.Argus()`, `pdf.Landau()`, `pdf.Poisson()` |
+| `RooHistPdf`, `RooGenericPdf` | `pdf.Hist(h)`, `pdf.Formula(expr, pars)` |
+| `RooAddPdf` | `pdf.Add(pdfs, names)` |
+| `RooProdPdf` (same observable) | `pdf.Mul(pdfs...)` |
+| `RooProdPdf` (factorised) | `pdf.Factorise(pdfs...)` |
+| `RooSimultaneous` | `pdf.FitSimultaneous(channels, pars)` |
+| `pdf.fitTo(data)` | `pdf.FitUnbinned(data, p, lo, hi, pars)` |
+| `pdf.fitTo(hist)` | `pdf.FitBinned(h, p, lo, hi, pars)` |
+| `pdf.generate(x, n)` | `pdf.Generate(rnd, p, lo, hi, par, n)` |
+| `RooMCStudy` | `pdf.Study{...}.Run(rnd, n)` |
+| `SPlot` | `pdf.SPlot(data, sum, lo, hi, par)` |
+| `RooGaussian` constraint term | `pdf.Constrain(nll, i, mean, sigma)` |
+| `createProfile(par)` | `res.Scan(i, lo, hi, n)` |
+| `RooFitResult::correlationMatrix()` | `res.Minuit.Correlation()` |
+| `minos()` | `res.Minuit.Command("MINOS")` |
+
+Coefficients multiply components that have been normalised over the fit
+range, as RooFit's do, so a yield counts events. `SetErrorDef(0.5)` is
+applied for you: an uncertainty is where the likelihood rises by half a unit.
+
+```go
+model := pdf.Add(
+	[]pdf.PDF{pdf.Gaussian(), pdf.Exponential()},
+	[]string{"nsig", "nbkg"},
+)
+res, err := pdf.FitUnbinned(data, model, 0, 10, pars)
+
+nsig, nsigErr := res.Value(0)
+scan, _ := res.Scan(0, nsig-4*nsigErr, nsig+4*nsigErr, 41)
+lo, hi, ok := pdf.Interval(scan, res.Minuit.ErrorDef())
+```
+
 Functions
 ---------
 
@@ -224,7 +265,7 @@ Stated plainly, so nobody finds out the hard way:
 - **chebyshev** formula shapes, which need a range the string does not carry.
 - **A C++ interpreter.** `hep-shell` and `hep-kernel` interpret Go. A ROOT
   macro has to be translated, and this page is the dictionary.
-- **RooFit, TMVA, GUI.** No equivalent.
+- **TMVA and the GUI.** No equivalent. RooFit is largely covered -- see above -- but has no workspace persistence here, no FFT convolution, and no morphing between templates.
 
 From Python
 -----------
