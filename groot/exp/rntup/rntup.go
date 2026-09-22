@@ -2,7 +2,54 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package rntup contains types to handle RNTuple-related data.
+// Package rntup reads RNTuples, the columnar storage that ROOT 7 introduced
+// as the successor to TTree.
+//
+// An RNTuple is opened by name out of a ROOT file, its fields are bound to
+// Go values, and its entries are walked:
+//
+//	r, err := rntup.Open("data.root", "ntuple")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer r.Close()
+//
+//	var (
+//		n  int32
+//		xs []float32
+//	)
+//	rvars := []rntup.ReadVar{
+//		{Name: "n", Value: &n},
+//		{Name: "xs", Value: &xs},
+//	}
+//
+//	err = r.Read(rvars, func(entry uint64) error {
+//		fmt.Printf("entry %d: n=%d xs=%v\n", entry, n, xs)
+//		return nil
+//	})
+//
+// NewReadVars builds that list from the schema when it is not known ahead of
+// time, allocating a value of the Go type each field calls for.
+//
+// # C++ types
+//
+// The fundamental types map onto the Go type of the same width, with bool
+// for a boolean and float32 for the half precision and the lossy real
+// columns. A std::string reads into a string, a collection into a slice, a
+// fixed-size array into an array, and a struct, pair or tuple into a struct
+// this package builds from the schema. A std::variant reads into an any
+// holding whichever alternative was live, or nil when it held none.
+//
+// A field may be bound to a type of the caller's own rather than the one it
+// reads into, as long as the two line up: numbers convert, and the members
+// of a struct are matched by name, ignoring case and underscores, or by
+// position when there is no other way to tell.
+//
+// Objects written with the ROOT streamer are not supported yet.
+//
+// # What is not here
+//
+// This package reads RNTuples; it does not write them.
 package rntup // import "go-hep.org/x/hep/groot/exp/rntup"
 
 import (
