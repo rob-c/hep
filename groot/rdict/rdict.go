@@ -1041,6 +1041,25 @@ func (tss *StreamerSTL) ElemTypeName() []string {
 	return rmeta.CxxTemplateFrom(tss.ename).Args
 }
 
+// DataElemTypeName returns the template arguments of this container whose
+// values reach the file, and so may need a streamer of their own.
+//
+// For a sequence container that is every argument ElemTypeName returns. For a
+// map it is the key type and the value type alone: the arguments after those
+// — the comparator, the allocator — are policy types that carry no data, and
+// ROOT writes no streamer for them.
+func (tss *StreamerSTL) DataElemTypeName() []string {
+	args := tss.ElemTypeName()
+	switch tss.vtype {
+	case rmeta.STLmap, rmeta.STLmultimap,
+		rmeta.STLunorderedmap, rmeta.STLunorderedmultimap:
+		if len(args) > 2 {
+			return args[:2]
+		}
+	}
+	return args
+}
+
 func (tss *StreamerSTL) ContainedType() rmeta.Enum {
 	return tss.ctype
 }

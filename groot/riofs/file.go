@@ -647,14 +647,16 @@ func (f *File) findDepStreamers() error {
 				deps = append(deps, depsType{se.TypeName(), -1})
 
 			case *rdict.StreamerSTL:
-				for _, etn := range se.ElemTypeName() {
+				for _, etn := range se.DataElemTypeName() {
 					switch {
 					case strings.HasPrefix(etn, "pair<"):
 						// ignore streamer for pair<T,U>.
 						// we'll only collect streamers for T and U.
 						continue
 					default:
-						deps = append(deps, depsType{etn, -1})
+						// a container of pointers needs the streamer of what
+						// it points at, not of the pointer.
+						deps = append(deps, depsType{strings.TrimRight(etn, "*"), -1})
 					}
 				}
 			}

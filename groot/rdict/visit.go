@@ -155,6 +155,42 @@ func (v *visitor) visitSE(depth int, se rbytes.StreamerElement) error {
 				return fmt.Errorf("could not find std::container<T> element %q: %w", tname, err)
 			}
 
+		case rmeta.STLmap, rmeta.STLmultimap,
+			rmeta.STLunorderedmap, rmeta.STLunorderedmultimap:
+
+			// a map reaches the file as a container of pairs, so what may
+			// need a streamer of its own is the key type and the value
+			// type. The template arguments after those two — the comparator,
+			// the allocator — are policy: they carry no data and ROOT writes
+			// no streamer for them.
+			etn := se.DataElemTypeName()
+			if len(etn) < 2 {
+				return fmt.Errorf(
+					"rdict: could not read the key and value types of %q",
+					se.TypeName(),
+				)
+			}
+			for _, ename := range etn {
+				tname := strings.TrimRight(ename, "*")
+				if _, ok := rmeta.CxxBuiltins[tname]; ok {
+					// no-op: C++ builtin.
+					continue
+				}
+				si, err := v.ctx.StreamerInfo(tname, -1)
+				if err != nil {
+					return fmt.Errorf("could not find std::map element %q: %w", tname, err)
+				}
+				err = v.run(depth+1, si)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+
+		case rmeta.STLbitset:
+			// a bitset holds bits: nothing in it needs a streamer.
+			return nil
+
 		default:
 			return fmt.Errorf("rdict: cant visit non-vector-like STL streamers %#v", se)
 		}
