@@ -71,6 +71,8 @@ const (
 	F1Convolution            = 1  // ROOT version for TF1Convolution
 	F1NormSum                = 1  // ROOT version for TF1NormSum
 	F1Parameters             = 1  // ROOT version for TF1Parameters
+	F2                       = 4  // ROOT version for TF2
+	F3                       = 3  // ROOT version for TF3
 	Formula                  = 14 // ROOT version for TFormula
 	Graph                    = 5  // ROOT version for TGraph
 	GraphErrors              = 3  // ROOT version for TGraphErrors

@@ -77,6 +77,7 @@ var (
 		"TEfficiency",
 		"TF1",
 		"TF1AbsComposition", "TF1Convolution", "TF1NormSum", "TF1Parameters",
+		"TF2", "TF3",
 		"TFormula",
 		"TGraph", "TGraphErrors", "TGraphAsymmErrors", "TGraphMultiErrors",
 		"TH1", "TH1C", "TH1D", "TH1F", "TH1I", "TH1S",

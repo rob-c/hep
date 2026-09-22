@@ -102,3 +102,32 @@ func init() {
 		}))
 	}
 }
+
+// cxxI32 returns the streamer element for an Int_t data member.
+func cxxI32(name, title string) *StreamerBasicType {
+	return &StreamerBasicType{StreamerElement: Element{
+		Name:  *rbase.NewNamed(name, title),
+		Type:  rmeta.Int,
+		Size:  4,
+		EName: "int",
+	}.New()}
+}
+
+func init() {
+	// TF2 : public TF1, and TF3 : public TF2, transcribed from TF2.h/TF3.h.
+	// Both leave their clip-box and painter members out: those are marked
+	// transient in the headers and never reach a file.
+	StreamerInfos.Add(cxxSI("TF2", rvers.F2, []rbytes.StreamerElement{
+		cxxBase("TF1", "The Parametric 1-D function", rvers.F1),
+		cxxF64("fYmin", "Lower bound for the range in y"),
+		cxxF64("fYmax", "Upper bound for the range in y"),
+		cxxI32("fNpy", "Number of points along y used for the graphical representation"),
+	}))
+
+	StreamerInfos.Add(cxxSI("TF3", rvers.F3, []rbytes.StreamerElement{
+		cxxBase("TF2", "The Parametric 2-D function", rvers.F2),
+		cxxF64("fZmin", "Lower bound for the range in z"),
+		cxxF64("fZmax", "Upper bound for the range in z"),
+		cxxI32("fNpz", "Number of points along z used for the graphical representation"),
+	}))
+}

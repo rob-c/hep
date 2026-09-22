@@ -486,3 +486,105 @@ var (
 	_ rbytes.Unmarshaler = (*F1NormSum)(nil)
 	_ F1Composition      = (*F1NormSum)(nil)
 )
+
+// NewF1 creates a ROOT TF1 over [xmin, xmax] from a formula expression, the
+// way TF1(name, expr, xmin, xmax) does in C++.
+//
+// NewF1 returns an error if the expression uses something groot cannot
+// evaluate.
+func NewF1(name, expr string, xmin, xmax float64) (*F1, error) {
+	form, err := NewFormula(name, expr)
+	if err != nil {
+		return nil, err
+	}
+
+	f := newF1()
+	f.named = *rbase.NewNamed(name, expr)
+	f.xmin = xmin
+	f.xmax = xmax
+	f.ndim = 1
+	f.npx = 100 // ROOT's default number of points for drawing
+	f.npar = int32(len(form.clingParams))
+	f.fmin = -1111
+	f.fmax = -1111
+	f.formula = form
+
+	f.parErrs = make([]float64, f.npar)
+	f.parMin = make([]float64, f.npar)
+	f.parMax = make([]float64, f.npar)
+
+	return f, nil
+}
+
+// Formula returns the TFormula this function is defined by, or nil for a
+// function that is not defined by one.
+func (f *F1) Formula() *Formula {
+	return f.formula
+}
+
+// XMin returns the lower bound of the range this function is defined over.
+func (f *F1) XMin() float64 {
+	return f.xmin
+}
+
+// XMax returns the upper bound of the range this function is defined over.
+func (f *F1) XMax() float64 {
+	return f.xmax
+}
+
+// NDim returns the number of dimensions of this function.
+func (f *F1) NDim() int {
+	return int(f.ndim)
+}
+
+// NPar returns the number of parameters of this function.
+func (f *F1) NPar() int {
+	return int(f.npar)
+}
+
+// Params returns the parameter values of this function.
+func (f *F1) Params() []float64 {
+	if f.formula == nil {
+		return nil
+	}
+	return f.formula.Params()
+}
+
+// SetParams sets the parameter values of this function.
+func (f *F1) SetParams(ps []float64) error {
+	if f.formula == nil {
+		return fmt.Errorf("rhist: TF1 %q is not defined by a formula", f.Name())
+	}
+	f.formula.SetParams(ps)
+	f.npar = int32(len(ps))
+	return nil
+}
+
+// Func compiles this function and returns it as a Go function.
+//
+// Func returns an error if the function is not defined by a formula, or if
+// its formula uses something groot cannot evaluate.
+func (f *F1) Func() (func(x float64) float64, error) {
+	if f.formula == nil {
+		return nil, fmt.Errorf("rhist: TF1 %q is not defined by a formula", f.Name())
+	}
+
+	fct, err := f.formula.Func()
+	if err != nil {
+		return nil, fmt.Errorf("rhist: could not compile TF1 %q: %w", f.Name(), err)
+	}
+
+	return func(x float64) float64 { return fct(x) }, nil
+}
+
+// Eval evaluates this function at x.
+//
+// Eval compiles the formula on every call: use Func to evaluate a function
+// more than once.
+func (f *F1) Eval(x float64) (float64, error) {
+	fct, err := f.Func()
+	if err != nil {
+		return 0, err
+	}
+	return fct(x), nil
+}
