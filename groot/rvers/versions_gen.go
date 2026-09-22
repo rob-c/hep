@@ -78,6 +78,8 @@ const (
 	GraphErrors              = 3  // ROOT version for TGraphErrors
 	GraphAsymmErrors         = 3  // ROOT version for TGraphAsymmErrors
 	GraphMultiErrors         = 1  // ROOT version for TGraphMultiErrors
+	Graph2D                  = 1  // ROOT version for TGraph2D
+	Graph2DErrors            = 1  // ROOT version for TGraph2DErrors
 	H1                       = 8  // ROOT version for TH1
 	H1C                      = 3  // ROOT version for TH1C
 	H1D                      = 3  // ROOT version for TH1D
@@ -103,6 +105,7 @@ const (
 	MultiGraph               = 2  // ROOT version for TMultiGraph
 	Profile                  = 7  // ROOT version for TProfile
 	Profile2D                = 8  // ROOT version for TProfile2D
+	Profile3D                = 8  // ROOT version for TProfile3D
 	Scatter                  = 2  // ROOT version for TScatter
 	Directory                = 5  // ROOT version for TDirectory
 	DirectoryFile            = 5  // ROOT version for TDirectoryFile
