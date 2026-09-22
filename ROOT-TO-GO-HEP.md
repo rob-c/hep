@@ -117,6 +117,74 @@ f.Put("h", rhist.NewH1DFrom(h))     // hbook -> TH1D
 h := obj.(*rhist.H1D).AsH1D()       // TH1D -> hbook
 ```
 
+The ROOT types in `rhist` can also be filled directly, if you would rather
+stay with the names you know. All fifteen of them -- `TH1C/S/I/F/D` and the
+same for 2 and 3 dimensions -- take the ROOT calls:
+
+```go
+h := rhist.NewH1D("h", "a title", 100, 0, 10)
+h.Fill(x, w)
+h.Scale(1 / h.Integral())
+fmt.Println(h.Mean(), h.StdDev(), h.MaximumBin())
+f.Put("h", h)
+```
+
+| ROOT | go-hep |
+|---|---|
+| `new TH1D("h","t",n,lo,hi)` | `rhist.NewH1D("h","t",n,lo,hi)` |
+| `new TH1D("h","t",n,edges)` | `rhist.NewH1DFromEdges("h","t",edges)` |
+| `h->FindBin(x)` | `h.FindBin(x)` |
+| `h->GetBinContent(i)`, `SetBinContent` | `h.BinContent(i)`, `h.SetBinContent(i, v)` |
+| `h->GetBinError(i)`, `SetBinError` | `h.BinError(i)`, `h.SetBinError(i, e)` |
+| `h->Scale(f)`, `h->Reset()` | `h.Scale(f)`, `h.Reset()` |
+| `h->GetMaximum()`, `GetMaximumBin()` | `h.Maximum()`, `h.MaximumBin()` |
+| `h2->ProjectionX()` | `h2.ProjectionX("px")` |
+
+Bins are numbered ROOT's way: 0 is the underflow, 1 to N the bins proper, and
+N+1 the overflow. Note that `StdDev` is ROOT's `GetStdDev`, the spread of the
+distribution as filled; `hbook`'s `XStdDev` carries Bessel's correction over
+the effective number of entries and so reads slightly larger.
+
+RNTuple
+-------
+
+RNTuple is the columnar format ROOT 7 introduced to replace TTree. `groot/exp/rntup`
+reads it: open one by name, bind its fields to Go values, walk the entries.
+
+```go
+r, err := rntup.Open("data.root", "ntuple")
+defer r.Close()
+
+var (
+        n  int32
+        xs []float32
+)
+rvars := []rntup.ReadVar{
+        {Name: "n", Value: &n},
+        {Name: "xs", Value: &xs},
+}
+
+err = r.Read(rvars, func(entry uint64) error {
+        fmt.Println(entry, n, xs)
+        return nil
+})
+```
+
+| ROOT | go-hep |
+|---|---|
+| `RNTupleReader::Open(name, file)` | `rntup.Open(file, name)` |
+| `reader->GetNEntries()` | `r.Entries()` |
+| `reader->GetView<T>("x")` | a `rntup.ReadVar` bound to a `*T` |
+| `reader->LoadEntry(i)` | `r.ReadRange(rvars, i, i+1, fn)` |
+| `reader->GetDescriptor()` | `r.Schema()` |
+
+`rntup.NewReadVars(r)` builds the list from the schema when you do not know it
+ahead of time, allocating the Go type each field calls for. The C++ types land
+where you would expect: `std::string` on `string`, `std::vector<T>` on `[]T`,
+`std::array<T,N>` on `[N]T`, a struct or a class and its bases on a struct,
+and `std::variant` on an `any`. You may bind a struct of your own instead, so
+long as its members line up.
+
 Fitting
 -------
 
@@ -262,8 +330,10 @@ Things ROOT does that this does not
 
 Stated plainly, so nobody finds out the hard way:
 
-- **RNTuple.** Only the anchor object is understood. A file whose data is in
-  RNTuple rather than TTree cannot be read yet.
+- **Writing RNTuple.** Reading one works (see below); writing does not.
+- **ROOT-streamed objects inside an RNTuple.** A field holding a user class
+  written through the ROOT streamer, rather than split into columns, is
+  refused rather than guessed at.
 - **Arrays in Draw expressions.** ROOT loops over an array branch implicitly;
   `rdraw` and `rdf` refuse one instead of guessing which loop was meant. Read
   it with `rtree.Reader` and fill by hand.
