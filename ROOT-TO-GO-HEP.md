@@ -7,10 +7,12 @@ installation, no C++, no bindings.
 
 The interactive prompt is `hep-shell`, which is to Go what `root` is to C++.
 Everything in this page can be typed at it directly, and the packages below
-are already imported when it starts.
+are already imported when it starts. `hep-kernel` is the same session behind
+a Jupyter notebook.
 
 ```
 go install go-hep.org/x/hep/cmd/hep-shell@latest
+go install go-hep.org/x/hep/cmd/hep-kernel@latest && hep-kernel -install
 ```
 
 Files
@@ -215,8 +217,8 @@ Stated plainly, so nobody finds out the hard way:
 - **Arbitrary C++ classes.** Types groot knows are read; a user class needs
   its streamer info to be turned into a Go type.
 - **`landau` and chebyshev** formula shapes.
-- **A C++ interpreter.** `hep-shell` interprets Go. A ROOT macro has to be
-  translated, and this page is the dictionary.
+- **A C++ interpreter.** `hep-shell` and `hep-kernel` interpret Go. A ROOT
+  macro has to be translated, and this page is the dictionary.
 - **RooFit, TMVA, GUI.** No equivalent.
 
 From Python
