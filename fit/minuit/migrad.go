@@ -200,7 +200,14 @@ func (m *Minuit) noFreeParameters() error {
 	m.fmin = m.eval(par)
 	m.edm = 0
 	m.status = Converged
-	m.cov = mat.NewSymDense(0, nil)
+
+	// No covariance, rather than an empty one: gonum will not make a
+	// zero-sized symmetric matrix, and there is nothing for one to hold.
+	// This is the ordinary state of affairs during a profile scan of a
+	// model with a single parameter, which fixes the only one there is.
+	m.cov = nil
+	m.hasHesse = false
+
 	return nil
 }
 

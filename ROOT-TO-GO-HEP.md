@@ -166,6 +166,8 @@ RooFit
 | `PiecewiseInterpolation`, `FlexibleInterpVar` | `pdf.NewMorph(nom, ups, downs, code)` |
 | HistFactory model | `pdf.NewBinned(npar, samples, cons)` |
 | `createProfile(par)` | `res.Scan(i, lo, hi, n)` |
+| `AsymptoticCalculator`, `HypoTestInverter` | `pdf.UpperLimit(res, par, lo, hi, n, cl, asimov)` |
+| discovery significance | `pdf.Discovery(res, par, nllNull)` |
 | `RooFitResult::correlationMatrix()` | `res.Minuit.Correlation()` |
 | `minos()` | `res.Minuit.Command("MINOS")` |
 
