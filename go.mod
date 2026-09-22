@@ -10,6 +10,7 @@ require (
 	codeberg.org/sbinet/npyio v0.14.0
 	git.sr.ht/~sbinet/epok v0.6.0
 	git.sr.ht/~sbinet/go-arrow v0.4.0
+	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/jcmturner/gokrb5/v8 v8.4.4
@@ -41,6 +42,7 @@ require (
 	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b // indirect
 	github.com/campoy/embedmd v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
+	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

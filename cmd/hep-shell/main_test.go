@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"go-hep.org/x/hep/cmd/internal/hepsh"
 )
 
 // run feeds the shell a session and returns everything it said.
@@ -216,7 +218,7 @@ func TestUnbalanced(t *testing.T) {
 		{`x := 1 /* { */`, false},
 		{`a := []int{1,`, true},
 	} {
-		if got := unbalanced(tc.src); got != tc.want {
+		if got := hepsh.Unbalanced(tc.src); got != tc.want {
 			t.Errorf("unbalanced(%q): got=%v, want=%v", tc.src, got, tc.want)
 		}
 	}
@@ -236,7 +238,7 @@ import "math"
 
 func f() {}
 `
-	body, imports := splitProgram(src)
+	body, imports := hepsh.SplitProgram(src)
 
 	want := []string{"fmt", "strings", "math"}
 	if len(imports) != len(want) {

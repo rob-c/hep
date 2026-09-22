@@ -36,33 +36,26 @@
 //
 // The interpreter is yaegi, which runs Go source in pure Go — there is no
 // C++, no LLVM and no ROOT anywhere in it. What it calls into is the
-// compiled go-hep, reached through the tables in internal/symbols.
+// compiled go-hep.
+//
+// hep-kernel is the same session behind a Jupyter notebook.
 package main
 
 import (
 	"bufio"
 	"flag"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
-	"path/filepath"
-	"reflect"
-	"slices"
-	"sort"
 	"strings"
 
-	"github.com/traefik/yaegi/interp"
-	"github.com/traefik/yaegi/stdlib"
 	"golang.org/x/term"
 
-	"go-hep.org/x/hep/cmd/hep-shell/internal/symbols"
+	"go-hep.org/x/hep/cmd/internal/hepsh"
 )
 
 func main() {
-	log := flag.String("e", "", "evaluate this and leave")
+	eval := flag.String("e", "", "evaluate this and leave")
 	quiet := flag.Bool("q", false, "no banner")
 	flag.Parse()
 
@@ -72,8 +65,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *log != "" {
-		if err := sh.eval(*log); err != nil {
+	if *eval != "" {
+		if err := sh.eval(*eval); err != nil {
 			fmt.Fprintf(os.Stderr, "hep-shell: %+v\n", err)
 			os.Exit(1)
 		}
@@ -81,7 +74,7 @@ func main() {
 	}
 
 	for _, fname := range flag.Args() {
-		if err := sh.run(fname); err != nil {
+		if err := sh.sess.Run(fname); err != nil {
 			fmt.Fprintf(os.Stderr, "hep-shell: %+v\n", err)
 			os.Exit(1)
 		}
@@ -93,93 +86,30 @@ func main() {
 	sh.loop()
 }
 
-// preloaded are the packages a session gets without asking.
-var preloaded = []string{
-	"fmt",
-	"math",
-	"os",
-	"go-hep.org/x/hep/hbook",
-	"go-hep.org/x/hep/hplot",
-	"go-hep.org/x/hep/fit",
-	"go-hep.org/x/hep/fit/minuit",
-	"go-hep.org/x/hep/groot",
-	"go-hep.org/x/hep/groot/rtree",
-	"go-hep.org/x/hep/groot/rhist",
-	"go-hep.org/x/hep/hbook/ntup/ntroot",
-	"go-hep.org/x/hep/hbook/rootcnv",
-}
-
 type shell struct {
-	ip  *interp.Interpreter
-	out io.Writer
-	err io.Writer
+	sess *hepsh.Session
+	out  io.Writer
+	err  io.Writer
 
 	// pipe reads lines when the input is not a terminal, where there is no
 	// line editing to do and every byte matters.
 	pipe *bufio.Reader
 
-	n       int      // how many lines have been accepted, as ROOT counts them
-	imports []string // what has been imported, in the order it was
-	decls   []string // the names the session has defined
+	n int // how many lines have been accepted, as ROOT counts them
 }
 
 func newShell(out, errw io.Writer) (*shell, error) {
-	sh := &shell{out: out, err: errw, pipe: bufio.NewReader(os.Stdin)}
-	if err := sh.reset(); err != nil {
+	sess, err := hepsh.New(out, errw)
+	if err != nil {
 		return nil, err
 	}
-	return sh, nil
-}
-
-// reset starts the session again, with nothing in it but the preloaded
-// packages.
-func (sh *shell) reset() error {
-	ip := interp.New(interp.Options{Stdout: sh.out, Stderr: sh.err})
-
-	err := ip.Use(stdlib.Symbols)
-	if err != nil {
-		return fmt.Errorf("could not load the standard library: %w", err)
-	}
-
-	err = ip.Use(symbols.Symbols)
-	if err != nil {
-		return fmt.Errorf("could not load go-hep: %w", err)
-	}
-
-	sh.ip = ip
-	sh.imports = nil
-	sh.decls = nil
-
-	for _, p := range preloaded {
-		if err := sh.importPkg(p); err != nil {
-			return fmt.Errorf("could not import %q: %w", p, err)
-		}
-	}
-
-	return nil
-}
-
-// importPkg brings a package into the session, and does nothing if it is
-// already there: importing twice is an error to the interpreter, and no news
-// at all to the person at the prompt.
-func (sh *shell) importPkg(path string) error {
-	if slices.Contains(sh.imports, path) {
-		return nil
-	}
-
-	_, err := sh.ip.Eval(fmt.Sprintf("import %q", path))
-	if err != nil {
-		return err
-	}
-
-	sh.imports = append(sh.imports, path)
-	return nil
+	return &shell{sess: sess, out: out, err: errw, pipe: bufio.NewReader(os.Stdin)}, nil
 }
 
 func (sh *shell) banner() {
 	fmt.Fprintf(sh.out, `   ------------------------------------------------------------
   | Welcome to hep-shell                                       |
-  | an interactive Go prompt, with go-hep already imported      |
+  | an interactive Go prompt, with go-hep already imported     |
   |                                                            |
   | Type Go and it runs. An expression prints its value.       |
   | .help lists the commands, .q leaves.                       |
@@ -244,7 +174,7 @@ func (sh *shell) loop() {
 
 		// hold off while the braces are still open: a function body or a
 		// loop arrives over several lines.
-		if unbalanced(src) {
+		if hepsh.Unbalanced(src) {
 			continue
 		}
 		pending = pending[:0]
@@ -277,107 +207,14 @@ func (sh *shell) readLine(lines *term.Terminal, prompt string) (string, error) {
 
 // eval runs a piece of Go and prints what it evaluated to, if anything.
 func (sh *shell) eval(src string) error {
-	v, err := sh.ip.Eval(src)
+	out, err := sh.sess.Eval(src)
 	if err != nil {
 		return err
 	}
-
-	sh.note(src)
-
-	if !v.IsValid() {
-		return nil
+	if out != "" {
+		fmt.Fprintln(sh.out, out)
 	}
-
-	// Only an expression has a value worth showing. A declaration, an
-	// assignment or a loop evaluates to something in yaegi too, but showing
-	// it would be answering a question nobody asked.
-	if !isExpr(src) {
-		return nil
-	}
-
-	fmt.Fprintf(sh.out, "(%s) %v\n", typeOf(v), format(v))
 	return nil
-}
-
-// isExpr reports whether src is an expression rather than a statement.
-//
-// It asks the Go parser rather than looking for ":=" and friends: "h.Fill(x)"
-// and "h, err = f()" and "for i := range 10 {}" are told apart by parsing
-// them, and not reliably by anything short of it.
-func isExpr(src string) bool {
-	_, err := parser.ParseExpr(strings.TrimSpace(src))
-	return err == nil
-}
-
-// typeOf names the type of a value the way Go does.
-func typeOf(v reflect.Value) string {
-	if !v.IsValid() {
-		return "<nil>"
-	}
-	return v.Type().String()
-}
-
-// maxPrint is how much of a value the shell will show before it stops. A
-// ROOT file or a tree printed whole is thousands of characters of internals,
-// which buries the answer rather than giving it.
-const maxPrint = 480
-
-// format prints a value, following a pointer to a struct so that a histogram
-// or a fit shows what it holds rather than its address.
-func format(v reflect.Value) string {
-	var s string
-	switch {
-	case v.Kind() == reflect.Ptr && !v.IsNil() && v.Elem().Kind() == reflect.Struct:
-		s = fmt.Sprintf("&%+v", v.Elem().Interface())
-	default:
-		s = fmt.Sprintf("%+v", v.Interface())
-	}
-
-	if len(s) > maxPrint {
-		s = s[:maxPrint] + "... (truncated)"
-	}
-	return s
-}
-
-// note remembers what a line brought into the session, for .ls and .imports.
-func (sh *shell) note(src string) {
-	s := strings.TrimSpace(src)
-
-	if strings.HasPrefix(s, "import ") {
-		p := strings.Trim(strings.TrimPrefix(s, "import "), `"`)
-		if !slices.Contains(sh.imports, p) {
-			sh.imports = append(sh.imports, p)
-		}
-		return
-	}
-
-	switch {
-	case strings.HasPrefix(s, "func "):
-		name := strings.TrimPrefix(s, "func ")
-		if i := strings.IndexAny(name, "("); i > 0 {
-			sh.decls = append(sh.decls, "func "+strings.TrimSpace(name[:i]))
-		}
-	case strings.HasPrefix(s, "type "):
-		name := strings.Fields(strings.TrimPrefix(s, "type "))
-		if len(name) > 0 {
-			sh.decls = append(sh.decls, "type "+name[0])
-		}
-	case strings.Contains(s, ":="):
-		// the variable a loop or an if declares belongs to it, not to the
-		// session: it is gone by the time the next line is typed.
-		for _, kw := range []string{"for ", "if ", "switch ", "select "} {
-			if strings.HasPrefix(s, kw) {
-				return
-			}
-		}
-		lhs := strings.TrimSpace(s[:strings.Index(s, ":=")])
-		for _, name := range strings.Split(lhs, ",") {
-			name = strings.TrimSpace(name)
-			if name != "" && name != "_" {
-				sh.decls = append(sh.decls, name)
-			}
-		}
-	}
 }
 
 // command runs one of the shell's own dot-commands, and says whether the
@@ -405,28 +242,27 @@ func (sh *shell) command(line string) (bool, error) {
 		if arg == "" {
 			return false, fmt.Errorf("%s needs a file", cmd)
 		}
-		return false, sh.run(arg)
+		return false, sh.sess.Run(arg)
 
 	case ".ls":
-		if len(sh.decls) == 0 {
+		decls := sh.sess.Decls()
+		if len(decls) == 0 {
 			fmt.Fprintln(sh.out, "  (nothing defined yet)")
 			return false, nil
 		}
-		names := append([]string(nil), sh.decls...)
-		sort.Strings(names)
-		for _, n := range unique(names) {
+		for _, n := range decls {
 			fmt.Fprintf(sh.out, "  %s\n", n)
 		}
 		return false, nil
 
 	case ".imports":
-		for _, p := range sh.imports {
+		for _, p := range sh.sess.Imports() {
 			fmt.Fprintf(sh.out, "  %s\n", p)
 		}
 		return false, nil
 
 	case ".reset":
-		err := sh.reset()
+		err := sh.sess.Reset()
 		if err != nil {
 			return false, err
 		}
@@ -436,221 +272,4 @@ func (sh *shell) command(line string) (bool, error) {
 	}
 
 	return false, fmt.Errorf("unknown command %q: try .help", cmd)
-}
-
-// run reads a file and evaluates it, the way ROOT runs a macro.
-//
-// A file that is a whole Go program has its package clause and imports taken
-// off first, since the session already is a program and already has them.
-func (sh *shell) run(fname string) error {
-	raw, err := os.ReadFile(fname)
-	if err != nil {
-		return fmt.Errorf("could not read %q: %w", fname, err)
-	}
-
-	src, imports := splitProgram(string(raw))
-
-	for _, p := range imports {
-		if err := sh.importPkg(p); err != nil {
-			return fmt.Errorf("%s: could not import %q: %w", filepath.Base(fname), p, err)
-		}
-	}
-
-	if strings.TrimSpace(src) == "" {
-		return nil
-	}
-
-	if _, err := sh.ip.Eval(src); err != nil {
-		return fmt.Errorf("%s: %w", filepath.Base(fname), err)
-	}
-
-	sh.noteFile(string(raw))
-	return nil
-}
-
-// noteFile records what a loaded file declared, so that .ls can say so.
-//
-// The file is parsed rather than scanned for keywords: a macro is a whole Go
-// file and the parser reads one properly.
-func (sh *shell) noteFile(src string) {
-	f, err := parser.ParseFile(token.NewFileSet(), "macro.go", src, parser.SkipObjectResolution)
-	if err != nil {
-		// it ran, so it parsed somewhere: nothing here is worth an error.
-		return
-	}
-
-	for _, d := range f.Decls {
-		switch d := d.(type) {
-		case *ast.FuncDecl:
-			if d.Recv == nil {
-				sh.decls = append(sh.decls, "func "+d.Name.Name)
-			}
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				switch spec := spec.(type) {
-				case *ast.TypeSpec:
-					sh.decls = append(sh.decls, "type "+spec.Name.Name)
-				case *ast.ValueSpec:
-					for _, name := range spec.Names {
-						if name.Name != "_" {
-							sh.decls = append(sh.decls, name.Name)
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-// splitProgram takes the package clause and the imports off a file, and
-// returns what is left along with the paths that were imported.
-func splitProgram(src string) (string, []string) {
-	var (
-		body    strings.Builder
-		imports []string
-		inBlock bool
-	)
-
-	for _, line := range strings.Split(src, "\n") {
-		s := strings.TrimSpace(line)
-
-		switch {
-		case inBlock:
-			if s == ")" {
-				inBlock = false
-				continue
-			}
-			if p := importPath(s); p != "" {
-				imports = append(imports, p)
-			}
-			continue
-
-		case strings.HasPrefix(s, "package "):
-			continue
-
-		case s == "import (":
-			inBlock = true
-			continue
-
-		case strings.HasPrefix(s, "import "):
-			if p := importPath(strings.TrimPrefix(s, "import ")); p != "" {
-				imports = append(imports, p)
-			}
-			continue
-		}
-
-		body.WriteString(line)
-		body.WriteString("\n")
-	}
-
-	return body.String(), imports
-}
-
-// importPath pulls the path out of one line of an import, ignoring any name
-// in front of it.
-func importPath(s string) string {
-	i := strings.Index(s, `"`)
-	if i < 0 {
-		return ""
-	}
-	j := strings.Index(s[i+1:], `"`)
-	if j < 0 {
-		return ""
-	}
-	return s[i+1 : i+1+j]
-}
-
-// unbalanced reports whether what has been typed has brackets still open, and
-// so wants another line before it can be run.
-//
-// It counts brackets outside of strings, runes and comments, which is enough
-// to tell a half-typed function body from a finished one.
-func unbalanced(src string) bool {
-	var (
-		depth               int
-		inStr, inChr, inRaw bool
-		inLine, inBlock     bool
-	)
-
-	for i := 0; i < len(src); i++ {
-		c := src[i]
-
-		switch {
-		case inLine:
-			if c == '\n' {
-				inLine = false
-			}
-			continue
-
-		case inBlock:
-			if c == '*' && i+1 < len(src) && src[i+1] == '/' {
-				inBlock = false
-				i++
-			}
-			continue
-
-		case inRaw:
-			if c == '`' {
-				inRaw = false
-			}
-			continue
-
-		case inStr:
-			switch c {
-			case '\\':
-				i++
-			case '"':
-				inStr = false
-			}
-			continue
-
-		case inChr:
-			switch c {
-			case '\\':
-				i++
-			case '\'':
-				inChr = false
-			}
-			continue
-		}
-
-		switch c {
-		case '/':
-			if i+1 < len(src) {
-				switch src[i+1] {
-				case '/':
-					inLine = true
-					i++
-				case '*':
-					inBlock = true
-					i++
-				}
-			}
-		case '"':
-			inStr = true
-		case '\'':
-			inChr = true
-		case '`':
-			inRaw = true
-		case '{', '(', '[':
-			depth++
-		case '}', ')', ']':
-			depth--
-		}
-	}
-
-	return depth > 0
-}
-
-func unique(sorted []string) []string {
-	o := sorted[:0]
-	var prev string
-	for i, s := range sorted {
-		if i > 0 && s == prev {
-			continue
-		}
-		o = append(o, s)
-		prev = s
-	}
-	return o
 }
