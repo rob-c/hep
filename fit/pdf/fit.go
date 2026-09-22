@@ -151,6 +151,15 @@ type Result struct {
 
 	// NLL is the negative log-likelihood at the minimum.
 	NLL float64
+
+	// Channels are the datasets a simultaneous fit was made of, and are nil
+	// for a fit to one.
+	Channels []Channel
+
+	// what the fit was, kept so that it can be done again: a profile scan
+	// is a fit per point and has to build its own minimisers.
+	fcn  minuit.FCN
+	pars []minuit.Par
 }
 
 // Values returns the fitted parameters.
@@ -165,6 +174,9 @@ func (r *Result) Value(i int) (val, err float64) {
 // Func returns the fitted density as a function of x alone, scaled so that
 // it can be drawn on top of a histogram of n entries binned at width w.
 func (r *Result) Func(scale float64) func(float64) float64 {
+	if r.PDF == nil {
+		return func(float64) float64 { return 0 }
+	}
 	par := r.Values()
 
 	if sum, ok := r.PDF.(*Sum); ok && sum.Extended() {
@@ -220,6 +232,16 @@ func FitBinned(h *hbook.H1D, p PDF, lo, hi float64, pars []minuit.Par) (*Result,
 	return fit(BinnedNLL(h, p, lo, hi), p, lo, hi, pars)
 }
 
+// Fit minimises a likelihood that was built by hand, which is what a
+// constrained one is: Constrain returns a likelihood and not a density, so
+// there is no FitUnbinned to hand it to.
+//
+// The result knows no density, so Func and Component have nothing to return,
+// but the parameters, the covariance and a profile scan all work.
+func Fit(fcn minuit.FCN, pars []minuit.Par) (*Result, error) {
+	return fitFCN(fcn, nil, 0, 0, pars)
+}
+
 func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, error) {
 	if len(pars) != p.NPar() {
 		return nil, fmt.Errorf(
@@ -227,7 +249,15 @@ func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, err
 			p.Name(), p.NPar(), len(pars),
 		)
 	}
+	return fitFCN(fcn, p, lo, hi, pars)
+}
 
+// fitFCN minimises a likelihood over the given parameters.
+//
+// It is fit without the check that the parameters match a density's, since a
+// simultaneous fit has parameters spread across several densities and
+// matching none of them one for one.
+func fitFCN(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, error) {
 	m := minuit.New(len(pars))
 	m.SetPrintLevel(-1)
 	m.SetFCN(fcn)
@@ -238,7 +268,10 @@ func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, err
 		return nil, err
 	}
 
-	names := p.ParNames()
+	var names []string
+	if p != nil {
+		names = p.ParNames()
+	}
 	for i, par := range pars {
 		name := par.Name
 		if name == "" && i < len(names) {
@@ -254,7 +287,7 @@ func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, err
 		}
 	}
 
-	res := &Result{Minuit: m, PDF: p, Lo: lo, Hi: hi}
+	res := &Result{Minuit: m, PDF: p, Lo: lo, Hi: hi, fcn: fcn, pars: pars}
 
 	err = m.Command("MIGRAD")
 	if err != nil {
