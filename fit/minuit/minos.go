@@ -38,7 +38,7 @@ func (m *Minuit) minos(maxcalls int, which []int) error {
 		which = free
 	}
 	if maxcalls <= 0 {
-		maxcalls = 200 + 100*len(free) + 5*len(free)*len(free)
+		maxcalls = defaultCalls(len(free))
 	}
 
 	var (

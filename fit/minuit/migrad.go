@@ -31,7 +31,7 @@ func (m *Minuit) migrad(maxcalls int, tol float64) error {
 		tol = m.tol
 	}
 	if maxcalls <= 0 {
-		maxcalls = 200 + 100*len(free) + 5*len(free)*len(free)
+		maxcalls = defaultCalls(len(free))
 	}
 	budget := m.ncalls + maxcalls
 
@@ -177,6 +177,19 @@ func (m *Minuit) initMetric(x []float64, f float64, free []int) *mat.SymDense {
 	}
 
 	return v
+}
+
+// defaultCalls is how many function calls a command gets when it is not told.
+//
+// TMinuit's own default is 200 + 100*n + 5*n^2. This is more generous,
+// because the two minimisers do not spend their calls the same way: the
+// gradient here is a central difference, which costs two calls per parameter
+// where a forward one costs one, and the line search here tries the step
+// before it refines it. Matching TMinuit's number while being less frugal
+// than TMinuit would only mean fits that stop short of the minimum and
+// report it, which is the worst of both.
+func defaultCalls(n int) int {
+	return 500 + 200*n + 20*n*n
 }
 
 func (m *Minuit) noFreeParameters() error {

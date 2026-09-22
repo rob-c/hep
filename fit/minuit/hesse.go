@@ -29,7 +29,7 @@ func (m *Minuit) hesse(maxcalls int) error {
 		return m.noFreeParameters()
 	}
 	if maxcalls <= 0 {
-		maxcalls = 200 + 100*len(free) + 5*len(free)*len(free)
+		maxcalls = defaultCalls(len(free))
 	}
 	budget := m.ncalls + maxcalls
 
