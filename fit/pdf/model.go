@@ -121,6 +121,15 @@ func Generate(rnd *rand.Rand, p PDF, lo, hi float64, par []float64, n int) ([]fl
 		return nil, fmt.Errorf("pdf: cannot generate %d values", n)
 	}
 
+	// What to sample. A sum's coefficients multiply components that have
+	// been normalised first, so sampling its raw Shape would draw the wrong
+	// mixture: a component with a large integral would be over-represented
+	// by exactly that integral.
+	shape := func(x float64) float64 { return p.Shape(x, par) }
+	if sum, ok := p.(*Sum); ok {
+		shape = func(x float64) float64 { return sum.evalAt(x, lo, hi, par) }
+	}
+
 	// how high the density gets, from a scan fine enough to find a peak
 	// that a fit would care about.
 	const scan = 10000
@@ -129,7 +138,7 @@ func Generate(rnd *rand.Rand, p PDF, lo, hi float64, par []float64, n int) ([]fl
 		dx   = (hi - lo) / scan
 	)
 	for i := range scan + 1 {
-		v := p.Shape(lo+float64(i)*dx, par)
+		v := shape(lo + float64(i)*dx)
 		if v > peak {
 			peak = v
 		}
@@ -148,7 +157,7 @@ func Generate(rnd *rand.Rand, p PDF, lo, hi float64, par []float64, n int) ([]fl
 	o := make([]float64, 0, n)
 	for len(o) < n {
 		x := lo + rnd.Float64()*(hi-lo)
-		if rnd.Float64()*peak < p.Shape(x, par) {
+		if rnd.Float64()*peak < shape(x) {
 			o = append(o, x)
 		}
 	}

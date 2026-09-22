@@ -16,6 +16,62 @@ import (
 // unit is what a likelihood gives, where a chi-square gives one.
 const errorDef = 0.5
 
+// FitOption changes how a fit is run.
+type FitOption func(*fitCfg)
+
+type fitCfg struct {
+	maxCalls int
+	tol      float64
+	strategy int
+	print    int
+}
+
+func newFitCfg(opts []FitOption) *fitCfg {
+	cfg := &fitCfg{print: -1, strategy: -1}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return cfg
+}
+
+// MaxCalls raises the number of function calls a fit may spend.
+//
+// The default suits a handful of parameters. A fit with many of them, or with
+// a likelihood over many events, can want far more, and the way it tells you
+// is by stopping short and saying the call limit was reached.
+func MaxCalls(n int) FitOption {
+	return func(cfg *fitCfg) { cfg.maxCalls = n }
+}
+
+// Tolerance sets how close to the minimum a fit must get before it stops. It
+// stops when the estimated distance to the minimum falls below
+// 1e-3 * tolerance * UP.
+func Tolerance(v float64) FitOption {
+	return func(cfg *fitCfg) { cfg.tol = v }
+}
+
+// Strategy sets how much work the minimiser puts into its derivatives: 0 for
+// the least, 1 for the default, 2 for the most.
+func Strategy(n int) FitOption {
+	return func(cfg *fitCfg) { cfg.strategy = n }
+}
+
+// PrintLevel sets how much the minimiser says for itself. A fit says nothing
+// unless asked.
+func PrintLevel(n int) FitOption {
+	return func(cfg *fitCfg) { cfg.print = n }
+}
+
+// apply hands the options to a minimiser and returns the arguments MIGRAD
+// should be run with.
+func (cfg *fitCfg) apply(m *minuit.Minuit) []float64 {
+	m.SetPrintLevel(cfg.print)
+	if cfg.strategy >= 0 {
+		_ = m.SetStrategy(cfg.strategy)
+	}
+	return []float64{float64(cfg.maxCalls), cfg.tol}
+}
+
 // NLL returns the negative log-likelihood of a density against unbinned data
 // over [lo, hi].
 //
@@ -46,8 +102,11 @@ func NLL(data []float64, p PDF, lo, hi float64) minuit.FCN {
 			switch {
 			case extended:
 				// each component normalised on its own, so that a yield
-				// counts events.
+				// counts events. The nu that this is short of is added once
+				// at the end rather than N times here.
 				f = sum.NormShape(x, lo, hi, par)
+			case isSum:
+				f = sum.evalAt(x, lo, hi, par)
 			default:
 				f = Eval(p, x, lo, hi, par)
 			}
@@ -112,6 +171,8 @@ func BinnedNLL(h *hbook.H1D, p PDF, lo, hi float64) minuit.FCN {
 			switch {
 			case extended:
 				f = sum.NormShape(b.x, lo, hi, par)
+			case isSum:
+				f = sum.evalAt(b.x, lo, hi, par)
 			default:
 				f = Eval(p, b.x, lo, hi, par)
 			}
@@ -179,9 +240,14 @@ func (r *Result) Func(scale float64) func(float64) float64 {
 	}
 	par := r.Values()
 
-	if sum, ok := r.PDF.(*Sum); ok && sum.Extended() {
+	if sum, ok := r.PDF.(*Sum); ok {
+		if sum.Extended() {
+			return func(x float64) float64 {
+				return scale * sum.NormShape(x, r.Lo, r.Hi, par)
+			}
+		}
 		return func(x float64) float64 {
-			return scale * sum.NormShape(x, r.Lo, r.Hi, par)
+			return scale * sum.evalAt(x, r.Lo, r.Hi, par)
 		}
 	}
 	return Func(r.PDF, r.Lo, r.Hi, par, scale)
@@ -216,20 +282,20 @@ func (r *Result) Component(i int, scale float64) (func(float64) float64, error) 
 
 // FitUnbinned fits a density to unbinned data over [lo, hi] by maximum
 // likelihood.
-func FitUnbinned(data []float64, p PDF, lo, hi float64, pars []minuit.Par) (*Result, error) {
+func FitUnbinned(data []float64, p PDF, lo, hi float64, pars []minuit.Par, opts ...FitOption) (*Result, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("pdf: no data to fit")
 	}
-	return fit(NLL(data, p, lo, hi), p, lo, hi, pars)
+	return fit(NLL(data, p, lo, hi), p, lo, hi, pars, opts...)
 }
 
 // FitBinned fits a density to a histogram over [lo, hi] by maximum
 // likelihood, treating each bin as a Poisson count.
-func FitBinned(h *hbook.H1D, p PDF, lo, hi float64, pars []minuit.Par) (*Result, error) {
+func FitBinned(h *hbook.H1D, p PDF, lo, hi float64, pars []minuit.Par, opts ...FitOption) (*Result, error) {
 	if h.Entries() == 0 {
 		return nil, fmt.Errorf("pdf: the histogram is empty")
 	}
-	return fit(BinnedNLL(h, p, lo, hi), p, lo, hi, pars)
+	return fit(BinnedNLL(h, p, lo, hi), p, lo, hi, pars, opts...)
 }
 
 // Fit minimises a likelihood that was built by hand, which is what a
@@ -238,18 +304,18 @@ func FitBinned(h *hbook.H1D, p PDF, lo, hi float64, pars []minuit.Par) (*Result,
 //
 // The result knows no density, so Func and Component have nothing to return,
 // but the parameters, the covariance and a profile scan all work.
-func Fit(fcn minuit.FCN, pars []minuit.Par) (*Result, error) {
-	return fitFCN(fcn, nil, 0, 0, pars)
+func Fit(fcn minuit.FCN, pars []minuit.Par, opts ...FitOption) (*Result, error) {
+	return fitFCN(fcn, nil, 0, 0, pars, opts...)
 }
 
-func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, error) {
+func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par, opts ...FitOption) (*Result, error) {
 	if len(pars) != p.NPar() {
 		return nil, fmt.Errorf(
 			"pdf: %s takes %d parameters, got %d",
 			p.Name(), p.NPar(), len(pars),
 		)
 	}
-	return fitFCN(fcn, p, lo, hi, pars)
+	return fitFCN(fcn, p, lo, hi, pars, opts...)
 }
 
 // fitFCN minimises a likelihood over the given parameters.
@@ -257,10 +323,12 @@ func fit(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, err
 // It is fit without the check that the parameters match a density's, since a
 // simultaneous fit has parameters spread across several densities and
 // matching none of them one for one.
-func fitFCN(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, error) {
+func fitFCN(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par, opts ...FitOption) (*Result, error) {
+	cfg := newFitCfg(opts)
+
 	m := minuit.New(len(pars))
-	m.SetPrintLevel(-1)
 	m.SetFCN(fcn)
+	args := cfg.apply(m)
 
 	// a likelihood, not a chi-square: one sigma is a rise of half a unit.
 	err := m.SetErrorDef(errorDef)
@@ -289,7 +357,7 @@ func fitFCN(fcn minuit.FCN, p PDF, lo, hi float64, pars []minuit.Par) (*Result, 
 
 	res := &Result{Minuit: m, PDF: p, Lo: lo, Hi: hi, fcn: fcn, pars: pars}
 
-	err = m.Command("MIGRAD")
+	err = m.Command("MIGRAD", args...)
 	if err != nil {
 		return res, fmt.Errorf("pdf: MIGRAD failed: %w", err)
 	}

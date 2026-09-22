@@ -371,6 +371,25 @@ func (s *Sum) NormShape(x, lo, hi float64, par []float64) float64 {
 	return o
 }
 
+// evalAt returns the normalised density of the sum at x.
+//
+// A coefficient multiplies a component that has been normalised first,
+// whether it is a yield or a fraction, so that it counts events either way.
+// Shape cannot do this: normalising a component needs the range, and Shape
+// is not given one.
+func (s *Sum) evalAt(x, lo, hi float64, par []float64) float64 {
+	v := s.NormShape(x, lo, hi, par)
+	if !s.extended {
+		return v
+	}
+
+	nu := s.Yield(par)
+	if nu <= 0 {
+		return 0
+	}
+	return v / nu
+}
+
 // Yield returns the total number of events a sum expects, which is the sum
 // of its coefficients when they are yields and meaningless when they are
 // fractions.
