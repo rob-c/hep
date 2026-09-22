@@ -1160,6 +1160,24 @@ func (tsa *StreamerArtificial) UnmarshalROOT(r *rbytes.RBuffer) error {
 	return r.Err()
 }
 
+// CxxCheckSum returns the checksum C++ ROOT computes for a class of the given
+// name, made of the given streamer elements.
+//
+// It follows TClass::GetCheckSum, which walks the class name, then each base
+// class — its name, then its own checksum — then each persistent, non-static
+// data member: its name, its type name, its array dimensions and the counter
+// named in its title, if it has one. An enum member contributes an extra 1
+// before its name.
+//
+// ROOT computes this from a class' dictionary, where groot only has the
+// streamer elements. The two agree for a class whose streamer mirrors its
+// data members, which is every class ROOT generates a streamer for. They part
+// ways for the handful that stream themselves by hand — TString, TSeqCollection
+// and their kind — whose members never appear as streamer elements at all.
+func CxxCheckSum(name string, elems []rbytes.StreamerElement) uint32 {
+	return genChecksum(name, elems)
+}
+
 func genChecksum(name string, elems []rbytes.StreamerElement) uint32 {
 	var (
 		id   uint32
@@ -1174,11 +1192,25 @@ func genChecksum(name string, elems []rbytes.StreamerElement) uint32 {
 
 	// FIXME(sbinet): handle base-classes for std::pair<K,V>
 	for _, se := range elems {
-		//if se, ok := se.(*StreamerBase); ok {
-		//	// FIXME(sbinet): get base checksum.
-		//}
+		if se, ok := se.(*StreamerBase); ok {
+			hash(se.Name())
+			// a base contributes its own checksum on top of its name.
+			// Look it up by the version this class was compiled against,
+			// falling back on the newest one we know of.
+			si, ok := StreamerInfos.Get(se.Name(), se.Base())
+			if !ok {
+				si, ok = StreamerInfos.Get(se.Name(), -1)
+			}
+			if ok {
+				id = id*3 + uint32(si.CheckSum())
+			}
+			continue
+		}
 
-		// FIXME(sbinet): add enum handling.
+		if isEnumElem(se) {
+			id = id*3 + 1
+		}
+
 		hash(se.Name())
 		hash(se.TypeName())
 
@@ -1195,6 +1227,21 @@ func genChecksum(name string, elems []rbytes.StreamerElement) uint32 {
 	}
 
 	return id
+}
+
+// isEnumElem reports whether se streams a C++ enum.
+//
+// An enum reaches the file as an int, so what gives it away is the type name:
+// an int that does not call itself one.
+func isEnumElem(se rbytes.StreamerElement) bool {
+	if se.Type() != rmeta.Int {
+		return false
+	}
+	switch se.TypeName() {
+	case "int", "Int_t", "unsigned int", "UInt_t":
+		return false
+	}
+	return true
 }
 
 func init() {
