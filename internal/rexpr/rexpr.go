@@ -2,7 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package rdraw
+// Package rexpr evaluates small arithmetic expressions over named values.
+//
+// It is the language a cut or a column definition is written in: arithmetic
+// over names, the usual comparisons, && and ||, and a library of maths
+// functions that answer to their ROOT names as well as their Go ones.
+//
+// Parsing is go/parser's. Such an expression is arithmetic, and Go and C++
+// spell arithmetic the same way, so the only translation needed is "::" to
+// "." for the namespace ROOT's maths library sits in.
+package rexpr // import "go-hep.org/x/hep/internal/rexpr"
 
 import (
 	"fmt"
@@ -14,29 +23,29 @@ import (
 	"strings"
 )
 
-// expr is a compiled expression over the branches of a tree.
-type expr struct {
+// Expr is a compiled expression.
+type Expr struct {
 	src    string
 	node   ast.Expr
 	idents []string // the branch names it reads, in the order first seen
 }
 
-// newExpr compiles an expression over branch names.
+// New compiles an expression over named values.
 //
 // The expression is parsed by go/parser, which accepts the arithmetic,
 // comparisons and calls that a Draw expression is made of, and which spares
 // this package a lexer of its own. What it does not accept is C++ that is not
 // also Go — "&&" and "||" are the same in both, but a cast written "(int)x"
 // is not, and neither is "x ? a : b".
-func newExpr(src string) (*expr, error) {
+func New(src string) (*Expr, error) {
 	// C++ says TMath::Abs where Go says TMath.Abs, and the parser below
 	// only knows the second. Nothing else in an expression uses "::".
 	node, err := parser.ParseExpr(strings.ReplaceAll(src, "::", "."))
 	if err != nil {
-		return nil, fmt.Errorf("rdraw: could not parse %q: %w", src, err)
+		return nil, fmt.Errorf("rexpr: could not parse %q: %w", src, err)
 	}
 
-	e := &expr{src: src, node: node}
+	e := &Expr{src: src, node: node}
 	err = e.scan(node)
 	if err != nil {
 		return nil, err
@@ -47,14 +56,14 @@ func newExpr(src string) (*expr, error) {
 // scan walks the tree, collecting the names it reads and refusing what this
 // package cannot evaluate, so that a bad expression is caught once here
 // rather than once per entry.
-func (e *expr) scan(node ast.Expr) error {
+func (e *Expr) scan(node ast.Expr) error {
 	switch n := node.(type) {
 	case *ast.BasicLit:
 		switch n.Kind {
 		case token.INT, token.FLOAT:
 			return nil
 		}
-		return fmt.Errorf("rdraw: %q is not a number", n.Value)
+		return fmt.Errorf("rexpr: %q is not a number", n.Value)
 
 	case *ast.Ident:
 		if _, ok := consts[n.Name]; ok {
@@ -71,7 +80,7 @@ func (e *expr) scan(node ast.Expr) error {
 		case token.SUB, token.ADD, token.NOT:
 			return e.scan(n.X)
 		}
-		return fmt.Errorf("rdraw: unsupported unary operator %q", n.Op)
+		return fmt.Errorf("rexpr: unsupported unary operator %q", n.Op)
 
 	case *ast.BinaryExpr:
 		switch n.Op {
@@ -83,7 +92,7 @@ func (e *expr) scan(node ast.Expr) error {
 			}
 			return e.scan(n.Y)
 		}
-		return fmt.Errorf("rdraw: unsupported operator %q", n.Op)
+		return fmt.Errorf("rexpr: unsupported operator %q", n.Op)
 
 	case *ast.CallExpr:
 		name, err := callName(n)
@@ -92,11 +101,11 @@ func (e *expr) scan(node ast.Expr) error {
 		}
 		fct, ok := funcs[name]
 		if !ok {
-			return fmt.Errorf("rdraw: unknown function %q", name)
+			return fmt.Errorf("rexpr: unknown function %q", name)
 		}
 		if fct.arity >= 0 && len(n.Args) != fct.arity {
 			return fmt.Errorf(
-				"rdraw: %q takes %d argument(s), got %d",
+				"rexpr: %q takes %d argument(s), got %d",
 				name, fct.arity, len(n.Args),
 			)
 		}
@@ -112,16 +121,16 @@ func (e *expr) scan(node ast.Expr) error {
 		// call: the whole thing names one leaf.
 		name, ok := selectorName(n)
 		if !ok {
-			return fmt.Errorf("rdraw: unsupported expression %q", exprString(n))
+			return fmt.Errorf("rexpr: unsupported expression %q", exprString(n))
 		}
 		e.addIdent(name)
 		return nil
 	}
 
-	return fmt.Errorf("rdraw: unsupported expression %q", exprString(node))
+	return fmt.Errorf("rexpr: unsupported expression %q", exprString(node))
 }
 
-func (e *expr) addIdent(name string) {
+func (e *Expr) addIdent(name string) {
 	for _, id := range e.idents {
 		if id == name {
 			return
@@ -130,8 +139,14 @@ func (e *expr) addIdent(name string) {
 	e.idents = append(e.idents, name)
 }
 
-// eval computes the expression, reading each branch through vals.
-func (e *expr) eval(vals map[string]float64) (float64, error) {
+// Idents returns the names the expression reads, in the order first seen.
+func (e *Expr) Idents() []string { return e.idents }
+
+// String returns the expression as it was written.
+func (e *Expr) String() string { return e.src }
+
+// Eval computes the expression, looking each name up in vals.
+func (e *Expr) Eval(vals map[string]float64) (float64, error) {
 	return evalNode(e.node, vals)
 }
 
@@ -140,7 +155,7 @@ func evalNode(node ast.Expr, vals map[string]float64) (float64, error) {
 	case *ast.BasicLit:
 		v, err := strconv.ParseFloat(n.Value, 64)
 		if err != nil {
-			return 0, fmt.Errorf("rdraw: could not read the number %q: %w", n.Value, err)
+			return 0, fmt.Errorf("rexpr: could not read the number %q: %w", n.Value, err)
 		}
 		return v, nil
 
@@ -150,7 +165,7 @@ func evalNode(node ast.Expr, vals map[string]float64) (float64, error) {
 		}
 		v, ok := vals[n.Name]
 		if !ok {
-			return 0, fmt.Errorf("rdraw: no branch named %q", n.Name)
+			return 0, fmt.Errorf("rexpr: no branch named %q", n.Name)
 		}
 		return v, nil
 
@@ -158,7 +173,7 @@ func evalNode(node ast.Expr, vals map[string]float64) (float64, error) {
 		name, _ := selectorName(n)
 		v, ok := vals[name]
 		if !ok {
-			return 0, fmt.Errorf("rdraw: no branch named %q", name)
+			return 0, fmt.Errorf("rexpr: no branch named %q", name)
 		}
 		return v, nil
 
@@ -261,7 +276,7 @@ func evalNode(node ast.Expr, vals map[string]float64) (float64, error) {
 		return funcs[name].fct(args), nil
 	}
 
-	return 0, fmt.Errorf("rdraw: unsupported expression %q", exprString(node))
+	return 0, fmt.Errorf("rexpr: unsupported expression %q", exprString(node))
 }
 
 // callName returns the name a call expression calls, with any "TMath::"
@@ -279,7 +294,7 @@ func callName(n *ast.CallExpr) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("rdraw: unsupported call %q", exprString(n.Fun))
+	return "", fmt.Errorf("rexpr: unsupported call %q", exprString(n.Fun))
 }
 
 // selectorName flattens a dotted name such as "mu.pt" into one string, and

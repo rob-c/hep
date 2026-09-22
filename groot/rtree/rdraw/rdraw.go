@@ -39,6 +39,7 @@ import (
 
 	"go-hep.org/x/hep/groot/rtree"
 	"go-hep.org/x/hep/hbook"
+	"go-hep.org/x/hep/internal/rexpr"
 )
 
 // Option configures a Draw.
@@ -279,9 +280,9 @@ func newHist(bins [3]binning, rank int, expr string, cfg *config) (hbook.Object,
 
 // evaluator reads the branches an expression needs and evaluates it.
 type evaluator struct {
-	axes   []*expr
-	cut    *expr
-	weight *expr
+	axes   []*rexpr.Expr
+	cut    *rexpr.Expr
+	weight *rexpr.Expr
 
 	rvars []rtree.ReadVar
 	vals  map[string]float64
@@ -295,15 +296,15 @@ func newEvaluator(t rtree.Tree, axes []string, cfg *config) (*evaluator, error) 
 	ev := &evaluator{vals: make(map[string]float64)}
 
 	var idents []string
-	add := func(src string) (*expr, error) {
+	add := func(src string) (*rexpr.Expr, error) {
 		if src == "" {
 			return nil, nil
 		}
-		e, err := newExpr(src)
+		e, err := rexpr.New(src)
 		if err != nil {
 			return nil, err
 		}
-		idents = append(idents, e.idents...)
+		idents = append(idents, e.Idents()...)
 		return e, nil
 	}
 
@@ -390,7 +391,12 @@ func readerOf(ptr any) (func() float64, error) {
 		return func() float64 { return float64(v.Uint()) }, nil
 
 	case reflect.Bool:
-		return func() float64 { return b2f(v.Bool()) }, nil
+		return func() float64 {
+			if v.Bool() {
+				return 1
+			}
+			return 0
+		}, nil
 
 	case reflect.Slice, reflect.Array:
 		return nil, fmt.Errorf(
@@ -421,7 +427,7 @@ func (ev *evaluator) run(t rtree.Tree, cfg *config, fill func(vs []float64, w fl
 		}
 
 		if ev.cut != nil {
-			keep, err := ev.cut.eval(ev.vals)
+			keep, err := ev.cut.Eval(ev.vals)
 			if err != nil {
 				return err
 			}
@@ -432,14 +438,14 @@ func (ev *evaluator) run(t rtree.Tree, cfg *config, fill func(vs []float64, w fl
 
 		w := 1.0
 		if ev.weight != nil {
-			w, err = ev.weight.eval(ev.vals)
+			w, err = ev.weight.Eval(ev.vals)
 			if err != nil {
 				return err
 			}
 		}
 
 		for i, e := range ev.axes {
-			v, err := e.eval(ev.vals)
+			v, err := e.Eval(ev.vals)
 			if err != nil {
 				return err
 			}
