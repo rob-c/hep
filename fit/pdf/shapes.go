@@ -496,3 +496,214 @@ func simpsonFixed(f func(float64) float64, lo, hi float64, n int) float64 {
 	}
 	return sum * h / 3
 }
+
+// --- Bernstein ---
+
+type bernstein struct {
+	n      int
+	lo, hi float64
+	binom  []float64
+}
+
+// Bernstein returns a Bernstein polynomial of degree n over [lo, hi], with
+// the n+1 coefficients as its parameters.
+//
+// Every basis function of a Bernstein polynomial is positive on the interval,
+// so a set of non-negative coefficients gives a density that is positive
+// everywhere — which a plain polynomial of the same degree does not, and
+// which is why this is what a smooth background is usually written as.
+//
+// Its integral is trivially exact: each basis function integrates to the same
+// (hi-lo)/(n+1), so the integral is that times the sum of the coefficients.
+func Bernstein(n int, lo, hi float64) PDF {
+	if n < 0 {
+		panic(fmt.Errorf("pdf: a Bernstein polynomial needs a degree of at least 0, got %d", n))
+	}
+	if hi <= lo {
+		panic(fmt.Errorf("pdf: a Bernstein polynomial needs lo < hi, got [%v, %v]", lo, hi))
+	}
+
+	// the binomial coefficients, by Pascal's rule rather than by factorials,
+	// which overflow long before the degree gets interesting.
+	binom := make([]float64, n+1)
+	binom[0] = 1
+	for i := 1; i <= n; i++ {
+		for j := i; j > 0; j-- {
+			binom[j] += binom[j-1]
+		}
+	}
+
+	return bernstein{n: n, lo: lo, hi: hi, binom: binom}
+}
+
+func (b bernstein) Name() string { return fmt.Sprintf("bernstein%d", b.n) }
+
+func (b bernstein) ParNames() []string {
+	o := make([]string, b.n+1)
+	for i := range o {
+		o[i] = fmt.Sprintf("b%d", i)
+	}
+	return o
+}
+
+func (b bernstein) NPar() int { return b.n + 1 }
+
+func (b bernstein) Shape(x float64, par []float64) float64 {
+	t := (x - b.lo) / (b.hi - b.lo)
+	if t < 0 || t > 1 {
+		return 0
+	}
+
+	var (
+		o float64
+		u = 1.0 // t^i
+	)
+	for i := range b.n + 1 {
+		o += par[i] * b.binom[i] * u * math.Pow(1-t, float64(b.n-i))
+		u *= t
+	}
+	if o < 0 {
+		return 0
+	}
+	return o
+}
+
+// Integral is exact over the whole interval and by quadrature over part of
+// it, a partial Bernstein integral having no such tidy form.
+func (b bernstein) Integral(lo, hi float64, par []float64) float64 {
+	if lo <= b.lo && hi >= b.hi {
+		var sum float64
+		for i := range b.n + 1 {
+			sum += par[i]
+		}
+		return sum * (b.hi - b.lo) / float64(b.n+1)
+	}
+	return simpson(func(x float64) float64 { return b.Shape(x, par) }, lo, hi)
+}
+
+// --- kernel density estimate ---
+
+type keys struct {
+	grid   []float64
+	lo, hi float64
+	step   float64
+}
+
+// Keys returns a kernel density estimate of a sample, as RooKeysPdf does: a
+// smooth density built from events without binning them.
+//
+// It is how a template is made from a simulation too small to bin finely: a
+// gaussian is laid over each event and the sum of them is the density.
+//
+// The bandwidth is Silverman's rule, 1.06 * sigma * n^(-1/5), times the scale
+// given — one for the rule as it stands, more to smooth further, less to
+// follow the sample more closely. The estimate is built onto a grid once and
+// read off it after, since summing over every event at every call would make
+// it useless to fit with.
+//
+// A kernel density estimate leaks across the ends of the range, where there
+// is no sample to balance it. Keys reflects the sample in both ends, which
+// holds the density up where it would otherwise sag.
+func Keys(data []float64, lo, hi float64, scale float64) (PDF, error) {
+	switch {
+	case len(data) < 2:
+		return nil, fmt.Errorf("pdf: a kernel density estimate needs at least two events, got %d", len(data))
+	case hi <= lo:
+		return nil, fmt.Errorf("pdf: a kernel density estimate over [%v, %v] has no range", lo, hi)
+	case scale <= 0:
+		return nil, fmt.Errorf("pdf: the bandwidth scale must be positive, got %v", scale)
+	}
+
+	// the sample's own width, for Silverman's rule.
+	var mean, m2 float64
+	for _, x := range data {
+		mean += x
+	}
+	mean /= float64(len(data))
+	for _, x := range data {
+		d := x - mean
+		m2 += d * d
+	}
+
+	sigma := math.Sqrt(m2 / float64(len(data)-1))
+	if sigma <= 0 {
+		return nil, fmt.Errorf("pdf: every event is at %v: there is nothing to smooth", mean)
+	}
+
+	h := scale * 1.06 * sigma * math.Pow(float64(len(data)), -0.2)
+
+	const n = 2048
+	k := &keys{
+		grid: make([]float64, n+1),
+		lo:   lo,
+		hi:   hi,
+		step: (hi - lo) / n,
+	}
+
+	// Each event contributes a gaussian, and so do its two reflections in
+	// the ends of the range: without them the estimate falls away at the
+	// edges, where a real density need not.
+	add := func(x float64) {
+		// only the grid within six bandwidths feels it.
+		var (
+			i0 = max(0, int((x-6*h-lo)/k.step))
+			i1 = min(n, int((x+6*h-lo)/k.step)+1)
+		)
+		for i := i0; i <= i1; i++ {
+			d := (lo + float64(i)*k.step - x) / h
+			k.grid[i] += math.Exp(-0.5 * d * d)
+		}
+	}
+
+	for _, x := range data {
+		add(x)
+		add(2*lo - x)
+		add(2*hi - x)
+	}
+
+	norm := float64(len(data)) * h * math.Sqrt(2*math.Pi)
+	for i := range k.grid {
+		k.grid[i] /= norm
+	}
+
+	return k, nil
+}
+
+func (*keys) Name() string       { return "keys" }
+func (*keys) ParNames() []string { return nil }
+func (*keys) NPar() int          { return 0 }
+
+func (k *keys) Shape(x float64, _ []float64) float64 {
+	if x < k.lo || x > k.hi {
+		return 0
+	}
+
+	var (
+		pos = (x - k.lo) / k.step
+		i   = int(pos)
+	)
+	if i >= len(k.grid)-1 {
+		return k.grid[len(k.grid)-1]
+	}
+
+	t := pos - float64(i)
+	return k.grid[i]*(1-t) + k.grid[i+1]*t
+}
+
+func (k *keys) Integral(lo, hi float64, _ []float64) float64 {
+	var sum float64
+	for i := range len(k.grid) - 1 {
+		var (
+			a = k.lo + float64(i)*k.step
+			b = a + k.step
+		)
+		a = math.Max(a, lo)
+		b = math.Min(b, hi)
+		if b <= a {
+			continue
+		}
+		// the trapezium over the part of this cell that is inside.
+		sum += 0.5 * (k.Shape(a, nil) + k.Shape(b, nil)) * (b - a)
+	}
+	return sum
+}

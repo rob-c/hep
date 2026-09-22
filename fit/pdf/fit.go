@@ -10,6 +10,7 @@ import (
 
 	"go-hep.org/x/hep/fit/minuit"
 	"go-hep.org/x/hep/hbook"
+	"gonum.org/v1/gonum/mat"
 )
 
 // errorDef is the rise in -ln L that makes one standard deviation. Half a
@@ -217,6 +218,15 @@ type Result struct {
 	// for a fit to one.
 	Channels []Channel
 
+	// Cov is the covariance of the free parameters. It is the minimiser's
+	// own unless the fit was a weighted one, where it is the corrected
+	// covariance and Weighted says so.
+	Cov *mat.SymDense
+
+	// Weighted says whether the events carried weights, and so whether Cov
+	// has been corrected for them.
+	Weighted bool
+
 	// what the fit was, kept so that it can be done again: a profile scan
 	// is a fit per point and has to build its own minimisers.
 	fcn  minuit.FCN
@@ -227,9 +237,42 @@ type Result struct {
 func (r *Result) Values() []float64 { return r.Minuit.Values() }
 
 // Value returns the fitted value of the i-th parameter and its uncertainty.
+//
+// For a weighted fit the uncertainty is the corrected one: see FitWeighted.
 func (r *Result) Value(i int) (val, err float64) {
 	v, e, _ := r.Minuit.Value(i)
+	if r.Weighted && r.Cov != nil {
+		if k := r.freeIndex(i); k >= 0 {
+			if d := r.Cov.At(k, k); d > 0 {
+				e = math.Sqrt(d)
+			}
+		}
+	}
 	return v, e
+}
+
+// Covariance returns the covariance of the free parameters: the corrected one
+// for a weighted fit, and the minimiser's own otherwise.
+func (r *Result) Covariance() *mat.SymDense {
+	if r.Cov != nil {
+		return r.Cov
+	}
+	return r.Minuit.Covariance()
+}
+
+// freeIndex returns the position of parameter i among the free ones.
+func (r *Result) freeIndex(i int) int {
+	k := 0
+	for j := range r.pars {
+		if _, _, free := r.Minuit.Value(j); !free {
+			continue
+		}
+		if j == i {
+			return k
+		}
+		k++
+	}
+	return -1
 }
 
 // Func returns the fitted density as a function of x alone, scaled so that

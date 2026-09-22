@@ -150,6 +150,7 @@ RooFit
 | `RooBreitWigner`, `RooVoigtian` | `pdf.BreitWigner()`, `pdf.Voigtian()` |
 | `RooArgusBG`, `RooLandau`, `RooPoisson` | `pdf.Argus()`, `pdf.Landau()`, `pdf.Poisson()` |
 | `RooHistPdf`, `RooGenericPdf` | `pdf.Hist(h)`, `pdf.Formula(expr, pars)` |
+| `RooBernstein`, `RooKeysPdf` | `pdf.Bernstein(n, lo, hi)`, `pdf.Keys(data, lo, hi, scale)` |
 | `RooAddPdf` | `pdf.Add(pdfs, names)` |
 | `RooProdPdf` (same observable) | `pdf.Mul(pdfs...)` |
 | `RooProdPdf` (factorised) | `pdf.Factorise(pdfs...)` |
@@ -159,6 +160,7 @@ RooFit
 | `pdf.generate(x, n)` | `pdf.Generate(rnd, p, lo, hi, par, n)` |
 | `RooMCStudy` | `pdf.Study{...}.Run(rnd, n)` |
 | `SPlot` | `pdf.SPlot(data, sum, lo, hi, par)` |
+| `fitTo(data, SumW2Error(true))` | `pdf.FitWeighted(data, weights, ...)` |
 | `RooGaussian` constraint term | `pdf.Constrain(nll, i, mean, sigma)` |
 | `RooFFTConvPdf` | `pdf.Convolve(f, g, lo, hi, n)` |
 | `PiecewiseInterpolation`, `FlexibleInterpVar` | `pdf.NewMorph(nom, ups, downs, code)` |
