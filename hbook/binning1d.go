@@ -28,6 +28,12 @@ var (
 	errShortYAxis     = errors.New("hbook: too few 1-dim Y-bins")
 	errNotSortedYAxis = errors.New("hbook: Y-edges slice not sorted")
 	errDupEdgesYAxis  = errors.New("hbook: duplicates in Y-edge values")
+
+	errInvalidZAxis   = errors.New("hbook: invalid Z-axis limits")
+	errEmptyZAxis     = errors.New("hbook: Z-axis with zero bins")
+	errShortZAxis     = errors.New("hbook: too few 1-dim Z-bins")
+	errNotSortedZAxis = errors.New("hbook: Z-edges slice not sorted")
+	errDupEdgesZAxis  = errors.New("hbook: duplicates in Z-edge values")
 )
 
 // Binning1D is a 1-dim binning of the x-axis.

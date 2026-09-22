@@ -120,3 +120,81 @@ func (o *Dist2D) UnmarshalBinary(data []byte) (err error) {
 	_ = data
 	return err
 }
+
+// MarshalBinary implements encoding.BinaryMarshaler
+func (o *Dist3D) MarshalBinary() (data []byte, err error) {
+	var buf [8]byte
+	{
+		sub, err := o.X.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.Y.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.Z.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	binary.LittleEndian.PutUint64(buf[:8], math.Float64bits(o.Stats.SumWXY))
+	data = append(data, buf[:8]...)
+	binary.LittleEndian.PutUint64(buf[:8], math.Float64bits(o.Stats.SumWXZ))
+	data = append(data, buf[:8]...)
+	binary.LittleEndian.PutUint64(buf[:8], math.Float64bits(o.Stats.SumWYZ))
+	data = append(data, buf[:8]...)
+	return data, err
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler
+func (o *Dist3D) UnmarshalBinary(data []byte) (err error) {
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.X.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.Y.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.Z.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	o.Stats.SumWXY = float64(math.Float64frombits(binary.LittleEndian.Uint64(data[:8])))
+	data = data[8:]
+	o.Stats.SumWXZ = float64(math.Float64frombits(binary.LittleEndian.Uint64(data[:8])))
+	data = data[8:]
+	o.Stats.SumWYZ = float64(math.Float64frombits(binary.LittleEndian.Uint64(data[:8])))
+	data = data[8:]
+	_ = data
+	return err
+}

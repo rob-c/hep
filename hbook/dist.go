@@ -321,3 +321,187 @@ func (d *Dist2D) scaleW(f float64) {
 	d.Y.scaleW(f)
 	d.Stats.SumWXY *= f
 }
+
+// Dist3D is a 3-dim distribution.
+type Dist3D struct {
+	X     Dist1D // x moments
+	Y     Dist1D // y moments
+	Z     Dist1D // z moments
+	Stats struct {
+		SumWXY float64 // 2nd-order x-y cross-term
+		SumWXZ float64 // 2nd-order x-z cross-term
+		SumWYZ float64 // 2nd-order y-z cross-term
+	}
+}
+
+// Rank returns the number of dimensions of the distribution.
+func (*Dist3D) Rank() int {
+	return 3
+}
+
+// Entries returns the number of entries in the distribution.
+func (d *Dist3D) Entries() int64 {
+	return d.X.Entries()
+}
+
+// EffEntries returns the effective number of entries in the distribution.
+func (d *Dist3D) EffEntries() float64 {
+	return d.X.EffEntries()
+}
+
+// SumW returns the sum of weights of the distribution.
+func (d *Dist3D) SumW() float64 {
+	return d.X.SumW()
+}
+
+// SumW2 returns the sum of squared weights of the distribution.
+func (d *Dist3D) SumW2() float64 {
+	return d.X.SumW2()
+}
+
+// SumWX returns the 1st order weighted x moment
+func (d *Dist3D) SumWX() float64 {
+	return d.X.SumWX()
+}
+
+// SumWX2 returns the 2nd order weighted x moment
+func (d *Dist3D) SumWX2() float64 {
+	return d.X.SumWX2()
+}
+
+// SumWY returns the 1st order weighted y moment
+func (d *Dist3D) SumWY() float64 {
+	return d.Y.SumWX()
+}
+
+// SumWY2 returns the 2nd order weighted y moment
+func (d *Dist3D) SumWY2() float64 {
+	return d.Y.SumWX2()
+}
+
+// SumWZ returns the 1st order weighted z moment
+func (d *Dist3D) SumWZ() float64 {
+	return d.Z.SumWX()
+}
+
+// SumWZ2 returns the 2nd order weighted z moment
+func (d *Dist3D) SumWZ2() float64 {
+	return d.Z.SumWX2()
+}
+
+// SumWXY returns the 2nd-order x-y cross-term.
+func (d *Dist3D) SumWXY() float64 {
+	return d.Stats.SumWXY
+}
+
+// SumWXZ returns the 2nd-order x-z cross-term.
+func (d *Dist3D) SumWXZ() float64 {
+	return d.Stats.SumWXZ
+}
+
+// SumWYZ returns the 2nd-order y-z cross-term.
+func (d *Dist3D) SumWYZ() float64 {
+	return d.Stats.SumWYZ
+}
+
+// xMean returns the weighted mean of the distribution
+func (d *Dist3D) xMean() float64 {
+	return d.X.mean()
+}
+
+// yMean returns the weighted mean of the distribution
+func (d *Dist3D) yMean() float64 {
+	return d.Y.mean()
+}
+
+// zMean returns the weighted mean of the distribution
+func (d *Dist3D) zMean() float64 {
+	return d.Z.mean()
+}
+
+// xVariance returns the weighted variance of the distribution
+func (d *Dist3D) xVariance() float64 {
+	return d.X.variance()
+}
+
+// yVariance returns the weighted variance of the distribution
+func (d *Dist3D) yVariance() float64 {
+	return d.Y.variance()
+}
+
+// zVariance returns the weighted variance of the distribution
+func (d *Dist3D) zVariance() float64 {
+	return d.Z.variance()
+}
+
+// xStdDev returns the weighted standard deviation of the distribution
+func (d *Dist3D) xStdDev() float64 {
+	return d.X.stdDev()
+}
+
+// yStdDev returns the weighted standard deviation of the distribution
+func (d *Dist3D) yStdDev() float64 {
+	return d.Y.stdDev()
+}
+
+// zStdDev returns the weighted standard deviation of the distribution
+func (d *Dist3D) zStdDev() float64 {
+	return d.Z.stdDev()
+}
+
+// xStdErr returns the weighted standard error of the distribution
+func (d *Dist3D) xStdErr() float64 {
+	return d.X.stdErr()
+}
+
+// yStdErr returns the weighted standard error of the distribution
+func (d *Dist3D) yStdErr() float64 {
+	return d.Y.stdErr()
+}
+
+// zStdErr returns the weighted standard error of the distribution
+func (d *Dist3D) zStdErr() float64 {
+	return d.Z.stdErr()
+}
+
+// xRMS returns the weighted RMS of the distribution
+func (d *Dist3D) xRMS() float64 {
+	return d.X.rms()
+}
+
+// yRMS returns the weighted RMS of the distribution
+func (d *Dist3D) yRMS() float64 {
+	return d.Y.rms()
+}
+
+// zRMS returns the weighted RMS of the distribution
+func (d *Dist3D) zRMS() float64 {
+	return d.Z.rms()
+}
+
+func (d *Dist3D) fill(x, y, z, w float64) {
+	d.X.fill(x, w)
+	d.Y.fill(y, w)
+	d.Z.fill(z, w)
+	d.Stats.SumWXY += w * x * y
+	d.Stats.SumWXZ += w * x * z
+	d.Stats.SumWYZ += w * y * z
+}
+
+func (d *Dist3D) addScaled(a, a2 float64, o Dist3D) {
+	d.X.addScaled(a, a2, o.X)
+	d.Y.addScaled(a, a2, o.Y)
+	d.Z.addScaled(a, a2, o.Z)
+	d.Stats.SumWXY += a * o.Stats.SumWXY
+	d.Stats.SumWXZ += a * o.Stats.SumWXZ
+	d.Stats.SumWYZ += a * o.Stats.SumWYZ
+}
+
+func (d *Dist3D) scaleW(f float64) {
+	d.X.scaleW(f)
+	d.Y.scaleW(f)
+	d.Z.scaleW(f)
+	d.Stats.SumWXY *= f
+	d.Stats.SumWXZ *= f
+	d.Stats.SumWYZ *= f
+}

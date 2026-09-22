@@ -589,3 +589,331 @@ func (o *Bin2D) UnmarshalBinary(data []byte) (err error) {
 	_ = data
 	return err
 }
+
+// MarshalBinary implements encoding.BinaryMarshaler
+func (o *Binning3D) MarshalBinary() (data []byte, err error) {
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:8], uint64(len(o.Bins)))
+	data = append(data, buf[:8]...)
+	for i := range o.Bins {
+		o := &o.Bins[i]
+		{
+			sub, err := o.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+			data = append(data, buf[:8]...)
+			data = append(data, sub...)
+		}
+	}
+	{
+		sub, err := o.Dist.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	for i := range o.Outflows {
+		o := &o.Outflows[i]
+		{
+			sub, err := o.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+			data = append(data, buf[:8]...)
+			data = append(data, sub...)
+		}
+	}
+	{
+		sub, err := o.XRange.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.YRange.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.ZRange.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	binary.LittleEndian.PutUint64(buf[:8], uint64(o.Nx))
+	data = append(data, buf[:8]...)
+	binary.LittleEndian.PutUint64(buf[:8], uint64(o.Ny))
+	data = append(data, buf[:8]...)
+	binary.LittleEndian.PutUint64(buf[:8], uint64(o.Nz))
+	data = append(data, buf[:8]...)
+	binary.LittleEndian.PutUint64(buf[:8], uint64(len(o.XEdges)))
+	data = append(data, buf[:8]...)
+	for i := range o.XEdges {
+		o := &o.XEdges[i]
+		{
+			sub, err := o.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+			data = append(data, buf[:8]...)
+			data = append(data, sub...)
+		}
+	}
+	binary.LittleEndian.PutUint64(buf[:8], uint64(len(o.YEdges)))
+	data = append(data, buf[:8]...)
+	for i := range o.YEdges {
+		o := &o.YEdges[i]
+		{
+			sub, err := o.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+			data = append(data, buf[:8]...)
+			data = append(data, sub...)
+		}
+	}
+	binary.LittleEndian.PutUint64(buf[:8], uint64(len(o.ZEdges)))
+	data = append(data, buf[:8]...)
+	for i := range o.ZEdges {
+		o := &o.ZEdges[i]
+		{
+			sub, err := o.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+			data = append(data, buf[:8]...)
+			data = append(data, sub...)
+		}
+	}
+	return data, err
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler
+func (o *Binning3D) UnmarshalBinary(data []byte) (err error) {
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		o.Bins = make([]Bin3D, n)
+		data = data[8:]
+		for i := range o.Bins {
+			oi := &o.Bins[i]
+			{
+				n := int(binary.LittleEndian.Uint64(data[:8]))
+				data = data[8:]
+				err = oi.UnmarshalBinary(data[:n])
+				if err != nil {
+					return err
+				}
+				data = data[n:]
+			}
+		}
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.Dist.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	for i := range o.Outflows {
+		oi := &o.Outflows[i]
+		{
+			n := int(binary.LittleEndian.Uint64(data[:8]))
+			data = data[8:]
+			err = oi.UnmarshalBinary(data[:n])
+			if err != nil {
+				return err
+			}
+			data = data[n:]
+		}
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.XRange.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.YRange.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.ZRange.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	o.Nx = int(binary.LittleEndian.Uint64(data[:8]))
+	data = data[8:]
+	o.Ny = int(binary.LittleEndian.Uint64(data[:8]))
+	data = data[8:]
+	o.Nz = int(binary.LittleEndian.Uint64(data[:8]))
+	data = data[8:]
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		o.XEdges = make([]Bin1D, n)
+		data = data[8:]
+		for i := range o.XEdges {
+			oi := &o.XEdges[i]
+			{
+				n := int(binary.LittleEndian.Uint64(data[:8]))
+				data = data[8:]
+				err = oi.UnmarshalBinary(data[:n])
+				if err != nil {
+					return err
+				}
+				data = data[n:]
+			}
+		}
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		o.YEdges = make([]Bin1D, n)
+		data = data[8:]
+		for i := range o.YEdges {
+			oi := &o.YEdges[i]
+			{
+				n := int(binary.LittleEndian.Uint64(data[:8]))
+				data = data[8:]
+				err = oi.UnmarshalBinary(data[:n])
+				if err != nil {
+					return err
+				}
+				data = data[n:]
+			}
+		}
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		o.ZEdges = make([]Bin1D, n)
+		data = data[8:]
+		for i := range o.ZEdges {
+			oi := &o.ZEdges[i]
+			{
+				n := int(binary.LittleEndian.Uint64(data[:8]))
+				data = data[8:]
+				err = oi.UnmarshalBinary(data[:n])
+				if err != nil {
+					return err
+				}
+				data = data[n:]
+			}
+		}
+	}
+	_ = data
+	return err
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler
+func (o *Bin3D) MarshalBinary() (data []byte, err error) {
+	var buf [8]byte
+	{
+		sub, err := o.XRange.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.YRange.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.ZRange.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	{
+		sub, err := o.Dist.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.LittleEndian.PutUint64(buf[:8], uint64(len(sub)))
+		data = append(data, buf[:8]...)
+		data = append(data, sub...)
+	}
+	return data, err
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler
+func (o *Bin3D) UnmarshalBinary(data []byte) (err error) {
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.XRange.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.YRange.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.ZRange.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	{
+		n := int(binary.LittleEndian.Uint64(data[:8]))
+		data = data[8:]
+		err = o.Dist.UnmarshalBinary(data[:n])
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	_ = data
+	return err
+}
