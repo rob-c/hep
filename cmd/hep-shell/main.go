@@ -32,6 +32,19 @@
 //	.imports      list what is already imported
 //	.reset        start again, forgetting everything
 //
+// # ROOT macros
+//
+// A file ending in .C is taken for a CINT macro, translated to Go and run:
+//
+//	hep [0] .x hsimple.C
+//
+// What the session is left holding is Go. The function the macro defined is
+// still there afterwards and can be called again, and .ls will show it,
+// because the macro became Go rather than being interpreted as C++.
+//
+// The translation is go-hep.org/x/hep/cint, and hep-cint does the same thing
+// from a shell. What it cannot translate it refuses, naming the line.
+//
 // # What it is
 //
 // The interpreter is yaegi, which runs Go source in pure Go — there is no

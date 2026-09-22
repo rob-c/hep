@@ -363,7 +363,8 @@ Stated plainly, so nobody finds out the hard way:
   its streamer info to be turned into a Go type.
 - **chebyshev** formula shapes, which need a range the string does not carry.
 - **A C++ interpreter.** `hep-shell` and `hep-kernel` interpret Go. A ROOT
-  macro has to be translated, and this page is the dictionary.
+  macro is *translated* to Go rather than interpreted as C++ -- see below --
+  and this page is the dictionary for what the translator does not cover.
 - **TMVA and the GUI.** No equivalent. RooFit is largely covered -- see above -- but there is no workspace persistence here, so a model is built in code rather than loaded from a file.
 
 From Python
@@ -377,6 +378,65 @@ reimplemented in Python:
 import gohep
 df = gohep.read_dataframe("data.root", "tree")
 ```
+
+Running an existing macro
+-------------------------
+
+A CINT macro can be translated into Go and run, without ROOT and without a
+C++ interpreter anywhere:
+
+```
+$> hep-cint hsimple.C            # write the Go out
+$> hep-cint -run hsimple.C       # translate, build and run it
+$> hep-cint -o hsimple.go hsimple.C
+```
+
+At the prompt, `.x` takes a `.C` file the way ROOT's does:
+
+```
+hep [0] .x hsimple.C
+```
+
+and from a program, `cint.ROOT` is what a macro calls `gROOT`:
+
+```go
+err := cint.ROOT.Macro("hsimple.C")          // gROOT->Macro("hsimple.C")
+err = cint.ROOT.ProcessLine(`.x hsimple.C`)  // gROOT->ProcessLine(...)
+```
+
+Nothing is interpreted. The macro becomes Go, the Go compiler builds it, and
+the program runs — so a macro that runs at all is one that type-checks
+throughout, and its mistakes are found by a compiler rather than on the line
+that finally reached them. The trade is that a run costs a compile.
+
+What comes out is meant to be kept. `hep-cint -o` writes Go that you can read,
+edit and put under test, which is the real reason to translate a macro: it
+stops being a macro.
+
+| CINT | Go |
+|---|---|
+| `TH1F *h = new TH1F("h","t",100,0,10)` | `h := rhist.NewH1F("h","t",100,0,10)` |
+| `h->Fill(x)` | `h.Fill(x, 1)` |
+| `h->GetEntries()` | `h.Entries()` |
+| `TFile *f = TFile::Open("d.root")` | `f := rt.OpenFile("d.root", "")` |
+| `(TTree*)f->Get("t")` | `rt.Get(f, "t").(rtree.Tree)` |
+| `TMath::Sqrt(x)` | `math.Sqrt(x)` |
+| `gRandom->Gaus(0,1)` | `rt.GRandom.Gaus(0, 1)` |
+| `std::vector<double> v; v.push_back(x)` | `var v []float64; v = append(v, x)` |
+| `cout << x << endl` | `fmt.Println(x)` |
+| `c->SaveAs("h.png")` | `c.SaveAs("h.png")` |
+
+C++ widens a whole number to a real wherever one is wanted and Go does not, so
+the conversions C++ left unwritten get written: `h->Fill(i)` becomes
+`h.Fill(float64(i), 1)`.
+
+The session part of ROOT — `gROOT`, `gDirectory`, graphics that draw as the
+macro runs — has no equivalent in a compiled program. The part a macro
+actually leans on (a current canvas, a current file, `gRandom`) is in
+`cint/rt`; the rest is refused rather than faked, and so is any ROOT class or
+method the translator does not know. It will name the line and say why. There
+is no silent best effort: a translation that quietly did something else would
+be worse than none.
 
 Things this does that ROOT does not
 -----------------------------------

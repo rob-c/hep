@@ -257,3 +257,72 @@ func f() {}
 		t.Errorf("body lost the declaration:\n%s", body)
 	}
 }
+
+// TestCINTMacro checks that a ROOT macro runs at the prompt, which is what
+// ".x" does in a ROOT session.
+//
+// The macro is translated to Go and then run, so what the session ends up
+// holding is Go: the function the macro defined is still there afterwards
+// and can be called again, as it can in ROOT.
+func TestCINTMacro(t *testing.T) {
+	macro := filepath.Join(t.TempDir(), "counts.C")
+	err := os.WriteFile(macro, []byte(`
+// a macro in the shape ROOT's own are written in.
+#include <TH1F.h>
+
+void counts() {
+   TH1D *h = new TH1D("h", "a title", 10, 0, 10);
+   for (int i = 0; i < 100; i++) {
+      h->Fill(i % 10);
+   }
+   printf("entries=%v mean=%v\n", h->GetEntries(), h->GetMean());
+}
+`), 0644)
+	if err != nil {
+		t.Fatalf("could not write the macro: %+v", err)
+	}
+
+	got := run(t, ".x "+macro+`
+counts()
+.ls
+.q
+`)
+
+	for _, want := range []string{
+		// a hundred entries over ten bins: the mean is 4.5.
+		"entries=100 mean=4.5",
+		// and calling it again runs it again.
+		"func counts",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the session does not contain %q:\n%s", want, got)
+		}
+	}
+
+	// it ran twice: once from .x and once from the call.
+	if n := strings.Count(got, "entries=100 mean=4.5"); n != 2 {
+		t.Errorf("the macro should have run twice, it ran %d time(s):\n%s", n, got)
+	}
+}
+
+// TestCINTMacroErrorsAreReported checks that a macro this cannot translate
+// says so at the prompt and leaves the session standing.
+func TestCINTMacroErrorsAreReported(t *testing.T) {
+	macro := filepath.Join(t.TempDir(), "bad.C")
+	err := os.WriteFile(macro, []byte(`void bad() { gROOT->Reset(); }`), 0644)
+	if err != nil {
+		t.Fatalf("could not write the macro: %+v", err)
+	}
+
+	got := run(t, ".x "+macro+`
+1+1
+.q
+`)
+
+	if !strings.Contains(got, "gROOT") {
+		t.Errorf("the session should say what it could not translate:\n%s", got)
+	}
+	if !strings.Contains(got, "(int) 2") {
+		t.Errorf("the session should have carried on:\n%s", got)
+	}
+}

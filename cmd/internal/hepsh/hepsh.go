@@ -25,6 +25,7 @@ import (
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
 
+	"go-hep.org/x/hep/cint"
 	"go-hep.org/x/hep/cmd/internal/symbols"
 )
 
@@ -42,6 +43,10 @@ var Preloaded = []string{
 	"go-hep.org/x/hep/groot/rhist",
 	"go-hep.org/x/hep/hbook/ntup/ntroot",
 	"go-hep.org/x/hep/hbook/rootcnv",
+	"go-hep.org/x/hep/groot/riofs",
+	"go-hep.org/x/hep/groot/rtree/rdraw",
+	"go-hep.org/x/hep/groot/rtree/rdf",
+	"go-hep.org/x/hep/cint/rt",
 }
 
 // MaxPrint is how much of a value a session will show before it stops. A ROOT
@@ -221,12 +226,47 @@ func (sh *Session) note(src string) {
 //
 // A file that is a whole Go program has its package clause and imports taken
 // off first, since the session already is a program and already has them.
+//
+// A file that is a CINT macro is translated to Go first, and then the
+// function it is named after is called, which is what ROOT's .x does.
 func (sh *Session) Run(fname string) error {
+	if cint.IsMacro(fname) {
+		return sh.runMacro(fname)
+	}
+
 	raw, err := os.ReadFile(fname)
 	if err != nil {
 		return fmt.Errorf("hepsh: could not read %q: %w", fname, err)
 	}
 	return sh.RunSource(string(raw), fname)
+}
+
+// runMacro translates a CINT macro and runs it in the session.
+//
+// The translation is loaded as declarations rather than as a program, and
+// then the macro's entry point is called, so that what it defined is still
+// there at the prompt afterwards — as it is in ROOT.
+func (sh *Session) runMacro(fname string) error {
+	src, err := cint.TranslateFile(fname, cint.Main(false))
+	if err != nil {
+		return err
+	}
+
+	entry, err := cint.EntryOf(fname)
+	if err != nil {
+		return err
+	}
+
+	err = sh.RunSource(string(src), fname)
+	if err != nil {
+		return err
+	}
+
+	_, err = sh.Eval(entry + "()")
+	if err != nil {
+		return fmt.Errorf("%s: %s: %w", fname, entry, err)
+	}
+	return nil
 }
 
 // RunSource evaluates a whole Go file's worth of source.

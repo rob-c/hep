@@ -26,6 +26,10 @@ var Symbols = map[string]map[string]reflect.Value{}
 //go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/groot/rhist
 //go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/hbook/ntup/ntroot
 //go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/hbook/rootcnv
+//go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/groot/riofs
+//go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/groot/rtree/rdraw
+//go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/groot/rtree/rdf
+//go:generate go run github.com/traefik/yaegi/cmd/yaegi extract go-hep.org/x/hep/cint/rt
 
 // yaegi extract puts the go-hep import in with the standard library ones,
 // where goimports wants it in a group of its own.
