@@ -46,6 +46,16 @@ func genH1() {
 		Elem string
 	}{
 		{
+			Name: "H1C",
+			Type: "rcont.ArrayC",
+			Elem: "int8",
+		},
+		{
+			Name: "H1S",
+			Type: "rcont.ArrayS",
+			Elem: "int16",
+		},
+		{
 			Name: "H1F",
 			Type: "rcont.ArrayF",
 			Elem: "float32",
@@ -103,6 +113,16 @@ func genH2() {
 		Type string
 		Elem string
 	}{
+		{
+			Name: "H2C",
+			Type: "rcont.ArrayC",
+			Elem: "int8",
+		},
+		{
+			Name: "H2S",
+			Type: "rcont.ArrayS",
+			Elem: "int16",
+		},
 		{
 			Name: "H2F",
 			Type: "rcont.ArrayF",
