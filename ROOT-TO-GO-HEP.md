@@ -160,6 +160,9 @@ RooFit
 | `RooMCStudy` | `pdf.Study{...}.Run(rnd, n)` |
 | `SPlot` | `pdf.SPlot(data, sum, lo, hi, par)` |
 | `RooGaussian` constraint term | `pdf.Constrain(nll, i, mean, sigma)` |
+| `RooFFTConvPdf` | `pdf.Convolve(f, g, lo, hi, n)` |
+| `PiecewiseInterpolation`, `FlexibleInterpVar` | `pdf.NewMorph(nom, ups, downs, code)` |
+| HistFactory model | `pdf.NewBinned(npar, samples, cons)` |
 | `createProfile(par)` | `res.Scan(i, lo, hi, n)` |
 | `RooFitResult::correlationMatrix()` | `res.Minuit.Correlation()` |
 | `minos()` | `res.Minuit.Command("MINOS")` |
@@ -265,7 +268,7 @@ Stated plainly, so nobody finds out the hard way:
 - **chebyshev** formula shapes, which need a range the string does not carry.
 - **A C++ interpreter.** `hep-shell` and `hep-kernel` interpret Go. A ROOT
   macro has to be translated, and this page is the dictionary.
-- **TMVA and the GUI.** No equivalent. RooFit is largely covered -- see above -- but has no workspace persistence here, no FFT convolution, and no morphing between templates.
+- **TMVA and the GUI.** No equivalent. RooFit is largely covered -- see above -- but there is no workspace persistence here, so a model is built in code rather than loaded from a file.
 
 From Python
 -----------
