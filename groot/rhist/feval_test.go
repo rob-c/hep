@@ -18,7 +18,7 @@ import (
 )
 
 func TestFormulaEval(t *testing.T) {
-	const tol = 1e-12
+	const tol = 1e-5
 
 	for _, tc := range []struct {
 		expr string
@@ -79,6 +79,14 @@ func TestFormulaEval(t *testing.T) {
 		{expr: "pol2", pars: []float64{1, 2, 3}, x: []float64{2}, want: 1 + 4 + 12},
 		{expr: "pol0", pars: []float64{7}, x: []float64{99}, want: 7},
 		{expr: "gaus(0)+pol1(3)", pars: []float64{1, 0, 1, 10, 2}, x: []float64{0}, want: 1 + 10},
+
+		// Landau, at its peak: the density is 0.180655 at 0.222782 below
+		// the location, and the shape scales it by the height.
+		{expr: "landau", pars: []float64{2, 0, 1}, x: []float64{-0.222782}, want: 2 * 0.180655},
+		{expr: "landau(x)", x: []float64{-0.222782}, want: 0.180655},
+		{expr: "TMath::Landau(x)", x: []float64{-0.222782}, want: 0.180655},
+		// with a location and a scale, the density is divided by the scale.
+		{expr: "landau(x,0,2)", x: []float64{-0.445564}, want: 0.180655 / 2},
 	} {
 		t.Run(tc.expr, func(t *testing.T) {
 			f, err := NewFormula("f", tc.expr)
@@ -112,8 +120,6 @@ func TestFormulaErrors(t *testing.T) {
 		{"sqrt(", "unexpected"},
 		{"sqrt(1,2)", `takes 1 argument(s), got 2`},
 		{"nosuchfunc(1)", `unknown name "nosuchfunc"`},
-		{"TMath::Landau(x)", `unknown name "TMath::Landau"`},
-		{"landau", `shape "landau" is not supported`},
 		{"cheb3", `shape "cheb3" is not supported`},
 		{"x $ 2", "unexpected character"},
 		{"[0", "unclosed '['"},

@@ -24,19 +24,64 @@ var fshapes = regexp.MustCompile(`\b(gausn|gaus|expo|landaun|landau|pol(\d+)|che
 // The number in parentheses, where ROOT allows one, is the index of the first
 // parameter the shape uses: "gaus(3)" is a gaussian over [3], [4] and [5].
 func expandShapes(expr string) (string, error) {
-	var err error
-	out := fshapes.ReplaceAllStringFunc(expr, func(m string) string {
+	var (
+		err  error
+		out  strings.Builder
+		last int
+	)
+
+	for _, m := range fshapes.FindAllStringSubmatchIndex(expr, -1) {
 		if err != nil {
-			return m
+			break
 		}
-		sub := fshapes.FindStringSubmatch(m)
+
 		var (
-			name = sub[1]
-			off  = 0
+			whole = expr[m[0]:m[1]]
+			name  = expr[m[2]:m[3]]
+			off   = 0
 		)
-		if sub[5] != "" {
-			off, _ = strconv.Atoi(sub[5])
+
+		// The offset group, when there is one: "gaus(3)" starts at
+		// parameter three.
+		hasOffset := m[10] >= 0
+		if hasOffset {
+			off, _ = strconv.Atoi(expr[m[10]:m[11]])
 		}
+
+		// "landau" is both a shape and a function, as it is in ROOT: the
+		// shape is the bare word and the function is a call. A name
+		// followed by an open bracket that was not the offset is a call,
+		// and is left alone for the parser to deal with.
+		if !hasOffset && strings.HasPrefix(strings.TrimLeft(expr[m[1]:], " \t"), "(") {
+			continue
+		}
+
+		out.WriteString(expr[last:m[0]])
+		last = m[1]
+
+		// the degree of a polN or a chebN, when the match was one.
+		degree := ""
+		switch {
+		case m[4] >= 0:
+			degree = expr[m[4]:m[5]]
+		case m[6] >= 0:
+			degree = expr[m[6]:m[7]]
+		}
+
+		out.WriteString(expandOne(name, off, degree, &err, whole))
+	}
+
+	if err != nil {
+		return expr, err
+	}
+
+	out.WriteString(expr[last:])
+	return out.String(), nil
+}
+
+// expandOne returns what one shape shorthand stands for.
+func expandOne(name string, off int, degree string, err *error, whole string) string {
+	{
 
 		p := func(i int) string { return "[" + strconv.Itoa(off+i) + "]" }
 
@@ -47,8 +92,14 @@ func expandShapes(expr string) (string, error) {
 			return fmt.Sprintf("(%s/(sqrt(2*pi())*%s)*exp(-0.5*((x-%s)/%s)^2))", p(0), p(2), p(1), p(2))
 		case name == "expo":
 			return fmt.Sprintf("(exp(%s+%s*x))", p(0), p(1))
+		case name == "landau":
+			return fmt.Sprintf("(%s*landau(x,%s,%s))", p(0), p(1), p(2))
+		case name == "landaun":
+			// the normalised one: TMath::Landau already divides by the
+			// scale, so the two differ only in what the height means.
+			return fmt.Sprintf("(%s*landau(x,%s,%s))", p(0), p(1), p(2))
 		case strings.HasPrefix(name, "pol"):
-			n, _ := strconv.Atoi(sub[2])
+			n, _ := strconv.Atoi(degree)
 			terms := make([]string, 0, n+1)
 			for i := range n + 1 {
 				switch i {
@@ -63,14 +114,13 @@ func expandShapes(expr string) (string, error) {
 			return "(" + strings.Join(terms, "+") + ")"
 		}
 
-		// landau needs TMath::Landau, and chebyshev needs ROOT's basis: both
-		// are shapes groot would have to approximate, and a formula that
-		// quietly evaluates to the wrong number is worse than one that says
-		// it cannot be evaluated.
-		err = fmt.Errorf("rhist: formula shape %q is not supported", name)
-		return m
-	})
-	return out, err
+		// Chebyshev needs ROOT's basis and the range it is defined over,
+		// which a formula string does not carry. Refusing it is better than
+		// guessing: a formula that quietly evaluates to the wrong number is
+		// worse than one that says it cannot be evaluated.
+		*err = fmt.Errorf("rhist: formula shape %q is not supported", name)
+		return whole
+	}
 }
 
 // compileFormula parses expr into a tree, resolving parameter names through

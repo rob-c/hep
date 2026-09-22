@@ -151,9 +151,14 @@ Functions
 | `new TF2`, `new TF3` | `rhist.NewF2`, `rhist.NewF3` |
 
 The formula language is ROOT's: `x`, `y`, `z`, `t`, parameters as `[0]` or
-`[name]`, the maths library under either spelling, and the `gaus`, `expo` and
-`polN` shorthands. `landau` and the chebyshevs are refused by name rather
-than approximated.
+`[name]`, the maths library under either spelling, and the `gaus`, `expo`,
+`polN` and `landau` shorthands. The chebyshevs are refused by name, needing a
+range a formula string does not carry.
+
+Densities for fitting live in `fit/pdf`: gaussian, exponential, uniform,
+polynomial, Chebychev, Crystal Ball, Breit-Wigner, bifurcated gaussian,
+ARGUS, Landau, Voigtian, Poisson, a template from a histogram, and one
+written as a formula.
 
 Plotting
 --------
@@ -216,7 +221,7 @@ Stated plainly, so nobody finds out the hard way:
   it with `rtree.Reader` and fill by hand.
 - **Arbitrary C++ classes.** Types groot knows are read; a user class needs
   its streamer info to be turned into a Go type.
-- **`landau` and chebyshev** formula shapes.
+- **chebyshev** formula shapes, which need a range the string does not carry.
 - **A C++ interpreter.** `hep-shell` and `hep-kernel` interpret Go. A ROOT
   macro has to be translated, and this page is the dictionary.
 - **RooFit, TMVA, GUI.** No equivalent.

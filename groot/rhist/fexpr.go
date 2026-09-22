@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"go-hep.org/x/hep/internal/hepmath"
 )
 
 // A ROOT formula is a C++ expression ROOT hands to its interpreter. groot has
@@ -193,8 +195,12 @@ var ffuncs = map[string]struct {
 	"gamma":   {1, func(a []float64) float64 { return math.Gamma(a[0]) }},
 	"lngamma": {1, func(a []float64) float64 { v, _ := math.Lgamma(a[0]); return v }},
 	"sign":    {1, func(a []float64) float64 { return sign(a[0]) }},
-	"even":    {1, func(a []float64) float64 { return b2f(math.Mod(a[0], 2) == 0) }},
-	"odd":     {1, func(a []float64) float64 { return b2f(math.Mod(a[0], 2) != 0) }},
+
+	// TMath::Landau, which ROOT spells with one argument or with three:
+	// the value, and optionally where the peak sits and how wide it is.
+	"landau": {-1, landauOf},
+	"even":   {1, func(a []float64) float64 { return b2f(math.Mod(a[0], 2) == 0) }},
+	"odd":    {1, func(a []float64) float64 { return b2f(math.Mod(a[0], 2) != 0) }},
 
 	"pow":   {2, func(a []float64) float64 { return math.Pow(a[0], a[1]) }},
 	"atan2": {2, func(a []float64) float64 { return math.Atan2(a[0], a[1]) }},
@@ -213,6 +219,22 @@ var ffuncs = map[string]struct {
 	"radtodeg": {0, func([]float64) float64 { return 180 / math.Pi }},
 	"infinity": {0, func([]float64) float64 { return math.Inf(+1) }},
 	"qnan":     {0, func([]float64) float64 { return math.NaN() }},
+}
+
+// landauOf evaluates the Landau density, taking either the value alone or
+// the value with a location and a scale, as TMath::Landau does.
+func landauOf(a []float64) float64 {
+	switch len(a) {
+	case 1:
+		return hepmath.Landau(a[0])
+	case 3:
+		s := a[2]
+		if s <= 0 {
+			return 0
+		}
+		return hepmath.Landau((a[0]-a[1])/s) / s
+	}
+	return math.NaN()
 }
 
 func sign(v float64) float64 {
