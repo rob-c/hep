@@ -378,6 +378,51 @@ func (df *Frame) Histo1D(expr string, opts ...HOption) *Result[*hbook.H1D] {
 	return res
 }
 
+// Profile1D fills a profile histogram from an expression, which is what
+// ROOT's TProfile holds: the mean of y in bins of x, and how far y spreads
+// about it.
+//
+// The expression names the two axes "y:x", with the quantity being profiled
+// first, as the 2-dim histogram does. Only the x axis is binned, so Bins is
+// the option that matters.
+func (df *Frame) Profile1D(expr string, opts ...HOption) *Result[*hbook.P1D] {
+	cfg := newHCfg(opts)
+	b := cfg.bins[0]
+	if !b.set {
+		b = hbin{n: 100, lo: 0, hi: 1}
+	}
+
+	res := &Result[*hbook.P1D]{df: df, val: hbook.NewP1D(b.n, b.lo, b.hi)}
+	res.val.Annotation()["name"] = hname(cfg, expr)
+
+	axes, w, err := df.axesAndWeight(expr, 2, cfg)
+	if err != nil {
+		df.fail(err)
+		return res
+	}
+
+	df.add(&action{
+		exprs: append(axes, nonNil(w)...),
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			x, err := axes[0].At(ctx, iter)
+			if err != nil {
+				return err
+			}
+			y, err := axes[1].At(ctx, iter)
+			if err != nil {
+				return err
+			}
+			wgt, err := weightOf(w, ctx, iter)
+			if err != nil {
+				return err
+			}
+			res.val.Fill(x, y, wgt)
+			return nil
+		},
+	})
+	return res
+}
+
 // Histo2D fills a 2-dim histogram, whose expression is "y:x" as in ROOT.
 func (df *Frame) Histo2D(expr string, opts ...HOption) *Result[*hbook.H2D] {
 	cfg := newHCfg(opts)

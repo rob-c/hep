@@ -740,3 +740,50 @@ func (b *BinP1D) XStdErr() float64 {
 func (b *BinP1D) XRMS() float64 {
 	return b.dist.xRMS()
 }
+
+// YMean returns the mean Y of the bin, which is the value a profile
+// histogram is drawn with.
+func (b *BinP1D) YMean() float64 {
+	return b.dist.yMean()
+}
+
+// YVariance returns the variance in Y, which is how far the values that
+// went into the bin spread about their mean.
+func (b *BinP1D) YVariance() float64 {
+	return b.dist.yVariance()
+}
+
+// YStdDev returns the standard deviation in Y: the spread of the values in
+// the bin, which does not shrink as more of them arrive.
+func (b *BinP1D) YStdDev() float64 {
+	return b.dist.yStdDev()
+}
+
+// YStdErr returns the standard error on the mean Y: how well the mean is
+// known, which does shrink as more values arrive.
+//
+// ROOT's TProfile draws this by default, and the standard deviation when it
+// is told to.
+func (b *BinP1D) YStdErr() float64 {
+	return b.dist.yStdErr()
+}
+
+// YRMS returns the RMS in Y.
+func (b *BinP1D) YRMS() float64 {
+	return b.dist.yRMS()
+}
+
+// YMean returns the mean Y over the whole profile.
+func (p *P1D) YMean() float64 {
+	return p.bng.dist.yMean()
+}
+
+// YStdDev returns the standard deviation in Y over the whole profile.
+func (p *P1D) YStdDev() float64 {
+	return p.bng.dist.yStdDev()
+}
+
+// YStdErr returns the standard error on the mean Y over the whole profile.
+func (p *P1D) YStdErr() float64 {
+	return p.bng.dist.yStdErr()
+}

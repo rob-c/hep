@@ -40,6 +40,7 @@ Trees
 | `t->Draw("pt>>h(100,0,200)")` | `rdraw.H1D(t, "pt", rdraw.Bins(100, 0, 200))` |
 | `t->Draw("y:x")` | `rdraw.H2D(t, "y:x")` |
 | `t->Draw("z:y:x")` | `rdraw.H3D(t, "z:y:x")` |
+| `t->Draw("y:x>>prof","","prof")` | `rdraw.P1D(t, "y:x")` (a TProfile) |
 | `t->Draw("jet_pt")` (an array branch) | `rdraw.H1D(t, "jet_pt")` |
 | `t->Draw("jet_pt[0]")` | `rdraw.H1D(t, "jet_pt[0]")` |
 | `t->Draw("jet_pt", "jet_pt>30")` | `rdraw.H1D(t, "jet_pt", rdraw.Cut("jet_pt>30"))` |
@@ -125,6 +126,11 @@ Histograms
 | `h1->Divide(h2)` | `hbook.DivideH1D(h1, h2)` |
 | `h3->Project3D("xy")` | `h3.ProjectionXY()` |
 | `h3->ProjectionZ()` | `h3.ProjectionZ()` |
+
+A profile -- ROOT's TProfile, the mean of y in bins of x -- is `hbook.P1D`,
+filled by hand or straight from a tree with `rdraw.P1D` or `rdf.Profile1D`.
+Each bin carries `YMean`, `YStdDev` and `YStdErr`: ROOT draws the error on
+the mean by default and the spread when told to, and both are there.
 
 `hbook` is the histogram; `rhist` is its ROOT file form. To write one:
 

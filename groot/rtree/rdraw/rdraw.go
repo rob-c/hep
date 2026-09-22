@@ -614,3 +614,63 @@ func (ev *evaluator) autoBins(t rtree.Tree, cfg *config, rank int) ([3]binning, 
 
 	return bins, nil
 }
+
+// P1D fills a profile histogram from a tree, which is what ROOT's TProfile
+// holds: the mean of y in bins of x, and how far y spreads about it.
+//
+// The expression names two axes the way the rest of this package does,
+// "y:x", with the quantity being profiled first.
+//
+//	p, err := rdraw.P1D(t, "response:pt", rdraw.Bins(20, 0, 200))
+//
+// Only the x axis is binned, so Bins is the one that matters; BinsY and
+// BinsZ are ignored. Without it the range of x is found first, which reads
+// the tree twice.
+func P1D(t rtree.Tree, expr string, opts ...Option) (*hbook.P1D, error) {
+	cfg := newConfig(opts)
+
+	srcs := splitExprs(expr)
+	if len(srcs) != 2 {
+		return nil, fmt.Errorf(
+			"rdraw: a profile takes 2 expressions, %q gives %d", expr, len(srcs),
+		)
+	}
+
+	// "y:x" names them from the top down: turn it the right way round, so
+	// that the axis being binned comes first.
+	axes := []string{srcs[1], srcs[0]}
+
+	ev, err := newEvaluator(t, axes, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	bins := cfg.bins
+	if !bins[0].set {
+		// only x is binned, so only x needs a range.
+		bins, err = ev.autoBins(t, cfg, 1)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	p := hbook.NewP1D(bins[0].n, bins[0].lo, bins[0].hi)
+	name := cfg.name
+	if name == "" {
+		name = expr
+	}
+	ann := p.Annotation()
+	ann["name"] = name
+	if cfg.title != "" {
+		ann["title"] = cfg.title
+	}
+
+	err = ev.run(t, cfg, func(vs []float64, w float64) {
+		p.Fill(vs[0], vs[1], w)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
