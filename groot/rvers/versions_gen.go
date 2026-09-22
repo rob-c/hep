@@ -11,6 +11,7 @@ const ROOT = 64000
 
 // ROOT classes versions
 const (
+	Att3D                    = 1  // ROOT version for TAtt3D
 	AttAxis                  = 4  // ROOT version for TAttAxis
 	AttBBox2D                = 0  // ROOT version for TAttBBox2D
 	AttFill                  = 2  // ROOT version for TAttFill
@@ -89,6 +90,12 @@ const (
 	H2Poly                   = 3  // ROOT version for TH2Poly
 	H2PolyBin                = 1  // ROOT version for TH2PolyBin
 	H2S                      = 4  // ROOT version for TH2S
+	H3                       = 6  // ROOT version for TH3
+	H3C                      = 4  // ROOT version for TH3C
+	H3D                      = 4  // ROOT version for TH3D
+	H3F                      = 4  // ROOT version for TH3F
+	H3I                      = 4  // ROOT version for TH3I
+	H3S                      = 4  // ROOT version for TH3S
 	Limit                    = 2  // ROOT version for TLimit
 	LimitDataSource          = 2  // ROOT version for TLimitDataSource
 	MultiGraph               = 2  // ROOT version for TMultiGraph

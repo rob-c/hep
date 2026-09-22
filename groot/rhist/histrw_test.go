@@ -29,6 +29,12 @@ func TestHistoRWRoundTrip(t *testing.T) {
 	h2.Fill(1.5, 1.5, 2)
 	h2.Fill(2.5, 0.5, 3)
 
+	h3 := hbook.NewH3D(3, 0, 3, 2, 0, 2, 2, 0, 2)
+	h3.Fill(0.5, 0.5, 0.5, 1)
+	h3.Fill(1.5, 1.5, 1.5, 2)
+	h3.Fill(2.5, 0.5, 1.5, 3)
+	h3.Fill(-1, -1, -1, 1) // an outflow
+
 	for _, tc := range []struct {
 		name string
 		want rtests.ROOTer
@@ -43,6 +49,11 @@ func TestHistoRWRoundTrip(t *testing.T) {
 		{name: "TH2I", want: NewH2IFrom(h2)},
 		{name: "TH2F", want: NewH2FFrom(h2)},
 		{name: "TH2D", want: NewH2DFrom(h2)},
+		{name: "TH3C", want: NewH3CFrom(h3)},
+		{name: "TH3S", want: NewH3SFrom(h3)},
+		{name: "TH3I", want: NewH3IFrom(h3)},
+		{name: "TH3F", want: NewH3FFrom(h3)},
+		{name: "TH3D", want: NewH3DFrom(h3)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, want := tc.want.Class(), tc.name; got != want {

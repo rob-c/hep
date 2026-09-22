@@ -13,11 +13,11 @@ import "sort"
 // all three — is the binning itself, leaving 26 outflows.
 const NumOutflows3D = 26
 
-// outflow3D returns the index in Binning3D.Outflows of the region a point
+// Outflow3D returns the index in Binning3D.Outflows of the region a point
 // sits in, given where it falls on each axis: -1 below, 0 inside, +1 above.
 //
-// outflow3D panics if asked for (0,0,0), which is not an outflow.
-func outflow3D(sx, sy, sz int) int {
+// Outflow3D panics if asked for (0,0,0), which is not an outflow.
+func Outflow3D(sx, sy, sz int) int {
 	i := (sx+1)*9 + (sy+1)*3 + (sz + 1)
 	switch {
 	case i == 13:
@@ -268,5 +268,5 @@ func (bng *Binning3D) coordToIndex(x, y, z float64) int {
 		return bng.binIndex(ix, iy, iz)
 	}
 
-	return -(outflow3D(sx, sy, sz) + 1)
+	return -(Outflow3D(sx, sy, sz) + 1)
 }

@@ -69,6 +69,40 @@ type H2 interface {
 	SumWXY() float64
 }
 
+// H3 is a 3-dim ROOT histogram
+type H3 interface {
+	root.Named
+
+	isH3()
+
+	// Entries returns the number of entries for this histogram.
+	Entries() float64
+	// SumW returns the total sum of weights
+	SumW() float64
+	// SumW2 returns the total sum of squares of weights
+	SumW2() float64
+	// SumWX returns the total sum of weights*x
+	SumWX() float64
+	// SumWX2 returns the total sum of weights*x*x
+	SumWX2() float64
+	// SumW2s returns the array of sum of squares of weights
+	SumW2s() []float64
+	// SumWY returns the total sum of weights*y
+	SumWY() float64
+	// SumWY2 returns the total sum of weights*y*y
+	SumWY2() float64
+	// SumWXY returns the total sum of weights*x*y
+	SumWXY() float64
+	// SumWZ returns the total sum of weights*z
+	SumWZ() float64
+	// SumWZ2 returns the total sum of weights*z*z
+	SumWZ2() float64
+	// SumWXZ returns the total sum of weights*x*z
+	SumWXZ() float64
+	// SumWYZ returns the total sum of weights*y*z
+	SumWYZ() float64
+}
+
 // Graph describes a ROOT TGraph
 type Graph interface {
 	root.Named

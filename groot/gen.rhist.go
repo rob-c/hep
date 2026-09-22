@@ -18,6 +18,7 @@ import (
 func main() {
 	genH1()
 	genH2()
+	genH3()
 }
 
 func genH1() {
@@ -143,6 +144,74 @@ func genH2() {
 			fmt.Fprintf(f, "\n")
 		}
 		tmpl := template.Must(template.New(typ.Name).Parse(h2Tmpl))
+		err = tmpl.Execute(f, typ)
+		if err != nil {
+			log.Fatalf("error executing template for %q: %v\n", typ.Name, err)
+		}
+	}
+
+	err = f.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	genroot.GoFmt(f)
+}
+
+func genH3() {
+	fname := "./rhist/h3_gen.go"
+	year := genroot.ExtractYear(fname)
+	f, err := os.Create(fname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	genroot.GenImports(year, "rhist", f,
+		"fmt", "math", "reflect",
+		"",
+		"go-hep.org/x/hep/hbook",
+		"go-hep.org/x/hep/groot/root",
+		"go-hep.org/x/hep/groot/rcont",
+		"go-hep.org/x/hep/groot/rbytes",
+		"go-hep.org/x/hep/groot/rtypes",
+		"go-hep.org/x/hep/groot/rvers",
+	)
+
+	for i, typ := range []struct {
+		Name string
+		Type string
+		Elem string
+	}{
+		{
+			Name: "H3C",
+			Type: "rcont.ArrayC",
+			Elem: "int8",
+		},
+		{
+			Name: "H3S",
+			Type: "rcont.ArrayS",
+			Elem: "int16",
+		},
+		{
+			Name: "H3I",
+			Type: "rcont.ArrayI",
+			Elem: "int32",
+		},
+		{
+			Name: "H3F",
+			Type: "rcont.ArrayF",
+			Elem: "float32",
+		},
+		{
+			Name: "H3D",
+			Type: "rcont.ArrayD",
+			Elem: "float64",
+		},
+	} {
+		if i > 0 {
+			fmt.Fprintf(f, "\n")
+		}
+		tmpl := template.Must(template.New(typ.Name).Parse(h3Tmpl))
 		err = tmpl.Execute(f, typ)
 		if err != nil {
 			log.Fatalf("error executing template for %q: %v\n", typ.Name, err)
@@ -843,6 +912,492 @@ var (
 	_ root.Merger        = (*{{.Name}})(nil)
 	_ root.Named         = (*{{.Name}})(nil)
 	_ H2                 = (*{{.Name}})(nil)
+	_ rbytes.Marshaler   = (*{{.Name}})(nil)
+	_ rbytes.Unmarshaler = (*{{.Name}})(nil)
+	_ rbytes.RSlicer     = (*{{.Name}})(nil)
+)
+`
+
+const h3Tmpl = `// {{.Name}} implements ROOT T{{.Name}}
+type {{.Name}} struct {
+	th3
+	arr {{.Type}}
+}
+
+func new{{.Name}}() *{{.Name}} {
+	return &{{.Name}}{
+		th3:   *newH3(),
+	}
+}
+
+// New{{.Name}}From creates a new {{.Name}} from an hbook 3-dim histogram.
+func New{{.Name}}From(h *hbook.H3D) *{{.Name}} {
+	var (
+		hroot  = new{{.Name}}()
+		bins   = h.Binning.Bins
+		nxbins = h.Binning.Nx
+		nybins = h.Binning.Ny
+		nzbins = h.Binning.Nz
+		xedges = make([]float64, 0, nxbins+1)
+		yedges = make([]float64, 0, nybins+1)
+		zedges = make([]float64, 0, nzbins+1)
+	)
+
+	hroot.th3.th1.entries = float64(h.Entries())
+	hroot.th3.th1.tsumw = h.SumW()
+	hroot.th3.th1.tsumw2 = h.SumW2()
+	hroot.th3.th1.tsumwx = h.SumWX()
+	hroot.th3.th1.tsumwx2 = h.SumWX2()
+	hroot.th3.tsumwy = h.SumWY()
+	hroot.th3.tsumwy2 = h.SumWY2()
+	hroot.th3.tsumwxy = h.SumWXY()
+	hroot.th3.tsumwz = h.SumWZ()
+	hroot.th3.tsumwz2 = h.SumWZ2()
+	hroot.th3.tsumwxz = h.SumWXZ()
+	hroot.th3.tsumwyz = h.SumWYZ()
+
+	ncells := (nxbins + 2) * (nybins + 2) * (nzbins + 2)
+	hroot.th3.th1.ncells = ncells
+
+	hroot.th3.th1.xaxis.nbins = nxbins
+	hroot.th3.th1.xaxis.xmin = h.XMin()
+	hroot.th3.th1.xaxis.xmax = h.XMax()
+
+	hroot.th3.th1.yaxis.nbins = nybins
+	hroot.th3.th1.yaxis.xmin = h.YMin()
+	hroot.th3.th1.yaxis.xmax = h.YMax()
+
+	hroot.th3.th1.zaxis.nbins = nzbins
+	hroot.th3.th1.zaxis.xmin = h.ZMin()
+	hroot.th3.th1.zaxis.xmax = h.ZMax()
+
+	hroot.arr.Data = make([]{{.Elem}}, ncells)
+	hroot.th3.th1.sumw2.Data = make([]float64, ncells)
+
+	ibin := func(ix, iy, iz int) int { return (iz*nybins+iy)*nxbins + ix }
+
+	for ix := range nxbins {
+		for iy := range nybins {
+			for iz := range nzbins {
+				bin := bins[ibin(ix, iy, iz)]
+				if iy == 0 && iz == 0 {
+					xedges = append(xedges, bin.XMin())
+				}
+				if ix == 0 && iz == 0 {
+					yedges = append(yedges, bin.YMin())
+				}
+				if ix == 0 && iy == 0 {
+					zedges = append(zedges, bin.ZMin())
+				}
+				hroot.setDist3D(ix+1, iy+1, iz+1, bin.Dist.SumW(), bin.Dist.SumW2())
+			}
+		}
+	}
+
+	// the 26 ways of missing a 3-dim binning, each landing in the slice of
+	// cells ROOT keeps for it.
+	for sx := -1; sx <= +1; sx++ {
+		for sy := -1; sy <= +1; sy++ {
+			for sz := -1; sz <= +1; sz++ {
+				if sx == 0 && sy == 0 && sz == 0 {
+					continue
+				}
+				o := h.Binning.Outflows[hbook.Outflow3D(sx, sy, sz)]
+				hroot.setDist3D(
+					h3cell(sx, nxbins), h3cell(sy, nybins), h3cell(sz, nzbins),
+					o.SumW(), o.SumW2(),
+				)
+			}
+		}
+	}
+
+	xedges = append(xedges, bins[ibin(nxbins-1, 0, 0)].XMax())
+	yedges = append(yedges, bins[ibin(0, nybins-1, 0)].YMax())
+	zedges = append(zedges, bins[ibin(0, 0, nzbins-1)].ZMax())
+
+	hroot.th3.th1.SetName(h.Name())
+	if v, ok := h.Annotation()["title"]; ok && v != nil {
+		hroot.th3.th1.SetTitle(v.(string))
+	}
+	hroot.th3.th1.xaxis.xbins.Data = xedges
+	hroot.th3.th1.yaxis.xbins.Data = yedges
+	hroot.th3.th1.zaxis.xbins.Data = zedges
+
+	return hroot
+}
+
+func (*{{.Name}}) RVersion() int16 {
+	return rvers.{{.Name}}
+}
+
+func (*{{.Name}}) isH3() {}
+
+// Class returns the ROOT class name.
+func (*{{.Name}}) Class() string {
+	return "T{{.Name}}"
+}
+
+func (h *{{.Name}}) Array() {{.Type}} {
+	return h.arr
+}
+
+// Rank returns the number of dimensions of this histogram.
+func (h *{{.Name}}) Rank() int {
+	return 3
+}
+
+// NbinsX returns the number of bins in X.
+func (h *{{.Name}}) NbinsX() int {
+	return h.th1.xaxis.nbins
+}
+
+// XAxis returns the axis along X.
+func (h*{{.Name}}) XAxis() Axis {
+	return &h.th1.xaxis
+}
+
+// XBinCenter returns the bin center value in X.
+func (h *{{.Name}}) XBinCenter(i int) float64 {
+	return float64(h.th1.xaxis.BinCenter(i))
+}
+
+// XBinContent returns the bin content value in X.
+func (h *{{.Name}}) XBinContent(i int) float64 {
+	return float64(h.arr.Data[i])
+}
+
+// XBinError returns the bin error in X.
+func (h *{{.Name}}) XBinError(i int) float64 {
+	if len(h.th1.sumw2.Data) > 0 {
+		return math.Sqrt(float64(h.th1.sumw2.Data[i]))
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// XBinLowEdge returns the bin lower edge value in X.
+func (h *{{.Name}}) XBinLowEdge(i int) float64 {
+	return h.th1.xaxis.BinLowEdge(i)
+}
+
+// XBinWidth returns the bin width in X.
+func (h *{{.Name}}) XBinWidth(i int) float64 {
+	return h.th1.xaxis.BinWidth(i)
+}
+
+// NbinsY returns the number of bins in Y.
+func (h *{{.Name}}) NbinsY() int {
+	return h.th1.yaxis.nbins
+}
+
+// YAxis returns the axis along Y.
+func (h*{{.Name}}) YAxis() Axis {
+	return &h.th1.yaxis
+}
+
+// YBinCenter returns the bin center value in Y.
+func (h *{{.Name}}) YBinCenter(i int) float64 {
+	return float64(h.th1.yaxis.BinCenter(i))
+}
+
+// YBinContent returns the bin content value in Y.
+func (h *{{.Name}}) YBinContent(i int) float64 {
+	return float64(h.arr.Data[i])
+}
+
+// YBinError returns the bin error in Y.
+func (h *{{.Name}}) YBinError(i int) float64 {
+	if len(h.th1.sumw2.Data) > 0 {
+		return math.Sqrt(float64(h.th1.sumw2.Data[i]))
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// YBinLowEdge returns the bin lower edge value in Y.
+func (h *{{.Name}}) YBinLowEdge(i int) float64 {
+	return h.th1.yaxis.BinLowEdge(i)
+}
+
+// YBinWidth returns the bin width in Y.
+func (h *{{.Name}}) YBinWidth(i int) float64 {
+	return h.th1.yaxis.BinWidth(i)
+}
+
+// NbinsZ returns the number of bins in Z.
+func (h *{{.Name}}) NbinsZ() int {
+	return h.th1.zaxis.nbins
+}
+
+// ZAxis returns the axis along Z.
+func (h*{{.Name}}) ZAxis() Axis {
+	return &h.th1.zaxis
+}
+
+// ZBinCenter returns the bin center value in Z.
+func (h *{{.Name}}) ZBinCenter(i int) float64 {
+	return float64(h.th1.zaxis.BinCenter(i))
+}
+
+// ZBinContent returns the bin content value in Z.
+func (h *{{.Name}}) ZBinContent(i int) float64 {
+	return float64(h.arr.Data[i])
+}
+
+// ZBinError returns the bin error in Z.
+func (h *{{.Name}}) ZBinError(i int) float64 {
+	if len(h.th1.sumw2.Data) > 0 {
+		return math.Sqrt(float64(h.th1.sumw2.Data[i]))
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// ZBinLowEdge returns the bin lower edge value in Z.
+func (h *{{.Name}}) ZBinLowEdge(i int) float64 {
+	return h.th1.zaxis.BinLowEdge(i)
+}
+
+// ZBinWidth returns the bin width in Z.
+func (h *{{.Name}}) ZBinWidth(i int) float64 {
+	return h.th1.zaxis.BinWidth(i)
+}
+
+// bin returns the regularized bin number given an (x,y,z) bin index triple.
+func (h *{{.Name}}) bin(ix, iy, iz int) int {
+	nx := h.th1.xaxis.nbins + 1 // overflow bin
+	ny := h.th1.yaxis.nbins + 1 // overflow bin
+	nz := h.th1.zaxis.nbins + 1 // overflow bin
+	switch {
+	case ix < 0:
+		ix = 0
+	case ix > nx:
+		ix = nx
+	}
+	switch {
+	case iy < 0:
+		iy = 0
+	case iy > ny:
+		iy = ny
+	}
+	switch {
+	case iz < 0:
+		iz = 0
+	case iz > nz:
+		iz = nz
+	}
+	return ix + (nx+1)*(iy+(ny+1)*iz)
+}
+
+func (h *{{.Name}}) dist3D(ix, iy, iz int) hbook.Dist3D {
+	i := h.bin(ix, iy, iz)
+	vx := h.XBinContent(i)
+	xerr := h.XBinError(i)
+	nx := h.entries(vx, xerr)
+	vy := h.YBinContent(i)
+	yerr := h.YBinError(i)
+	ny := h.entries(vy, yerr)
+	vz := h.ZBinContent(i)
+	zerr := h.ZBinError(i)
+	nz := h.entries(vz, zerr)
+
+	sumw := h.arr.Data[i]
+	sumw2 := 0.0
+	if len(h.th1.sumw2.Data) > 0 {
+		sumw2 = h.th1.sumw2.Data[i]
+	}
+	return hbook.Dist3D{
+		X: hbook.Dist1D{
+			Dist: hbook.Dist0D{
+				N:     nx,
+				SumW:  float64(sumw),
+				SumW2: float64(sumw2),
+			},
+		},
+		Y: hbook.Dist1D{
+			Dist: hbook.Dist0D{
+				N:     ny,
+				SumW:  float64(sumw),
+				SumW2: float64(sumw2),
+			},
+		},
+		Z: hbook.Dist1D{
+			Dist: hbook.Dist0D{
+				N:     nz,
+				SumW:  float64(sumw),
+				SumW2: float64(sumw2),
+			},
+		},
+	}
+}
+
+func (h *{{.Name}}) setDist3D(ix, iy, iz int, sumw, sumw2 float64) {
+	i := h.bin(ix, iy, iz)
+	h.arr.Data[i] = {{.Elem}}(sumw)
+	h.th1.sumw2.Data[i] = sumw2
+}
+
+func (h *{{.Name}}) entries(height, err float64) int64 {
+	if height <= 0 {
+		return 0
+	}
+	v := height / err
+	return int64(v*v + 0.5)
+}
+
+// AsH3D creates a new hbook.H3D from this ROOT histogram.
+func (h *{{.Name}}) AsH3D() *hbook.H3D {
+	var (
+		nx = h.NbinsX()
+		ny = h.NbinsY()
+		nz = h.NbinsZ()
+		hh = hbook.NewH3D(
+			nx, h.XAxis().XMin(), h.XAxis().XMax(),
+			ny, h.YAxis().XMin(), h.YAxis().XMax(),
+			nz, h.ZAxis().XMin(), h.ZAxis().XMax(),
+		)
+	)
+	hh.Ann = hbook.Annotation{
+		"name":  h.Name(),
+		"title": h.Title(),
+	}
+
+	for sx := -1; sx <= +1; sx++ {
+		for sy := -1; sy <= +1; sy++ {
+			for sz := -1; sz <= +1; sz++ {
+				if sx == 0 && sy == 0 && sz == 0 {
+					continue
+				}
+				hh.Binning.Outflows[hbook.Outflow3D(sx, sy, sz)] = h.dist3D(
+					h3cell(sx, nx), h3cell(sy, ny), h3cell(sz, nz),
+				)
+			}
+		}
+	}
+
+	hh.Binning.Dist = hbook.Dist3D{
+		X: hbook.Dist1D{
+			Dist: hbook.Dist0D{
+				N:     int64(h.Entries()),
+				SumW:  float64(h.SumW()),
+				SumW2: float64(h.SumW2()),
+			},
+		},
+		Y: hbook.Dist1D{
+			Dist: hbook.Dist0D{
+				N:     int64(h.Entries()),
+				SumW:  float64(h.SumW()),
+				SumW2: float64(h.SumW2()),
+			},
+		},
+		Z: hbook.Dist1D{
+			Dist: hbook.Dist0D{
+				N:     int64(h.Entries()),
+				SumW:  float64(h.SumW()),
+				SumW2: float64(h.SumW2()),
+			},
+		},
+	}
+	hh.Binning.Dist.X.Stats.SumWX = float64(h.SumWX())
+	hh.Binning.Dist.X.Stats.SumWX2 = float64(h.SumWX2())
+	hh.Binning.Dist.Y.Stats.SumWX = float64(h.SumWY())
+	hh.Binning.Dist.Y.Stats.SumWX2 = float64(h.SumWY2())
+	hh.Binning.Dist.Z.Stats.SumWX = float64(h.SumWZ())
+	hh.Binning.Dist.Z.Stats.SumWX2 = float64(h.SumWZ2())
+	hh.Binning.Dist.Stats.SumWXY = h.SumWXY()
+	hh.Binning.Dist.Stats.SumWXZ = h.SumWXZ()
+	hh.Binning.Dist.Stats.SumWYZ = h.SumWYZ()
+
+	for ix := range nx {
+		for iy := range ny {
+			for iz := range nz {
+				var (
+					i    = (iz*ny+iy)*nx + ix
+					xmin = h.XBinLowEdge(ix + 1)
+					xmax = h.XBinWidth(ix+1) + xmin
+					ymin = h.YBinLowEdge(iy + 1)
+					ymax = h.YBinWidth(iy+1) + ymin
+					zmin = h.ZBinLowEdge(iz + 1)
+					zmax = h.ZBinWidth(iz+1) + zmin
+					bin  = &hh.Binning.Bins[i]
+				)
+				bin.XRange.Min = xmin
+				bin.XRange.Max = xmax
+				bin.YRange.Min = ymin
+				bin.YRange.Max = ymax
+				bin.ZRange.Min = zmin
+				bin.ZRange.Max = zmax
+				bin.Dist = h.dist3D(ix+1, iy+1, iz+1)
+			}
+		}
+	}
+
+	return hh
+}
+
+func (h *{{.Name}}) ROOTMerge(src root.Object) error {
+	hsrc, ok := src.(*{{.Name}})
+	if !ok {
+		return fmt.Errorf("rhist: object %q is not a *rhist.{{.Name}} (%T)", src.(root.Named).Name(), src)
+	}
+
+	var (
+		h1   = h.AsH3D()
+		h2   = hsrc.AsH3D()
+		hadd = hbook.AddH3D(h1, h2)
+	)
+
+	*h = *New{{.Name}}From(hadd)
+	return nil
+}
+
+func (h *{{.Name}}) MarshalROOT(w *rbytes.WBuffer) (int, error) {
+	if w.Err() != nil {
+		return 0, w.Err()
+	}
+
+	hdr := w.WriteHeader(h.Class(), h.RVersion())
+	w.WriteObject(&h.th3)
+	w.WriteObject(&h.arr)
+
+	return w.SetHeader(hdr)
+}
+
+func (h *{{.Name}}) UnmarshalROOT(r *rbytes.RBuffer) error {
+	if r.Err() != nil {
+		return r.Err()
+	}
+
+	hdr := r.ReadHeader(h.Class(), h.RVersion())
+	if hdr.Vers < 1 {
+		return fmt.Errorf("rhist: T{{.Name}} version too old (%d<1)", hdr.Vers)
+	}
+
+	r.ReadObject(&h.th3)
+	r.ReadObject(&h.arr)
+
+	r.CheckHeader(hdr)
+	return r.Err()
+}
+
+func (h *{{.Name}}) RMembers() (mbrs []rbytes.Member) {
+	mbrs = append(mbrs, h.th3.RMembers()...)
+	mbrs = append(mbrs, rbytes.Member{
+		Name: "fArray", Value: &h.arr.Data,
+	})
+	return mbrs
+}
+
+func init() {
+	f := func() reflect.Value {
+		o := new{{.Name}}()
+		return reflect.ValueOf(o)
+	}
+	rtypes.Factory.Add("T{{.Name}}", f)
+}
+
+var (
+	_ root.Object        = (*{{.Name}})(nil)
+	_ root.Merger        = (*{{.Name}})(nil)
+	_ root.Named         = (*{{.Name}})(nil)
+	_ H3                 = (*{{.Name}})(nil)
 	_ rbytes.Marshaler   = (*{{.Name}})(nil)
 	_ rbytes.Unmarshaler = (*{{.Name}})(nil)
 	_ rbytes.RSlicer     = (*{{.Name}})(nil)

@@ -68,7 +68,7 @@ func TestH3DOutflows(t *testing.T) {
 				h := NewH3D(1, 0, 1, 1, 0, 1, 1, 0, 1)
 				h.Fill(pos[sx], pos[sy], pos[sz], 1)
 
-				want := outflow3D(sx, sy, sz)
+				want := Outflow3D(sx, sy, sz)
 				for i := range h.Binning.Outflows {
 					got := h.Binning.Outflows[i].SumW()
 					switch i {
@@ -110,7 +110,7 @@ func TestOutflow3DIsABijection(t *testing.T) {
 				if sx == 0 && sy == 0 && sz == 0 {
 					continue
 				}
-				i := outflow3D(sx, sy, sz)
+				i := Outflow3D(sx, sy, sz)
 				if i < 0 || i >= NumOutflows3D {
 					t.Fatalf("(%+d,%+d,%+d): index %d out of range", sx, sy, sz, i)
 				}

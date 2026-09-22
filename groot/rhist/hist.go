@@ -347,6 +347,127 @@ func (h *th2) SumWXY() float64 {
 	return h.tsumwxy
 }
 
+type th3 struct {
+	th1
+	att3d   rbase.Att3D
+	tsumwy  float64 // total sum of weight*y
+	tsumwy2 float64 // total sum of weight*y*y
+	tsumwxy float64 // total sum of weight*x*y
+	tsumwz  float64 // total sum of weight*z
+	tsumwz2 float64 // total sum of weight*z*z
+	tsumwxz float64 // total sum of weight*x*z
+	tsumwyz float64 // total sum of weight*y*z
+}
+
+func newH3() *th3 {
+	return &th3{
+		th1: *newH1(),
+	}
+}
+
+func (*th3) RVersion() int16 {
+	return rvers.H3
+}
+
+func (*th3) Class() string {
+	return "TH3"
+}
+
+func (h *th3) MarshalROOT(w *rbytes.WBuffer) (int, error) {
+	if w.Err() != nil {
+		return 0, w.Err()
+	}
+
+	hdr := w.WriteHeader(h.Class(), h.RVersion())
+
+	w.WriteObject(&h.th1)
+	w.WriteObject(&h.att3d)
+	w.WriteF64(h.tsumwy)
+	w.WriteF64(h.tsumwy2)
+	w.WriteF64(h.tsumwxy)
+	w.WriteF64(h.tsumwz)
+	w.WriteF64(h.tsumwz2)
+	w.WriteF64(h.tsumwxz)
+	w.WriteF64(h.tsumwyz)
+
+	return w.SetHeader(hdr)
+}
+
+func (h *th3) UnmarshalROOT(r *rbytes.RBuffer) error {
+	if r.Err() != nil {
+		return r.Err()
+	}
+
+	hdr := r.ReadHeader(h.Class(), h.RVersion())
+	if hdr.Vers < 3 {
+		return fmt.Errorf("rhist: TH3 version too old (%d<3)", hdr.Vers)
+	}
+
+	r.ReadObject(&h.th1)
+	r.ReadObject(&h.att3d)
+	h.tsumwy = r.ReadF64()
+	h.tsumwy2 = r.ReadF64()
+	h.tsumwxy = r.ReadF64()
+	h.tsumwz = r.ReadF64()
+	h.tsumwz2 = r.ReadF64()
+	h.tsumwxz = r.ReadF64()
+	h.tsumwyz = r.ReadF64()
+
+	r.CheckHeader(hdr)
+	return r.Err()
+}
+
+func (h *th3) RMembers() (mbrs []rbytes.Member) {
+	mbrs = append(mbrs, h.th1.RMembers()...)
+	mbrs = append(mbrs, h.att3d.RMembers()...)
+	mbrs = append(mbrs, []rbytes.Member{
+		{Name: "fTsumwy", Value: &h.tsumwy},
+		{Name: "fTsumwy2", Value: &h.tsumwy2},
+		{Name: "fTsumwxy", Value: &h.tsumwxy},
+		{Name: "fTsumwz", Value: &h.tsumwz},
+		{Name: "fTsumwz2", Value: &h.tsumwz2},
+		{Name: "fTsumwxz", Value: &h.tsumwxz},
+		{Name: "fTsumwyz", Value: &h.tsumwyz},
+	}...)
+
+	return mbrs
+}
+
+// SumWY returns the total sum of weights*y
+func (h *th3) SumWY() float64 {
+	return h.tsumwy
+}
+
+// SumWY2 returns the total sum of weights*y*y
+func (h *th3) SumWY2() float64 {
+	return h.tsumwy2
+}
+
+// SumWXY returns the total sum of weights*x*y
+func (h *th3) SumWXY() float64 {
+	return h.tsumwxy
+}
+
+// SumWZ returns the total sum of weights*z
+func (h *th3) SumWZ() float64 {
+	return h.tsumwz
+}
+
+// SumWZ2 returns the total sum of weights*z*z
+func (h *th3) SumWZ2() float64 {
+	return h.tsumwz2
+}
+
+// SumWXZ returns the total sum of weights*x*z
+func (h *th3) SumWXZ() float64 {
+	return h.tsumwxz
+}
+
+// SumWYZ returns the total sum of weights*y*z
+func (h *th3) SumWYZ() float64 {
+	return h.tsumwyz
+}
+
 func init() {
 	{
 		f := func() reflect.Value {
@@ -361,6 +482,13 @@ func init() {
 			return reflect.ValueOf(o)
 		}
 		rtypes.Factory.Add("TH2", f)
+	}
+	{
+		f := func() reflect.Value {
+			o := newH3()
+			return reflect.ValueOf(o)
+		}
+		rtypes.Factory.Add("TH3", f)
 	}
 }
 
@@ -377,4 +505,23 @@ var (
 	_ root.ObjectFinder  = (*th2)(nil)
 	_ rbytes.Marshaler   = (*th2)(nil)
 	_ rbytes.Unmarshaler = (*th2)(nil)
+
+	_ root.Object        = (*th3)(nil)
+	_ root.Named         = (*th3)(nil)
+	_ root.ObjectFinder  = (*th3)(nil)
+	_ rbytes.Marshaler   = (*th3)(nil)
+	_ rbytes.Unmarshaler = (*th3)(nil)
 )
+
+// h3cell maps the side of an axis a point fell on — -1 below, 0 inside,
+// +1 above — onto the index ROOT gives that slice of cells: 0 for the
+// underflow, n+1 for the overflow, and any in-range index for the rest.
+func h3cell(side, n int) int {
+	switch side {
+	case -1:
+		return 0
+	case +1:
+		return n + 1
+	}
+	return 1
+}

@@ -28,6 +28,7 @@ import (
 var (
 	classes = []string{
 		// rbase
+		"TAtt3D",
 		"TAttAxis", "TAttBBox2D", "TAttFill", "TAttLine", "TAttMarker", "TAttPad",
 		"TBox",
 		"TDatime",
@@ -80,6 +81,7 @@ var (
 		"TGraph", "TGraphErrors", "TGraphAsymmErrors", "TGraphMultiErrors",
 		"TH1", "TH1C", "TH1D", "TH1F", "TH1I", "TH1S",
 		"TH2", "TH2C", "TH2D", "TH2F", "TH2I", "TH2Poly", "TH2PolyBin", "TH2S",
+		"TH3", "TH3C", "TH3D", "TH3F", "TH3I", "TH3S",
 		"TLimit", "TLimitDataSource",
 		"TMultiGraph",
 		"TProfile", "TProfile2D",
