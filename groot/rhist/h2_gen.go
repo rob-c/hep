@@ -108,6 +108,221 @@ func NewH2CFrom(h *hbook.H2D) *H2C {
 	return hroot
 }
 
+// NewH2C creates a 2-dim histogram, as "new TH2C(name, title,
+// nx, xmin, xmax, ny, ymin, ymax)" does in C++.
+func NewH2C(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64) *H2C {
+	h := newH2C()
+	h.th2.th1.SetName(name)
+	h.th2.th1.SetTitle(title)
+	h.th2.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th2.th1.yaxis.setRange(ny, ymin, ymax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H2C) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2)
+	h.th2.th1.ncells = n
+	h.arr.Data = make([]int8, n)
+	h.th2.th1.sumw2.Data = make([]float64, n)
+	h.th2.th1.entries = 0
+	h.th2.th1.tsumw = 0
+	h.th2.th1.tsumw2 = 0
+	h.th2.th1.tsumwx = 0
+	h.th2.th1.tsumwx2 = 0
+	h.th2.tsumwy = 0
+	h.th2.tsumwy2 = 0
+	h.th2.tsumwxy = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H2C) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H2C) FindBin(x, y float64) int {
+	return h.bin(h.th1.xaxis.FindBin(x), h.th1.yaxis.FindBin(y))
+}
+
+// Fill adds an entry of weight w at (x,y).
+func (h *H2C) Fill(x, y, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		i  = h.bin(ix, iy)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int8(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th2.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins && iy > 0 && iy <= h.th1.yaxis.nbins {
+		h.th2.th1.tsumw += w
+		h.th2.th1.tsumw2 += w * w
+		h.th2.th1.tsumwx += w * x
+		h.th2.th1.tsumwx2 += w * x * x
+		h.th2.tsumwy += w * y
+		h.th2.tsumwy2 += w * y * y
+		h.th2.tsumwxy += w * x * y
+	}
+}
+
+// FillN adds an entry for each (x,y) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H2C) FillN(xs, ys, ws []float64) {
+	if len(ys) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy).
+func (h *H2C) BinContent(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy).
+func (h *H2C) SetBinContent(ix, iy int, v float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int8(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy).
+func (h *H2C) BinError(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy).
+func (h *H2C) SetBinError(ix, iy int, e float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H2C) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int8(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th2.th1.tsumw *= f
+	h.th2.th1.tsumw2 *= f * f
+	h.th2.th1.tsumwx *= f
+	h.th2.th1.tsumwx2 *= f
+	h.th2.tsumwy *= f
+	h.th2.tsumwy2 *= f
+	h.th2.tsumwxy *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H2C) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+		}
+	}
+	return sum
+}
+
+// ProjectionX sums the histogram over y and returns the 1-dim histogram that
+// leaves, as TH2::ProjectionX does.
+func (h *H2C) ProjectionX(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax)
+	if edges := h.th1.xaxis.xbins.Data; len(edges) == h.th1.xaxis.nbins+1 {
+		o = NewH1DFromEdges(name, h.Title(), edges)
+	}
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		var sum, err2 float64
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(ix, sum)
+		o.SetBinError(ix, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.th1.tsumwx
+	o.th1.tsumwx2 = h.th2.th1.tsumwx2
+	return o
+}
+
+// ProjectionY sums the histogram over x, as TH2::ProjectionY does.
+func (h *H2C) ProjectionY(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax)
+
+	for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(iy, sum)
+		o.SetBinError(iy, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.tsumwy
+	o.th1.tsumwx2 = h.th2.tsumwy2
+	return o
+}
+
+// MeanX and MeanY return the means of the entries along each axis.
+func (h *H2C) MeanX() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.th1.tsumwx / h.th2.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H2C) MeanY() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.tsumwy / h.th2.th1.tsumw
+}
+
 func (*H2C) RVersion() int16 {
 	return rvers.H2C
 }
@@ -514,6 +729,221 @@ func NewH2SFrom(h *hbook.H2D) *H2S {
 	hroot.th2.th1.yaxis.xbins.Data = yedges
 
 	return hroot
+}
+
+// NewH2S creates a 2-dim histogram, as "new TH2S(name, title,
+// nx, xmin, xmax, ny, ymin, ymax)" does in C++.
+func NewH2S(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64) *H2S {
+	h := newH2S()
+	h.th2.th1.SetName(name)
+	h.th2.th1.SetTitle(title)
+	h.th2.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th2.th1.yaxis.setRange(ny, ymin, ymax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H2S) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2)
+	h.th2.th1.ncells = n
+	h.arr.Data = make([]int16, n)
+	h.th2.th1.sumw2.Data = make([]float64, n)
+	h.th2.th1.entries = 0
+	h.th2.th1.tsumw = 0
+	h.th2.th1.tsumw2 = 0
+	h.th2.th1.tsumwx = 0
+	h.th2.th1.tsumwx2 = 0
+	h.th2.tsumwy = 0
+	h.th2.tsumwy2 = 0
+	h.th2.tsumwxy = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H2S) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H2S) FindBin(x, y float64) int {
+	return h.bin(h.th1.xaxis.FindBin(x), h.th1.yaxis.FindBin(y))
+}
+
+// Fill adds an entry of weight w at (x,y).
+func (h *H2S) Fill(x, y, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		i  = h.bin(ix, iy)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int16(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th2.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins && iy > 0 && iy <= h.th1.yaxis.nbins {
+		h.th2.th1.tsumw += w
+		h.th2.th1.tsumw2 += w * w
+		h.th2.th1.tsumwx += w * x
+		h.th2.th1.tsumwx2 += w * x * x
+		h.th2.tsumwy += w * y
+		h.th2.tsumwy2 += w * y * y
+		h.th2.tsumwxy += w * x * y
+	}
+}
+
+// FillN adds an entry for each (x,y) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H2S) FillN(xs, ys, ws []float64) {
+	if len(ys) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy).
+func (h *H2S) BinContent(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy).
+func (h *H2S) SetBinContent(ix, iy int, v float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int16(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy).
+func (h *H2S) BinError(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy).
+func (h *H2S) SetBinError(ix, iy int, e float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H2S) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int16(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th2.th1.tsumw *= f
+	h.th2.th1.tsumw2 *= f * f
+	h.th2.th1.tsumwx *= f
+	h.th2.th1.tsumwx2 *= f
+	h.th2.tsumwy *= f
+	h.th2.tsumwy2 *= f
+	h.th2.tsumwxy *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H2S) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+		}
+	}
+	return sum
+}
+
+// ProjectionX sums the histogram over y and returns the 1-dim histogram that
+// leaves, as TH2::ProjectionX does.
+func (h *H2S) ProjectionX(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax)
+	if edges := h.th1.xaxis.xbins.Data; len(edges) == h.th1.xaxis.nbins+1 {
+		o = NewH1DFromEdges(name, h.Title(), edges)
+	}
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		var sum, err2 float64
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(ix, sum)
+		o.SetBinError(ix, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.th1.tsumwx
+	o.th1.tsumwx2 = h.th2.th1.tsumwx2
+	return o
+}
+
+// ProjectionY sums the histogram over x, as TH2::ProjectionY does.
+func (h *H2S) ProjectionY(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax)
+
+	for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(iy, sum)
+		o.SetBinError(iy, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.tsumwy
+	o.th1.tsumwx2 = h.th2.tsumwy2
+	return o
+}
+
+// MeanX and MeanY return the means of the entries along each axis.
+func (h *H2S) MeanX() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.th1.tsumwx / h.th2.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H2S) MeanY() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.tsumwy / h.th2.th1.tsumw
 }
 
 func (*H2S) RVersion() int16 {
@@ -924,6 +1354,221 @@ func NewH2FFrom(h *hbook.H2D) *H2F {
 	return hroot
 }
 
+// NewH2F creates a 2-dim histogram, as "new TH2F(name, title,
+// nx, xmin, xmax, ny, ymin, ymax)" does in C++.
+func NewH2F(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64) *H2F {
+	h := newH2F()
+	h.th2.th1.SetName(name)
+	h.th2.th1.SetTitle(title)
+	h.th2.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th2.th1.yaxis.setRange(ny, ymin, ymax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H2F) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2)
+	h.th2.th1.ncells = n
+	h.arr.Data = make([]float32, n)
+	h.th2.th1.sumw2.Data = make([]float64, n)
+	h.th2.th1.entries = 0
+	h.th2.th1.tsumw = 0
+	h.th2.th1.tsumw2 = 0
+	h.th2.th1.tsumwx = 0
+	h.th2.th1.tsumwx2 = 0
+	h.th2.tsumwy = 0
+	h.th2.tsumwy2 = 0
+	h.th2.tsumwxy = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H2F) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H2F) FindBin(x, y float64) int {
+	return h.bin(h.th1.xaxis.FindBin(x), h.th1.yaxis.FindBin(y))
+}
+
+// Fill adds an entry of weight w at (x,y).
+func (h *H2F) Fill(x, y, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		i  = h.bin(ix, iy)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += float32(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th2.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins && iy > 0 && iy <= h.th1.yaxis.nbins {
+		h.th2.th1.tsumw += w
+		h.th2.th1.tsumw2 += w * w
+		h.th2.th1.tsumwx += w * x
+		h.th2.th1.tsumwx2 += w * x * x
+		h.th2.tsumwy += w * y
+		h.th2.tsumwy2 += w * y * y
+		h.th2.tsumwxy += w * x * y
+	}
+}
+
+// FillN adds an entry for each (x,y) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H2F) FillN(xs, ys, ws []float64) {
+	if len(ys) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy).
+func (h *H2F) BinContent(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy).
+func (h *H2F) SetBinContent(ix, iy int, v float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = float32(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy).
+func (h *H2F) BinError(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy).
+func (h *H2F) SetBinError(ix, iy int, e float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H2F) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = float32(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th2.th1.tsumw *= f
+	h.th2.th1.tsumw2 *= f * f
+	h.th2.th1.tsumwx *= f
+	h.th2.th1.tsumwx2 *= f
+	h.th2.tsumwy *= f
+	h.th2.tsumwy2 *= f
+	h.th2.tsumwxy *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H2F) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+		}
+	}
+	return sum
+}
+
+// ProjectionX sums the histogram over y and returns the 1-dim histogram that
+// leaves, as TH2::ProjectionX does.
+func (h *H2F) ProjectionX(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax)
+	if edges := h.th1.xaxis.xbins.Data; len(edges) == h.th1.xaxis.nbins+1 {
+		o = NewH1DFromEdges(name, h.Title(), edges)
+	}
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		var sum, err2 float64
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(ix, sum)
+		o.SetBinError(ix, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.th1.tsumwx
+	o.th1.tsumwx2 = h.th2.th1.tsumwx2
+	return o
+}
+
+// ProjectionY sums the histogram over x, as TH2::ProjectionY does.
+func (h *H2F) ProjectionY(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax)
+
+	for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(iy, sum)
+		o.SetBinError(iy, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.tsumwy
+	o.th1.tsumwx2 = h.th2.tsumwy2
+	return o
+}
+
+// MeanX and MeanY return the means of the entries along each axis.
+func (h *H2F) MeanX() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.th1.tsumwx / h.th2.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H2F) MeanY() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.tsumwy / h.th2.th1.tsumw
+}
+
 func (*H2F) RVersion() int16 {
 	return rvers.H2F
 }
@@ -1332,6 +1977,221 @@ func NewH2DFrom(h *hbook.H2D) *H2D {
 	return hroot
 }
 
+// NewH2D creates a 2-dim histogram, as "new TH2D(name, title,
+// nx, xmin, xmax, ny, ymin, ymax)" does in C++.
+func NewH2D(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64) *H2D {
+	h := newH2D()
+	h.th2.th1.SetName(name)
+	h.th2.th1.SetTitle(title)
+	h.th2.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th2.th1.yaxis.setRange(ny, ymin, ymax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H2D) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2)
+	h.th2.th1.ncells = n
+	h.arr.Data = make([]float64, n)
+	h.th2.th1.sumw2.Data = make([]float64, n)
+	h.th2.th1.entries = 0
+	h.th2.th1.tsumw = 0
+	h.th2.th1.tsumw2 = 0
+	h.th2.th1.tsumwx = 0
+	h.th2.th1.tsumwx2 = 0
+	h.th2.tsumwy = 0
+	h.th2.tsumwy2 = 0
+	h.th2.tsumwxy = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H2D) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H2D) FindBin(x, y float64) int {
+	return h.bin(h.th1.xaxis.FindBin(x), h.th1.yaxis.FindBin(y))
+}
+
+// Fill adds an entry of weight w at (x,y).
+func (h *H2D) Fill(x, y, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		i  = h.bin(ix, iy)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += float64(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th2.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins && iy > 0 && iy <= h.th1.yaxis.nbins {
+		h.th2.th1.tsumw += w
+		h.th2.th1.tsumw2 += w * w
+		h.th2.th1.tsumwx += w * x
+		h.th2.th1.tsumwx2 += w * x * x
+		h.th2.tsumwy += w * y
+		h.th2.tsumwy2 += w * y * y
+		h.th2.tsumwxy += w * x * y
+	}
+}
+
+// FillN adds an entry for each (x,y) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H2D) FillN(xs, ys, ws []float64) {
+	if len(ys) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy).
+func (h *H2D) BinContent(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy).
+func (h *H2D) SetBinContent(ix, iy int, v float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = float64(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy).
+func (h *H2D) BinError(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy).
+func (h *H2D) SetBinError(ix, iy int, e float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H2D) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = float64(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th2.th1.tsumw *= f
+	h.th2.th1.tsumw2 *= f * f
+	h.th2.th1.tsumwx *= f
+	h.th2.th1.tsumwx2 *= f
+	h.th2.tsumwy *= f
+	h.th2.tsumwy2 *= f
+	h.th2.tsumwxy *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H2D) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+		}
+	}
+	return sum
+}
+
+// ProjectionX sums the histogram over y and returns the 1-dim histogram that
+// leaves, as TH2::ProjectionX does.
+func (h *H2D) ProjectionX(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax)
+	if edges := h.th1.xaxis.xbins.Data; len(edges) == h.th1.xaxis.nbins+1 {
+		o = NewH1DFromEdges(name, h.Title(), edges)
+	}
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		var sum, err2 float64
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(ix, sum)
+		o.SetBinError(ix, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.th1.tsumwx
+	o.th1.tsumwx2 = h.th2.th1.tsumwx2
+	return o
+}
+
+// ProjectionY sums the histogram over x, as TH2::ProjectionY does.
+func (h *H2D) ProjectionY(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax)
+
+	for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(iy, sum)
+		o.SetBinError(iy, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.tsumwy
+	o.th1.tsumwx2 = h.th2.tsumwy2
+	return o
+}
+
+// MeanX and MeanY return the means of the entries along each axis.
+func (h *H2D) MeanX() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.th1.tsumwx / h.th2.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H2D) MeanY() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.tsumwy / h.th2.th1.tsumw
+}
+
 func (*H2D) RVersion() int16 {
 	return rvers.H2D
 }
@@ -1738,6 +2598,221 @@ func NewH2IFrom(h *hbook.H2D) *H2I {
 	hroot.th2.th1.yaxis.xbins.Data = yedges
 
 	return hroot
+}
+
+// NewH2I creates a 2-dim histogram, as "new TH2I(name, title,
+// nx, xmin, xmax, ny, ymin, ymax)" does in C++.
+func NewH2I(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64) *H2I {
+	h := newH2I()
+	h.th2.th1.SetName(name)
+	h.th2.th1.SetTitle(title)
+	h.th2.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th2.th1.yaxis.setRange(ny, ymin, ymax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H2I) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2)
+	h.th2.th1.ncells = n
+	h.arr.Data = make([]int32, n)
+	h.th2.th1.sumw2.Data = make([]float64, n)
+	h.th2.th1.entries = 0
+	h.th2.th1.tsumw = 0
+	h.th2.th1.tsumw2 = 0
+	h.th2.th1.tsumwx = 0
+	h.th2.th1.tsumwx2 = 0
+	h.th2.tsumwy = 0
+	h.th2.tsumwy2 = 0
+	h.th2.tsumwxy = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H2I) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H2I) FindBin(x, y float64) int {
+	return h.bin(h.th1.xaxis.FindBin(x), h.th1.yaxis.FindBin(y))
+}
+
+// Fill adds an entry of weight w at (x,y).
+func (h *H2I) Fill(x, y, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		i  = h.bin(ix, iy)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int32(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th2.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins && iy > 0 && iy <= h.th1.yaxis.nbins {
+		h.th2.th1.tsumw += w
+		h.th2.th1.tsumw2 += w * w
+		h.th2.th1.tsumwx += w * x
+		h.th2.th1.tsumwx2 += w * x * x
+		h.th2.tsumwy += w * y
+		h.th2.tsumwy2 += w * y * y
+		h.th2.tsumwxy += w * x * y
+	}
+}
+
+// FillN adds an entry for each (x,y) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H2I) FillN(xs, ys, ws []float64) {
+	if len(ys) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy).
+func (h *H2I) BinContent(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy).
+func (h *H2I) SetBinContent(ix, iy int, v float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int32(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy).
+func (h *H2I) BinError(ix, iy int) float64 {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy).
+func (h *H2I) SetBinError(ix, iy int, e float64) {
+	i := h.bin(ix, iy)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H2I) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int32(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th2.th1.tsumw *= f
+	h.th2.th1.tsumw2 *= f * f
+	h.th2.th1.tsumwx *= f
+	h.th2.th1.tsumwx2 *= f
+	h.th2.tsumwy *= f
+	h.th2.tsumwy2 *= f
+	h.th2.tsumwxy *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H2I) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+		}
+	}
+	return sum
+}
+
+// ProjectionX sums the histogram over y and returns the 1-dim histogram that
+// leaves, as TH2::ProjectionX does.
+func (h *H2I) ProjectionX(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax)
+	if edges := h.th1.xaxis.xbins.Data; len(edges) == h.th1.xaxis.nbins+1 {
+		o = NewH1DFromEdges(name, h.Title(), edges)
+	}
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		var sum, err2 float64
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(ix, sum)
+		o.SetBinError(ix, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.th1.tsumwx
+	o.th1.tsumwx2 = h.th2.th1.tsumwx2
+	return o
+}
+
+// ProjectionY sums the histogram over x, as TH2::ProjectionY does.
+func (h *H2I) ProjectionY(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax)
+
+	for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			sum += h.BinContent(ix, iy)
+			e := h.BinError(ix, iy)
+			err2 += e * e
+		}
+		o.SetBinContent(iy, sum)
+		o.SetBinError(iy, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th2.th1.tsumw
+	o.th1.tsumw2 = h.th2.th1.tsumw2
+	o.th1.tsumwx = h.th2.tsumwy
+	o.th1.tsumwx2 = h.th2.tsumwy2
+	return o
+}
+
+// MeanX and MeanY return the means of the entries along each axis.
+func (h *H2I) MeanX() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.th1.tsumwx / h.th2.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H2I) MeanY() float64 {
+	if h.th2.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th2.tsumwy / h.th2.th1.tsumw
 }
 
 func (*H2I) RVersion() int16 {

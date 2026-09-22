@@ -6,6 +6,7 @@ package rhist
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 
 	"go-hep.org/x/hep/groot/rbase"
@@ -209,3 +210,62 @@ var (
 	_ rbytes.Marshaler   = (*taxis)(nil)
 	_ rbytes.Unmarshaler = (*taxis)(nil)
 )
+
+// FindBin returns the bin x falls in, numbered ROOT's way: 0 is the
+// underflow, 1 to NBins are the bins proper, and NBins+1 is the overflow.
+//
+// An axis carries either a bin width, when its bins are all the same, or the
+// edges themselves when they are not. FindBin handles both, since a
+// histogram given explicit edges is as ordinary as one given a range.
+func (a *taxis) FindBin(x float64) int {
+	switch {
+	case math.IsNaN(x):
+		return 0
+	case x < a.xmin:
+		return 0
+	case x >= a.xmax:
+		return a.nbins + 1
+	case a.nbins <= 0:
+		return 0
+	}
+
+	// variable bins: find the edge below x.
+	if edges := a.xbins.Data; len(edges) == a.nbins+1 {
+		lo, hi := 0, a.nbins
+		for lo < hi-1 {
+			mid := (lo + hi) / 2
+			if x < edges[mid] {
+				hi = mid
+				continue
+			}
+			lo = mid
+		}
+		return lo + 1
+	}
+
+	// and the ordinary case, where the bins are all the same width.
+	i := 1 + int(float64(a.nbins)*(x-a.xmin)/(a.xmax-a.xmin))
+	switch {
+	case i < 1:
+		return 1
+	case i > a.nbins:
+		return a.nbins
+	}
+	return i
+}
+
+// setRange gives the axis n equal bins between lo and hi.
+func (a *taxis) setRange(n int, lo, hi float64) {
+	a.nbins = n
+	a.xmin = lo
+	a.xmax = hi
+	a.xbins.Data = nil
+}
+
+// setEdges gives the axis the bins the edges describe.
+func (a *taxis) setEdges(edges []float64) {
+	a.nbins = len(edges) - 1
+	a.xmin = edges[0]
+	a.xmax = edges[len(edges)-1]
+	a.xbins.Data = append(a.xbins.Data[:0], edges...)
+}

@@ -74,6 +74,220 @@ func NewH1CFrom(h *hbook.H1D) *H1C {
 	return hroot
 }
 
+// NewH1C creates a 1-dim histogram with n equal bins between xmin and
+// xmax, as "new TH1C(name, title, n, xmin, xmax)" does in C++.
+func NewH1C(name, title string, n int, xmin, xmax float64) *H1C {
+	h := newH1C()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setRange(n, xmin, xmax)
+	h.reset()
+	return h
+}
+
+// NewH1CFromEdges creates a 1-dim histogram whose bins are the ones the
+// edges describe, for a binning that is not uniform.
+func NewH1CFromEdges(name, title string, edges []float64) *H1C {
+	h := newH1C()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setEdges(edges)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axis and empties them.
+func (h *H1C) reset() {
+	n := h.th1.xaxis.nbins + 2 // and the under- and overflow
+	h.th1.ncells = n
+	h.arr.Data = make([]int8, n)
+	h.th1.sumw2.Data = make([]float64, n)
+	h.th1.entries = 0
+	h.th1.tsumw = 0
+	h.th1.tsumw2 = 0
+	h.th1.tsumwx = 0
+	h.th1.tsumwx2 = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H1C) Reset() { h.reset() }
+
+// FindBin returns the bin x falls in: 0 for the underflow, 1 to NbinsX for
+// the bins proper, NbinsX+1 for the overflow.
+func (h *H1C) FindBin(x float64) int {
+	return h.th1.xaxis.FindBin(x)
+}
+
+// Fill adds an entry of weight w at x.
+func (h *H1C) Fill(x, w float64) {
+	i := h.FindBin(x)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int8(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th1.entries++
+
+	// The sums over the whole histogram, which is where the mean and the
+	// width come from. ROOT leaves out what fell outside the axis, since a
+	// mean of the overflow is a mean of nothing in particular.
+	if i > 0 && i <= h.th1.xaxis.nbins {
+		h.th1.tsumw += w
+		h.th1.tsumw2 += w * w
+		h.th1.tsumwx += w * x
+		h.th1.tsumwx2 += w * x * x
+	}
+}
+
+// FillN adds an entry for each x with the matching weight, or of weight one
+// when ws is nil.
+//
+// FillN panics if the slices are of different lengths.
+func (h *H1C) FillN(xs, ws []float64) {
+	if ws != nil && len(ws) != len(xs) {
+		panic(fmt.Errorf("rhist: %d values and %d weights", len(xs), len(ws)))
+	}
+	for i, x := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(x, w)
+	}
+}
+
+// BinContent returns the content of the i-th cell, counting the underflow as
+// zero and the overflow as NbinsX+1.
+func (h *H1C) BinContent(i int) float64 {
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the i-th cell.
+func (h *H1C) SetBinContent(i int, v float64) {
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int8(v)
+}
+
+// BinError returns the uncertainty on the i-th cell: the square root of its
+// sum of squared weights, or of its content where no such sum is kept.
+func (h *H1C) BinError(i int) float64 {
+	return h.XBinError(i)
+}
+
+// SetBinError sets the uncertainty on the i-th cell.
+func (h *H1C) SetBinError(i int, e float64) {
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H1C) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int8(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th1.tsumw *= f
+	h.th1.tsumw2 *= f * f
+	h.th1.tsumwx *= f
+	h.th1.tsumwx2 *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H1C) Integral() float64 {
+	return h.IntegralRange(1, h.th1.xaxis.nbins)
+}
+
+// IntegralRange returns the sum of the cells from lo to hi, both included.
+func (h *H1C) IntegralRange(lo, hi int) float64 {
+	var sum float64
+	for i := max(0, lo); i <= min(hi, len(h.arr.Data)-1); i++ {
+		sum += float64(h.arr.Data[i])
+	}
+	return sum
+}
+
+// Maximum returns the largest content of the bins proper, and MaximumBin
+// which bin holds it.
+func (h *H1C) Maximum() float64 {
+	_, v := h.maxBin()
+	return v
+}
+
+// MaximumBin returns the bin holding the largest content.
+func (h *H1C) MaximumBin() int {
+	i, _ := h.maxBin()
+	return i
+}
+
+func (h *H1C) maxBin() (int, float64) {
+	var (
+		at = 0
+		mx = math.Inf(-1)
+	)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v > mx {
+			at, mx = i, v
+		}
+	}
+	if math.IsInf(mx, -1) {
+		return 0, 0
+	}
+	return at, mx
+}
+
+// Minimum returns the smallest content of the bins proper.
+func (h *H1C) Minimum() float64 {
+	mn := math.Inf(+1)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v < mn {
+			mn = v
+		}
+	}
+	if math.IsInf(mn, +1) {
+		return 0
+	}
+	return mn
+}
+
+// Mean returns the mean of the entries, from the running sums rather than
+// from the bins, so it is the mean of what was filled and not of where the
+// bins are.
+func (h *H1C) Mean() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th1.tsumwx / h.th1.tsumw
+}
+
+// StdDev returns the standard deviation of the entries.
+func (h *H1C) StdDev() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	var (
+		m = h.Mean()
+		v = h.th1.tsumwx2/h.th1.tsumw - m*m
+	)
+	if v <= 0 {
+		return 0
+	}
+	return math.Sqrt(v)
+}
+
 func (*H1C) RVersion() int16 {
 	return rvers.H1C
 }
@@ -355,6 +569,220 @@ func NewH1SFrom(h *hbook.H1D) *H1S {
 	}
 	hroot.th1.xaxis.xbins.Data = edges
 	return hroot
+}
+
+// NewH1S creates a 1-dim histogram with n equal bins between xmin and
+// xmax, as "new TH1S(name, title, n, xmin, xmax)" does in C++.
+func NewH1S(name, title string, n int, xmin, xmax float64) *H1S {
+	h := newH1S()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setRange(n, xmin, xmax)
+	h.reset()
+	return h
+}
+
+// NewH1SFromEdges creates a 1-dim histogram whose bins are the ones the
+// edges describe, for a binning that is not uniform.
+func NewH1SFromEdges(name, title string, edges []float64) *H1S {
+	h := newH1S()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setEdges(edges)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axis and empties them.
+func (h *H1S) reset() {
+	n := h.th1.xaxis.nbins + 2 // and the under- and overflow
+	h.th1.ncells = n
+	h.arr.Data = make([]int16, n)
+	h.th1.sumw2.Data = make([]float64, n)
+	h.th1.entries = 0
+	h.th1.tsumw = 0
+	h.th1.tsumw2 = 0
+	h.th1.tsumwx = 0
+	h.th1.tsumwx2 = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H1S) Reset() { h.reset() }
+
+// FindBin returns the bin x falls in: 0 for the underflow, 1 to NbinsX for
+// the bins proper, NbinsX+1 for the overflow.
+func (h *H1S) FindBin(x float64) int {
+	return h.th1.xaxis.FindBin(x)
+}
+
+// Fill adds an entry of weight w at x.
+func (h *H1S) Fill(x, w float64) {
+	i := h.FindBin(x)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int16(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th1.entries++
+
+	// The sums over the whole histogram, which is where the mean and the
+	// width come from. ROOT leaves out what fell outside the axis, since a
+	// mean of the overflow is a mean of nothing in particular.
+	if i > 0 && i <= h.th1.xaxis.nbins {
+		h.th1.tsumw += w
+		h.th1.tsumw2 += w * w
+		h.th1.tsumwx += w * x
+		h.th1.tsumwx2 += w * x * x
+	}
+}
+
+// FillN adds an entry for each x with the matching weight, or of weight one
+// when ws is nil.
+//
+// FillN panics if the slices are of different lengths.
+func (h *H1S) FillN(xs, ws []float64) {
+	if ws != nil && len(ws) != len(xs) {
+		panic(fmt.Errorf("rhist: %d values and %d weights", len(xs), len(ws)))
+	}
+	for i, x := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(x, w)
+	}
+}
+
+// BinContent returns the content of the i-th cell, counting the underflow as
+// zero and the overflow as NbinsX+1.
+func (h *H1S) BinContent(i int) float64 {
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the i-th cell.
+func (h *H1S) SetBinContent(i int, v float64) {
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int16(v)
+}
+
+// BinError returns the uncertainty on the i-th cell: the square root of its
+// sum of squared weights, or of its content where no such sum is kept.
+func (h *H1S) BinError(i int) float64 {
+	return h.XBinError(i)
+}
+
+// SetBinError sets the uncertainty on the i-th cell.
+func (h *H1S) SetBinError(i int, e float64) {
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H1S) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int16(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th1.tsumw *= f
+	h.th1.tsumw2 *= f * f
+	h.th1.tsumwx *= f
+	h.th1.tsumwx2 *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H1S) Integral() float64 {
+	return h.IntegralRange(1, h.th1.xaxis.nbins)
+}
+
+// IntegralRange returns the sum of the cells from lo to hi, both included.
+func (h *H1S) IntegralRange(lo, hi int) float64 {
+	var sum float64
+	for i := max(0, lo); i <= min(hi, len(h.arr.Data)-1); i++ {
+		sum += float64(h.arr.Data[i])
+	}
+	return sum
+}
+
+// Maximum returns the largest content of the bins proper, and MaximumBin
+// which bin holds it.
+func (h *H1S) Maximum() float64 {
+	_, v := h.maxBin()
+	return v
+}
+
+// MaximumBin returns the bin holding the largest content.
+func (h *H1S) MaximumBin() int {
+	i, _ := h.maxBin()
+	return i
+}
+
+func (h *H1S) maxBin() (int, float64) {
+	var (
+		at = 0
+		mx = math.Inf(-1)
+	)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v > mx {
+			at, mx = i, v
+		}
+	}
+	if math.IsInf(mx, -1) {
+		return 0, 0
+	}
+	return at, mx
+}
+
+// Minimum returns the smallest content of the bins proper.
+func (h *H1S) Minimum() float64 {
+	mn := math.Inf(+1)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v < mn {
+			mn = v
+		}
+	}
+	if math.IsInf(mn, +1) {
+		return 0
+	}
+	return mn
+}
+
+// Mean returns the mean of the entries, from the running sums rather than
+// from the bins, so it is the mean of what was filled and not of where the
+// bins are.
+func (h *H1S) Mean() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th1.tsumwx / h.th1.tsumw
+}
+
+// StdDev returns the standard deviation of the entries.
+func (h *H1S) StdDev() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	var (
+		m = h.Mean()
+		v = h.th1.tsumwx2/h.th1.tsumw - m*m
+	)
+	if v <= 0 {
+		return 0
+	}
+	return math.Sqrt(v)
 }
 
 func (*H1S) RVersion() int16 {
@@ -640,6 +1068,220 @@ func NewH1FFrom(h *hbook.H1D) *H1F {
 	return hroot
 }
 
+// NewH1F creates a 1-dim histogram with n equal bins between xmin and
+// xmax, as "new TH1F(name, title, n, xmin, xmax)" does in C++.
+func NewH1F(name, title string, n int, xmin, xmax float64) *H1F {
+	h := newH1F()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setRange(n, xmin, xmax)
+	h.reset()
+	return h
+}
+
+// NewH1FFromEdges creates a 1-dim histogram whose bins are the ones the
+// edges describe, for a binning that is not uniform.
+func NewH1FFromEdges(name, title string, edges []float64) *H1F {
+	h := newH1F()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setEdges(edges)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axis and empties them.
+func (h *H1F) reset() {
+	n := h.th1.xaxis.nbins + 2 // and the under- and overflow
+	h.th1.ncells = n
+	h.arr.Data = make([]float32, n)
+	h.th1.sumw2.Data = make([]float64, n)
+	h.th1.entries = 0
+	h.th1.tsumw = 0
+	h.th1.tsumw2 = 0
+	h.th1.tsumwx = 0
+	h.th1.tsumwx2 = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H1F) Reset() { h.reset() }
+
+// FindBin returns the bin x falls in: 0 for the underflow, 1 to NbinsX for
+// the bins proper, NbinsX+1 for the overflow.
+func (h *H1F) FindBin(x float64) int {
+	return h.th1.xaxis.FindBin(x)
+}
+
+// Fill adds an entry of weight w at x.
+func (h *H1F) Fill(x, w float64) {
+	i := h.FindBin(x)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += float32(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th1.entries++
+
+	// The sums over the whole histogram, which is where the mean and the
+	// width come from. ROOT leaves out what fell outside the axis, since a
+	// mean of the overflow is a mean of nothing in particular.
+	if i > 0 && i <= h.th1.xaxis.nbins {
+		h.th1.tsumw += w
+		h.th1.tsumw2 += w * w
+		h.th1.tsumwx += w * x
+		h.th1.tsumwx2 += w * x * x
+	}
+}
+
+// FillN adds an entry for each x with the matching weight, or of weight one
+// when ws is nil.
+//
+// FillN panics if the slices are of different lengths.
+func (h *H1F) FillN(xs, ws []float64) {
+	if ws != nil && len(ws) != len(xs) {
+		panic(fmt.Errorf("rhist: %d values and %d weights", len(xs), len(ws)))
+	}
+	for i, x := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(x, w)
+	}
+}
+
+// BinContent returns the content of the i-th cell, counting the underflow as
+// zero and the overflow as NbinsX+1.
+func (h *H1F) BinContent(i int) float64 {
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the i-th cell.
+func (h *H1F) SetBinContent(i int, v float64) {
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = float32(v)
+}
+
+// BinError returns the uncertainty on the i-th cell: the square root of its
+// sum of squared weights, or of its content where no such sum is kept.
+func (h *H1F) BinError(i int) float64 {
+	return h.XBinError(i)
+}
+
+// SetBinError sets the uncertainty on the i-th cell.
+func (h *H1F) SetBinError(i int, e float64) {
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H1F) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = float32(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th1.tsumw *= f
+	h.th1.tsumw2 *= f * f
+	h.th1.tsumwx *= f
+	h.th1.tsumwx2 *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H1F) Integral() float64 {
+	return h.IntegralRange(1, h.th1.xaxis.nbins)
+}
+
+// IntegralRange returns the sum of the cells from lo to hi, both included.
+func (h *H1F) IntegralRange(lo, hi int) float64 {
+	var sum float64
+	for i := max(0, lo); i <= min(hi, len(h.arr.Data)-1); i++ {
+		sum += float64(h.arr.Data[i])
+	}
+	return sum
+}
+
+// Maximum returns the largest content of the bins proper, and MaximumBin
+// which bin holds it.
+func (h *H1F) Maximum() float64 {
+	_, v := h.maxBin()
+	return v
+}
+
+// MaximumBin returns the bin holding the largest content.
+func (h *H1F) MaximumBin() int {
+	i, _ := h.maxBin()
+	return i
+}
+
+func (h *H1F) maxBin() (int, float64) {
+	var (
+		at = 0
+		mx = math.Inf(-1)
+	)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v > mx {
+			at, mx = i, v
+		}
+	}
+	if math.IsInf(mx, -1) {
+		return 0, 0
+	}
+	return at, mx
+}
+
+// Minimum returns the smallest content of the bins proper.
+func (h *H1F) Minimum() float64 {
+	mn := math.Inf(+1)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v < mn {
+			mn = v
+		}
+	}
+	if math.IsInf(mn, +1) {
+		return 0
+	}
+	return mn
+}
+
+// Mean returns the mean of the entries, from the running sums rather than
+// from the bins, so it is the mean of what was filled and not of where the
+// bins are.
+func (h *H1F) Mean() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th1.tsumwx / h.th1.tsumw
+}
+
+// StdDev returns the standard deviation of the entries.
+func (h *H1F) StdDev() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	var (
+		m = h.Mean()
+		v = h.th1.tsumwx2/h.th1.tsumw - m*m
+	)
+	if v <= 0 {
+		return 0
+	}
+	return math.Sqrt(v)
+}
+
 func (*H1F) RVersion() int16 {
 	return rvers.H1F
 }
@@ -923,6 +1565,220 @@ func NewH1DFrom(h *hbook.H1D) *H1D {
 	return hroot
 }
 
+// NewH1D creates a 1-dim histogram with n equal bins between xmin and
+// xmax, as "new TH1D(name, title, n, xmin, xmax)" does in C++.
+func NewH1D(name, title string, n int, xmin, xmax float64) *H1D {
+	h := newH1D()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setRange(n, xmin, xmax)
+	h.reset()
+	return h
+}
+
+// NewH1DFromEdges creates a 1-dim histogram whose bins are the ones the
+// edges describe, for a binning that is not uniform.
+func NewH1DFromEdges(name, title string, edges []float64) *H1D {
+	h := newH1D()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setEdges(edges)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axis and empties them.
+func (h *H1D) reset() {
+	n := h.th1.xaxis.nbins + 2 // and the under- and overflow
+	h.th1.ncells = n
+	h.arr.Data = make([]float64, n)
+	h.th1.sumw2.Data = make([]float64, n)
+	h.th1.entries = 0
+	h.th1.tsumw = 0
+	h.th1.tsumw2 = 0
+	h.th1.tsumwx = 0
+	h.th1.tsumwx2 = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H1D) Reset() { h.reset() }
+
+// FindBin returns the bin x falls in: 0 for the underflow, 1 to NbinsX for
+// the bins proper, NbinsX+1 for the overflow.
+func (h *H1D) FindBin(x float64) int {
+	return h.th1.xaxis.FindBin(x)
+}
+
+// Fill adds an entry of weight w at x.
+func (h *H1D) Fill(x, w float64) {
+	i := h.FindBin(x)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += float64(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th1.entries++
+
+	// The sums over the whole histogram, which is where the mean and the
+	// width come from. ROOT leaves out what fell outside the axis, since a
+	// mean of the overflow is a mean of nothing in particular.
+	if i > 0 && i <= h.th1.xaxis.nbins {
+		h.th1.tsumw += w
+		h.th1.tsumw2 += w * w
+		h.th1.tsumwx += w * x
+		h.th1.tsumwx2 += w * x * x
+	}
+}
+
+// FillN adds an entry for each x with the matching weight, or of weight one
+// when ws is nil.
+//
+// FillN panics if the slices are of different lengths.
+func (h *H1D) FillN(xs, ws []float64) {
+	if ws != nil && len(ws) != len(xs) {
+		panic(fmt.Errorf("rhist: %d values and %d weights", len(xs), len(ws)))
+	}
+	for i, x := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(x, w)
+	}
+}
+
+// BinContent returns the content of the i-th cell, counting the underflow as
+// zero and the overflow as NbinsX+1.
+func (h *H1D) BinContent(i int) float64 {
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the i-th cell.
+func (h *H1D) SetBinContent(i int, v float64) {
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = float64(v)
+}
+
+// BinError returns the uncertainty on the i-th cell: the square root of its
+// sum of squared weights, or of its content where no such sum is kept.
+func (h *H1D) BinError(i int) float64 {
+	return h.XBinError(i)
+}
+
+// SetBinError sets the uncertainty on the i-th cell.
+func (h *H1D) SetBinError(i int, e float64) {
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H1D) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = float64(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th1.tsumw *= f
+	h.th1.tsumw2 *= f * f
+	h.th1.tsumwx *= f
+	h.th1.tsumwx2 *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H1D) Integral() float64 {
+	return h.IntegralRange(1, h.th1.xaxis.nbins)
+}
+
+// IntegralRange returns the sum of the cells from lo to hi, both included.
+func (h *H1D) IntegralRange(lo, hi int) float64 {
+	var sum float64
+	for i := max(0, lo); i <= min(hi, len(h.arr.Data)-1); i++ {
+		sum += float64(h.arr.Data[i])
+	}
+	return sum
+}
+
+// Maximum returns the largest content of the bins proper, and MaximumBin
+// which bin holds it.
+func (h *H1D) Maximum() float64 {
+	_, v := h.maxBin()
+	return v
+}
+
+// MaximumBin returns the bin holding the largest content.
+func (h *H1D) MaximumBin() int {
+	i, _ := h.maxBin()
+	return i
+}
+
+func (h *H1D) maxBin() (int, float64) {
+	var (
+		at = 0
+		mx = math.Inf(-1)
+	)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v > mx {
+			at, mx = i, v
+		}
+	}
+	if math.IsInf(mx, -1) {
+		return 0, 0
+	}
+	return at, mx
+}
+
+// Minimum returns the smallest content of the bins proper.
+func (h *H1D) Minimum() float64 {
+	mn := math.Inf(+1)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v < mn {
+			mn = v
+		}
+	}
+	if math.IsInf(mn, +1) {
+		return 0
+	}
+	return mn
+}
+
+// Mean returns the mean of the entries, from the running sums rather than
+// from the bins, so it is the mean of what was filled and not of where the
+// bins are.
+func (h *H1D) Mean() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th1.tsumwx / h.th1.tsumw
+}
+
+// StdDev returns the standard deviation of the entries.
+func (h *H1D) StdDev() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	var (
+		m = h.Mean()
+		v = h.th1.tsumwx2/h.th1.tsumw - m*m
+	)
+	if v <= 0 {
+		return 0
+	}
+	return math.Sqrt(v)
+}
+
 func (*H1D) RVersion() int16 {
 	return rvers.H1D
 }
@@ -1204,6 +2060,220 @@ func NewH1IFrom(h *hbook.H1D) *H1I {
 	}
 	hroot.th1.xaxis.xbins.Data = edges
 	return hroot
+}
+
+// NewH1I creates a 1-dim histogram with n equal bins between xmin and
+// xmax, as "new TH1I(name, title, n, xmin, xmax)" does in C++.
+func NewH1I(name, title string, n int, xmin, xmax float64) *H1I {
+	h := newH1I()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setRange(n, xmin, xmax)
+	h.reset()
+	return h
+}
+
+// NewH1IFromEdges creates a 1-dim histogram whose bins are the ones the
+// edges describe, for a binning that is not uniform.
+func NewH1IFromEdges(name, title string, edges []float64) *H1I {
+	h := newH1I()
+	h.th1.SetName(name)
+	h.th1.SetTitle(title)
+	h.th1.xaxis.setEdges(edges)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axis and empties them.
+func (h *H1I) reset() {
+	n := h.th1.xaxis.nbins + 2 // and the under- and overflow
+	h.th1.ncells = n
+	h.arr.Data = make([]int32, n)
+	h.th1.sumw2.Data = make([]float64, n)
+	h.th1.entries = 0
+	h.th1.tsumw = 0
+	h.th1.tsumw2 = 0
+	h.th1.tsumwx = 0
+	h.th1.tsumwx2 = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H1I) Reset() { h.reset() }
+
+// FindBin returns the bin x falls in: 0 for the underflow, 1 to NbinsX for
+// the bins proper, NbinsX+1 for the overflow.
+func (h *H1I) FindBin(x float64) int {
+	return h.th1.xaxis.FindBin(x)
+}
+
+// Fill adds an entry of weight w at x.
+func (h *H1I) Fill(x, w float64) {
+	i := h.FindBin(x)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int32(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th1.entries++
+
+	// The sums over the whole histogram, which is where the mean and the
+	// width come from. ROOT leaves out what fell outside the axis, since a
+	// mean of the overflow is a mean of nothing in particular.
+	if i > 0 && i <= h.th1.xaxis.nbins {
+		h.th1.tsumw += w
+		h.th1.tsumw2 += w * w
+		h.th1.tsumwx += w * x
+		h.th1.tsumwx2 += w * x * x
+	}
+}
+
+// FillN adds an entry for each x with the matching weight, or of weight one
+// when ws is nil.
+//
+// FillN panics if the slices are of different lengths.
+func (h *H1I) FillN(xs, ws []float64) {
+	if ws != nil && len(ws) != len(xs) {
+		panic(fmt.Errorf("rhist: %d values and %d weights", len(xs), len(ws)))
+	}
+	for i, x := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(x, w)
+	}
+}
+
+// BinContent returns the content of the i-th cell, counting the underflow as
+// zero and the overflow as NbinsX+1.
+func (h *H1I) BinContent(i int) float64 {
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the i-th cell.
+func (h *H1I) SetBinContent(i int, v float64) {
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int32(v)
+}
+
+// BinError returns the uncertainty on the i-th cell: the square root of its
+// sum of squared weights, or of its content where no such sum is kept.
+func (h *H1I) BinError(i int) float64 {
+	return h.XBinError(i)
+}
+
+// SetBinError sets the uncertainty on the i-th cell.
+func (h *H1I) SetBinError(i int, e float64) {
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H1I) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int32(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th1.tsumw *= f
+	h.th1.tsumw2 *= f * f
+	h.th1.tsumwx *= f
+	h.th1.tsumwx2 *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H1I) Integral() float64 {
+	return h.IntegralRange(1, h.th1.xaxis.nbins)
+}
+
+// IntegralRange returns the sum of the cells from lo to hi, both included.
+func (h *H1I) IntegralRange(lo, hi int) float64 {
+	var sum float64
+	for i := max(0, lo); i <= min(hi, len(h.arr.Data)-1); i++ {
+		sum += float64(h.arr.Data[i])
+	}
+	return sum
+}
+
+// Maximum returns the largest content of the bins proper, and MaximumBin
+// which bin holds it.
+func (h *H1I) Maximum() float64 {
+	_, v := h.maxBin()
+	return v
+}
+
+// MaximumBin returns the bin holding the largest content.
+func (h *H1I) MaximumBin() int {
+	i, _ := h.maxBin()
+	return i
+}
+
+func (h *H1I) maxBin() (int, float64) {
+	var (
+		at = 0
+		mx = math.Inf(-1)
+	)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v > mx {
+			at, mx = i, v
+		}
+	}
+	if math.IsInf(mx, -1) {
+		return 0, 0
+	}
+	return at, mx
+}
+
+// Minimum returns the smallest content of the bins proper.
+func (h *H1I) Minimum() float64 {
+	mn := math.Inf(+1)
+	for i := 1; i <= h.th1.xaxis.nbins && i < len(h.arr.Data); i++ {
+		if v := float64(h.arr.Data[i]); v < mn {
+			mn = v
+		}
+	}
+	if math.IsInf(mn, +1) {
+		return 0
+	}
+	return mn
+}
+
+// Mean returns the mean of the entries, from the running sums rather than
+// from the bins, so it is the mean of what was filled and not of where the
+// bins are.
+func (h *H1I) Mean() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th1.tsumwx / h.th1.tsumw
+}
+
+// StdDev returns the standard deviation of the entries.
+func (h *H1I) StdDev() float64 {
+	if h.th1.tsumw == 0 {
+		return 0
+	}
+	var (
+		m = h.Mean()
+		v = h.th1.tsumwx2/h.th1.tsumw - m*m
+	)
+	if v <= 0 {
+		return 0
+	}
+	return math.Sqrt(v)
 }
 
 func (*H1I) RVersion() int16 {

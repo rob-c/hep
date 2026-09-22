@@ -127,6 +127,257 @@ func NewH3CFrom(h *hbook.H3D) *H3C {
 	return hroot
 }
 
+// NewH3C creates a 3-dim histogram, as "new TH3C(name, title,
+// nx, xmin, xmax, ny, ymin, ymax, nz, zmin, zmax)" does in C++.
+func NewH3C(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64, nz int, zmin, zmax float64) *H3C {
+	h := newH3C()
+	h.th3.th1.SetName(name)
+	h.th3.th1.SetTitle(title)
+	h.th3.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th3.th1.yaxis.setRange(ny, ymin, ymax)
+	h.th3.th1.zaxis.setRange(nz, zmin, zmax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H3C) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2) * (h.th1.zaxis.nbins + 2)
+	h.th3.th1.ncells = n
+	h.arr.Data = make([]int8, n)
+	h.th3.th1.sumw2.Data = make([]float64, n)
+	h.th3.th1.entries = 0
+	h.th3.th1.tsumw = 0
+	h.th3.th1.tsumw2 = 0
+	h.th3.th1.tsumwx = 0
+	h.th3.th1.tsumwx2 = 0
+	h.th3.tsumwy = 0
+	h.th3.tsumwy2 = 0
+	h.th3.tsumwxy = 0
+	h.th3.tsumwz = 0
+	h.th3.tsumwz2 = 0
+	h.th3.tsumwxz = 0
+	h.th3.tsumwyz = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H3C) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y,z) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H3C) FindBin(x, y, z float64) int {
+	return h.bin(
+		h.th1.xaxis.FindBin(x),
+		h.th1.yaxis.FindBin(y),
+		h.th1.zaxis.FindBin(z),
+	)
+}
+
+// Fill adds an entry of weight w at (x,y,z).
+func (h *H3C) Fill(x, y, z, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		iz = h.th1.zaxis.FindBin(z)
+		i  = h.bin(ix, iy, iz)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int8(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th3.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins &&
+		iy > 0 && iy <= h.th1.yaxis.nbins &&
+		iz > 0 && iz <= h.th1.zaxis.nbins {
+		h.th3.th1.tsumw += w
+		h.th3.th1.tsumw2 += w * w
+		h.th3.th1.tsumwx += w * x
+		h.th3.th1.tsumwx2 += w * x * x
+		h.th3.tsumwy += w * y
+		h.th3.tsumwy2 += w * y * y
+		h.th3.tsumwxy += w * x * y
+		h.th3.tsumwz += w * z
+		h.th3.tsumwz2 += w * z * z
+		h.th3.tsumwxz += w * x * z
+		h.th3.tsumwyz += w * y * z
+	}
+}
+
+// FillN adds an entry for each (x,y,z) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H3C) FillN(xs, ys, zs, ws []float64) {
+	if len(ys) != len(xs) || len(zs) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], zs[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy,iz).
+func (h *H3C) BinContent(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy,iz).
+func (h *H3C) SetBinContent(ix, iy, iz int, v float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int8(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy,iz).
+func (h *H3C) BinError(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy,iz).
+func (h *H3C) SetBinError(ix, iy, iz int, e float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H3C) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int8(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th3.th1.tsumw *= f
+	h.th3.th1.tsumw2 *= f * f
+	h.th3.th1.tsumwx *= f
+	h.th3.th1.tsumwx2 *= f
+	h.th3.tsumwy *= f
+	h.th3.tsumwy2 *= f
+	h.th3.tsumwxy *= f
+	h.th3.tsumwz *= f
+	h.th3.tsumwz2 *= f
+	h.th3.tsumwxz *= f
+	h.th3.tsumwyz *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H3C) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+			}
+		}
+	}
+	return sum
+}
+
+// ProjectionZ sums the histogram over x and y, as TH3::ProjectionZ does.
+func (h *H3C) ProjectionZ(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.zaxis.nbins, h.th1.zaxis.xmin, h.th1.zaxis.xmax)
+
+	for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+		}
+		o.SetBinContent(iz, sum)
+		o.SetBinError(iz, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th3.th1.tsumw
+	o.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th1.tsumwx = h.th3.tsumwz
+	o.th1.tsumwx2 = h.th3.tsumwz2
+	return o
+}
+
+// ProjectionXY sums the histogram over z, as TH3::Project3D("xy") does.
+func (h *H3C) ProjectionXY(name string) *H2D {
+	o := NewH2D(name, h.Title(),
+		h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax,
+		h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax,
+	)
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			var sum, err2 float64
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+			o.SetBinContent(ix, iy, sum)
+			o.SetBinError(ix, iy, math.Sqrt(err2))
+		}
+	}
+
+	o.th2.th1.entries = h.th1.entries
+	o.th2.th1.tsumw = h.th3.th1.tsumw
+	o.th2.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th2.th1.tsumwx = h.th3.th1.tsumwx
+	o.th2.th1.tsumwx2 = h.th3.th1.tsumwx2
+	o.th2.tsumwy = h.th3.tsumwy
+	o.th2.tsumwy2 = h.th3.tsumwy2
+	o.th2.tsumwxy = h.th3.tsumwxy
+	return o
+}
+
+// MeanX, MeanY and MeanZ return the means of the entries along each axis.
+func (h *H3C) MeanX() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.th1.tsumwx / h.th3.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H3C) MeanY() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwy / h.th3.th1.tsumw
+}
+
+// MeanZ returns the mean along z.
+func (h *H3C) MeanZ() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwz / h.th3.th1.tsumw
+}
+
 func (*H3C) RVersion() int16 {
 	return rvers.H3C
 }
@@ -610,6 +861,257 @@ func NewH3SFrom(h *hbook.H3D) *H3S {
 	hroot.th3.th1.zaxis.xbins.Data = zedges
 
 	return hroot
+}
+
+// NewH3S creates a 3-dim histogram, as "new TH3S(name, title,
+// nx, xmin, xmax, ny, ymin, ymax, nz, zmin, zmax)" does in C++.
+func NewH3S(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64, nz int, zmin, zmax float64) *H3S {
+	h := newH3S()
+	h.th3.th1.SetName(name)
+	h.th3.th1.SetTitle(title)
+	h.th3.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th3.th1.yaxis.setRange(ny, ymin, ymax)
+	h.th3.th1.zaxis.setRange(nz, zmin, zmax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H3S) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2) * (h.th1.zaxis.nbins + 2)
+	h.th3.th1.ncells = n
+	h.arr.Data = make([]int16, n)
+	h.th3.th1.sumw2.Data = make([]float64, n)
+	h.th3.th1.entries = 0
+	h.th3.th1.tsumw = 0
+	h.th3.th1.tsumw2 = 0
+	h.th3.th1.tsumwx = 0
+	h.th3.th1.tsumwx2 = 0
+	h.th3.tsumwy = 0
+	h.th3.tsumwy2 = 0
+	h.th3.tsumwxy = 0
+	h.th3.tsumwz = 0
+	h.th3.tsumwz2 = 0
+	h.th3.tsumwxz = 0
+	h.th3.tsumwyz = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H3S) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y,z) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H3S) FindBin(x, y, z float64) int {
+	return h.bin(
+		h.th1.xaxis.FindBin(x),
+		h.th1.yaxis.FindBin(y),
+		h.th1.zaxis.FindBin(z),
+	)
+}
+
+// Fill adds an entry of weight w at (x,y,z).
+func (h *H3S) Fill(x, y, z, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		iz = h.th1.zaxis.FindBin(z)
+		i  = h.bin(ix, iy, iz)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int16(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th3.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins &&
+		iy > 0 && iy <= h.th1.yaxis.nbins &&
+		iz > 0 && iz <= h.th1.zaxis.nbins {
+		h.th3.th1.tsumw += w
+		h.th3.th1.tsumw2 += w * w
+		h.th3.th1.tsumwx += w * x
+		h.th3.th1.tsumwx2 += w * x * x
+		h.th3.tsumwy += w * y
+		h.th3.tsumwy2 += w * y * y
+		h.th3.tsumwxy += w * x * y
+		h.th3.tsumwz += w * z
+		h.th3.tsumwz2 += w * z * z
+		h.th3.tsumwxz += w * x * z
+		h.th3.tsumwyz += w * y * z
+	}
+}
+
+// FillN adds an entry for each (x,y,z) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H3S) FillN(xs, ys, zs, ws []float64) {
+	if len(ys) != len(xs) || len(zs) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], zs[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy,iz).
+func (h *H3S) BinContent(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy,iz).
+func (h *H3S) SetBinContent(ix, iy, iz int, v float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int16(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy,iz).
+func (h *H3S) BinError(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy,iz).
+func (h *H3S) SetBinError(ix, iy, iz int, e float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H3S) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int16(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th3.th1.tsumw *= f
+	h.th3.th1.tsumw2 *= f * f
+	h.th3.th1.tsumwx *= f
+	h.th3.th1.tsumwx2 *= f
+	h.th3.tsumwy *= f
+	h.th3.tsumwy2 *= f
+	h.th3.tsumwxy *= f
+	h.th3.tsumwz *= f
+	h.th3.tsumwz2 *= f
+	h.th3.tsumwxz *= f
+	h.th3.tsumwyz *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H3S) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+			}
+		}
+	}
+	return sum
+}
+
+// ProjectionZ sums the histogram over x and y, as TH3::ProjectionZ does.
+func (h *H3S) ProjectionZ(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.zaxis.nbins, h.th1.zaxis.xmin, h.th1.zaxis.xmax)
+
+	for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+		}
+		o.SetBinContent(iz, sum)
+		o.SetBinError(iz, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th3.th1.tsumw
+	o.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th1.tsumwx = h.th3.tsumwz
+	o.th1.tsumwx2 = h.th3.tsumwz2
+	return o
+}
+
+// ProjectionXY sums the histogram over z, as TH3::Project3D("xy") does.
+func (h *H3S) ProjectionXY(name string) *H2D {
+	o := NewH2D(name, h.Title(),
+		h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax,
+		h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax,
+	)
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			var sum, err2 float64
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+			o.SetBinContent(ix, iy, sum)
+			o.SetBinError(ix, iy, math.Sqrt(err2))
+		}
+	}
+
+	o.th2.th1.entries = h.th1.entries
+	o.th2.th1.tsumw = h.th3.th1.tsumw
+	o.th2.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th2.th1.tsumwx = h.th3.th1.tsumwx
+	o.th2.th1.tsumwx2 = h.th3.th1.tsumwx2
+	o.th2.tsumwy = h.th3.tsumwy
+	o.th2.tsumwy2 = h.th3.tsumwy2
+	o.th2.tsumwxy = h.th3.tsumwxy
+	return o
+}
+
+// MeanX, MeanY and MeanZ return the means of the entries along each axis.
+func (h *H3S) MeanX() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.th1.tsumwx / h.th3.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H3S) MeanY() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwy / h.th3.th1.tsumw
+}
+
+// MeanZ returns the mean along z.
+func (h *H3S) MeanZ() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwz / h.th3.th1.tsumw
 }
 
 func (*H3S) RVersion() int16 {
@@ -1097,6 +1599,257 @@ func NewH3IFrom(h *hbook.H3D) *H3I {
 	return hroot
 }
 
+// NewH3I creates a 3-dim histogram, as "new TH3I(name, title,
+// nx, xmin, xmax, ny, ymin, ymax, nz, zmin, zmax)" does in C++.
+func NewH3I(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64, nz int, zmin, zmax float64) *H3I {
+	h := newH3I()
+	h.th3.th1.SetName(name)
+	h.th3.th1.SetTitle(title)
+	h.th3.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th3.th1.yaxis.setRange(ny, ymin, ymax)
+	h.th3.th1.zaxis.setRange(nz, zmin, zmax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H3I) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2) * (h.th1.zaxis.nbins + 2)
+	h.th3.th1.ncells = n
+	h.arr.Data = make([]int32, n)
+	h.th3.th1.sumw2.Data = make([]float64, n)
+	h.th3.th1.entries = 0
+	h.th3.th1.tsumw = 0
+	h.th3.th1.tsumw2 = 0
+	h.th3.th1.tsumwx = 0
+	h.th3.th1.tsumwx2 = 0
+	h.th3.tsumwy = 0
+	h.th3.tsumwy2 = 0
+	h.th3.tsumwxy = 0
+	h.th3.tsumwz = 0
+	h.th3.tsumwz2 = 0
+	h.th3.tsumwxz = 0
+	h.th3.tsumwyz = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H3I) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y,z) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H3I) FindBin(x, y, z float64) int {
+	return h.bin(
+		h.th1.xaxis.FindBin(x),
+		h.th1.yaxis.FindBin(y),
+		h.th1.zaxis.FindBin(z),
+	)
+}
+
+// Fill adds an entry of weight w at (x,y,z).
+func (h *H3I) Fill(x, y, z, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		iz = h.th1.zaxis.FindBin(z)
+		i  = h.bin(ix, iy, iz)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += int32(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th3.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins &&
+		iy > 0 && iy <= h.th1.yaxis.nbins &&
+		iz > 0 && iz <= h.th1.zaxis.nbins {
+		h.th3.th1.tsumw += w
+		h.th3.th1.tsumw2 += w * w
+		h.th3.th1.tsumwx += w * x
+		h.th3.th1.tsumwx2 += w * x * x
+		h.th3.tsumwy += w * y
+		h.th3.tsumwy2 += w * y * y
+		h.th3.tsumwxy += w * x * y
+		h.th3.tsumwz += w * z
+		h.th3.tsumwz2 += w * z * z
+		h.th3.tsumwxz += w * x * z
+		h.th3.tsumwyz += w * y * z
+	}
+}
+
+// FillN adds an entry for each (x,y,z) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H3I) FillN(xs, ys, zs, ws []float64) {
+	if len(ys) != len(xs) || len(zs) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], zs[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy,iz).
+func (h *H3I) BinContent(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy,iz).
+func (h *H3I) SetBinContent(ix, iy, iz int, v float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = int32(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy,iz).
+func (h *H3I) BinError(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy,iz).
+func (h *H3I) SetBinError(ix, iy, iz int, e float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H3I) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = int32(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th3.th1.tsumw *= f
+	h.th3.th1.tsumw2 *= f * f
+	h.th3.th1.tsumwx *= f
+	h.th3.th1.tsumwx2 *= f
+	h.th3.tsumwy *= f
+	h.th3.tsumwy2 *= f
+	h.th3.tsumwxy *= f
+	h.th3.tsumwz *= f
+	h.th3.tsumwz2 *= f
+	h.th3.tsumwxz *= f
+	h.th3.tsumwyz *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H3I) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+			}
+		}
+	}
+	return sum
+}
+
+// ProjectionZ sums the histogram over x and y, as TH3::ProjectionZ does.
+func (h *H3I) ProjectionZ(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.zaxis.nbins, h.th1.zaxis.xmin, h.th1.zaxis.xmax)
+
+	for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+		}
+		o.SetBinContent(iz, sum)
+		o.SetBinError(iz, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th3.th1.tsumw
+	o.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th1.tsumwx = h.th3.tsumwz
+	o.th1.tsumwx2 = h.th3.tsumwz2
+	return o
+}
+
+// ProjectionXY sums the histogram over z, as TH3::Project3D("xy") does.
+func (h *H3I) ProjectionXY(name string) *H2D {
+	o := NewH2D(name, h.Title(),
+		h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax,
+		h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax,
+	)
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			var sum, err2 float64
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+			o.SetBinContent(ix, iy, sum)
+			o.SetBinError(ix, iy, math.Sqrt(err2))
+		}
+	}
+
+	o.th2.th1.entries = h.th1.entries
+	o.th2.th1.tsumw = h.th3.th1.tsumw
+	o.th2.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th2.th1.tsumwx = h.th3.th1.tsumwx
+	o.th2.th1.tsumwx2 = h.th3.th1.tsumwx2
+	o.th2.tsumwy = h.th3.tsumwy
+	o.th2.tsumwy2 = h.th3.tsumwy2
+	o.th2.tsumwxy = h.th3.tsumwxy
+	return o
+}
+
+// MeanX, MeanY and MeanZ return the means of the entries along each axis.
+func (h *H3I) MeanX() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.th1.tsumwx / h.th3.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H3I) MeanY() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwy / h.th3.th1.tsumw
+}
+
+// MeanZ returns the mean along z.
+func (h *H3I) MeanZ() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwz / h.th3.th1.tsumw
+}
+
 func (*H3I) RVersion() int16 {
 	return rvers.H3I
 }
@@ -1582,6 +2335,257 @@ func NewH3FFrom(h *hbook.H3D) *H3F {
 	return hroot
 }
 
+// NewH3F creates a 3-dim histogram, as "new TH3F(name, title,
+// nx, xmin, xmax, ny, ymin, ymax, nz, zmin, zmax)" does in C++.
+func NewH3F(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64, nz int, zmin, zmax float64) *H3F {
+	h := newH3F()
+	h.th3.th1.SetName(name)
+	h.th3.th1.SetTitle(title)
+	h.th3.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th3.th1.yaxis.setRange(ny, ymin, ymax)
+	h.th3.th1.zaxis.setRange(nz, zmin, zmax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H3F) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2) * (h.th1.zaxis.nbins + 2)
+	h.th3.th1.ncells = n
+	h.arr.Data = make([]float32, n)
+	h.th3.th1.sumw2.Data = make([]float64, n)
+	h.th3.th1.entries = 0
+	h.th3.th1.tsumw = 0
+	h.th3.th1.tsumw2 = 0
+	h.th3.th1.tsumwx = 0
+	h.th3.th1.tsumwx2 = 0
+	h.th3.tsumwy = 0
+	h.th3.tsumwy2 = 0
+	h.th3.tsumwxy = 0
+	h.th3.tsumwz = 0
+	h.th3.tsumwz2 = 0
+	h.th3.tsumwxz = 0
+	h.th3.tsumwyz = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H3F) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y,z) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H3F) FindBin(x, y, z float64) int {
+	return h.bin(
+		h.th1.xaxis.FindBin(x),
+		h.th1.yaxis.FindBin(y),
+		h.th1.zaxis.FindBin(z),
+	)
+}
+
+// Fill adds an entry of weight w at (x,y,z).
+func (h *H3F) Fill(x, y, z, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		iz = h.th1.zaxis.FindBin(z)
+		i  = h.bin(ix, iy, iz)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += float32(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th3.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins &&
+		iy > 0 && iy <= h.th1.yaxis.nbins &&
+		iz > 0 && iz <= h.th1.zaxis.nbins {
+		h.th3.th1.tsumw += w
+		h.th3.th1.tsumw2 += w * w
+		h.th3.th1.tsumwx += w * x
+		h.th3.th1.tsumwx2 += w * x * x
+		h.th3.tsumwy += w * y
+		h.th3.tsumwy2 += w * y * y
+		h.th3.tsumwxy += w * x * y
+		h.th3.tsumwz += w * z
+		h.th3.tsumwz2 += w * z * z
+		h.th3.tsumwxz += w * x * z
+		h.th3.tsumwyz += w * y * z
+	}
+}
+
+// FillN adds an entry for each (x,y,z) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H3F) FillN(xs, ys, zs, ws []float64) {
+	if len(ys) != len(xs) || len(zs) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], zs[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy,iz).
+func (h *H3F) BinContent(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy,iz).
+func (h *H3F) SetBinContent(ix, iy, iz int, v float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = float32(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy,iz).
+func (h *H3F) BinError(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy,iz).
+func (h *H3F) SetBinError(ix, iy, iz int, e float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H3F) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = float32(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th3.th1.tsumw *= f
+	h.th3.th1.tsumw2 *= f * f
+	h.th3.th1.tsumwx *= f
+	h.th3.th1.tsumwx2 *= f
+	h.th3.tsumwy *= f
+	h.th3.tsumwy2 *= f
+	h.th3.tsumwxy *= f
+	h.th3.tsumwz *= f
+	h.th3.tsumwz2 *= f
+	h.th3.tsumwxz *= f
+	h.th3.tsumwyz *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H3F) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+			}
+		}
+	}
+	return sum
+}
+
+// ProjectionZ sums the histogram over x and y, as TH3::ProjectionZ does.
+func (h *H3F) ProjectionZ(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.zaxis.nbins, h.th1.zaxis.xmin, h.th1.zaxis.xmax)
+
+	for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+		}
+		o.SetBinContent(iz, sum)
+		o.SetBinError(iz, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th3.th1.tsumw
+	o.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th1.tsumwx = h.th3.tsumwz
+	o.th1.tsumwx2 = h.th3.tsumwz2
+	return o
+}
+
+// ProjectionXY sums the histogram over z, as TH3::Project3D("xy") does.
+func (h *H3F) ProjectionXY(name string) *H2D {
+	o := NewH2D(name, h.Title(),
+		h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax,
+		h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax,
+	)
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			var sum, err2 float64
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+			o.SetBinContent(ix, iy, sum)
+			o.SetBinError(ix, iy, math.Sqrt(err2))
+		}
+	}
+
+	o.th2.th1.entries = h.th1.entries
+	o.th2.th1.tsumw = h.th3.th1.tsumw
+	o.th2.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th2.th1.tsumwx = h.th3.th1.tsumwx
+	o.th2.th1.tsumwx2 = h.th3.th1.tsumwx2
+	o.th2.tsumwy = h.th3.tsumwy
+	o.th2.tsumwy2 = h.th3.tsumwy2
+	o.th2.tsumwxy = h.th3.tsumwxy
+	return o
+}
+
+// MeanX, MeanY and MeanZ return the means of the entries along each axis.
+func (h *H3F) MeanX() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.th1.tsumwx / h.th3.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H3F) MeanY() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwy / h.th3.th1.tsumw
+}
+
+// MeanZ returns the mean along z.
+func (h *H3F) MeanZ() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwz / h.th3.th1.tsumw
+}
+
 func (*H3F) RVersion() int16 {
 	return rvers.H3F
 }
@@ -2065,6 +3069,257 @@ func NewH3DFrom(h *hbook.H3D) *H3D {
 	hroot.th3.th1.zaxis.xbins.Data = zedges
 
 	return hroot
+}
+
+// NewH3D creates a 3-dim histogram, as "new TH3D(name, title,
+// nx, xmin, xmax, ny, ymin, ymax, nz, zmin, zmax)" does in C++.
+func NewH3D(name, title string, nx int, xmin, xmax float64, ny int, ymin, ymax float64, nz int, zmin, zmax float64) *H3D {
+	h := newH3D()
+	h.th3.th1.SetName(name)
+	h.th3.th1.SetTitle(title)
+	h.th3.th1.xaxis.setRange(nx, xmin, xmax)
+	h.th3.th1.yaxis.setRange(ny, ymin, ymax)
+	h.th3.th1.zaxis.setRange(nz, zmin, zmax)
+	h.reset()
+	return h
+}
+
+// reset sizes the cells to the axes and empties them.
+func (h *H3D) reset() {
+	n := (h.th1.xaxis.nbins + 2) * (h.th1.yaxis.nbins + 2) * (h.th1.zaxis.nbins + 2)
+	h.th3.th1.ncells = n
+	h.arr.Data = make([]float64, n)
+	h.th3.th1.sumw2.Data = make([]float64, n)
+	h.th3.th1.entries = 0
+	h.th3.th1.tsumw = 0
+	h.th3.th1.tsumw2 = 0
+	h.th3.th1.tsumwx = 0
+	h.th3.th1.tsumwx2 = 0
+	h.th3.tsumwy = 0
+	h.th3.tsumwy2 = 0
+	h.th3.tsumwxy = 0
+	h.th3.tsumwz = 0
+	h.th3.tsumwz2 = 0
+	h.th3.tsumwxz = 0
+	h.th3.tsumwyz = 0
+}
+
+// Reset empties the histogram, keeping its binning.
+func (h *H3D) Reset() { h.reset() }
+
+// FindBin returns the cell (x,y,z) falls in, as an index into the flat array
+// the histogram keeps.
+func (h *H3D) FindBin(x, y, z float64) int {
+	return h.bin(
+		h.th1.xaxis.FindBin(x),
+		h.th1.yaxis.FindBin(y),
+		h.th1.zaxis.FindBin(z),
+	)
+}
+
+// Fill adds an entry of weight w at (x,y,z).
+func (h *H3D) Fill(x, y, z, w float64) {
+	var (
+		ix = h.th1.xaxis.FindBin(x)
+		iy = h.th1.yaxis.FindBin(y)
+		iz = h.th1.zaxis.FindBin(z)
+		i  = h.bin(ix, iy, iz)
+	)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+
+	h.arr.Data[i] += float64(w)
+	if len(h.th1.sumw2.Data) > i {
+		h.th1.sumw2.Data[i] += w * w
+	}
+
+	h.th3.th1.entries++
+
+	if ix > 0 && ix <= h.th1.xaxis.nbins &&
+		iy > 0 && iy <= h.th1.yaxis.nbins &&
+		iz > 0 && iz <= h.th1.zaxis.nbins {
+		h.th3.th1.tsumw += w
+		h.th3.th1.tsumw2 += w * w
+		h.th3.th1.tsumwx += w * x
+		h.th3.th1.tsumwx2 += w * x * x
+		h.th3.tsumwy += w * y
+		h.th3.tsumwy2 += w * y * y
+		h.th3.tsumwxy += w * x * y
+		h.th3.tsumwz += w * z
+		h.th3.tsumwz2 += w * z * z
+		h.th3.tsumwxz += w * x * z
+		h.th3.tsumwyz += w * y * z
+	}
+}
+
+// FillN adds an entry for each (x,y,z) with the matching weight, or of weight
+// one when ws is nil.
+func (h *H3D) FillN(xs, ys, zs, ws []float64) {
+	if len(ys) != len(xs) || len(zs) != len(xs) || (ws != nil && len(ws) != len(xs)) {
+		panic(fmt.Errorf("rhist: lengths mismatch"))
+	}
+	for i := range xs {
+		w := 1.0
+		if ws != nil {
+			w = ws[i]
+		}
+		h.Fill(xs[i], ys[i], zs[i], w)
+	}
+}
+
+// BinContent returns the content of the cell at (ix,iy,iz).
+func (h *H3D) BinContent(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	return float64(h.arr.Data[i])
+}
+
+// SetBinContent sets the content of the cell at (ix,iy,iz).
+func (h *H3D) SetBinContent(ix, iy, iz int, v float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return
+	}
+	h.arr.Data[i] = float64(v)
+}
+
+// BinError returns the uncertainty on the cell at (ix,iy,iz).
+func (h *H3D) BinError(ix, iy, iz int) float64 {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.arr.Data) {
+		return 0
+	}
+	if len(h.th1.sumw2.Data) > i {
+		return math.Sqrt(h.th1.sumw2.Data[i])
+	}
+	return math.Sqrt(math.Abs(float64(h.arr.Data[i])))
+}
+
+// SetBinError sets the uncertainty on the cell at (ix,iy,iz).
+func (h *H3D) SetBinError(ix, iy, iz int, e float64) {
+	i := h.bin(ix, iy, iz)
+	if i < 0 || i >= len(h.th1.sumw2.Data) {
+		return
+	}
+	h.th1.sumw2.Data[i] = e * e
+}
+
+// Scale multiplies every cell by f, and the uncertainties with them.
+func (h *H3D) Scale(f float64) {
+	for i := range h.arr.Data {
+		h.arr.Data[i] = float64(float64(h.arr.Data[i]) * f)
+	}
+	for i := range h.th1.sumw2.Data {
+		h.th1.sumw2.Data[i] *= f * f
+	}
+	h.th3.th1.tsumw *= f
+	h.th3.th1.tsumw2 *= f * f
+	h.th3.th1.tsumwx *= f
+	h.th3.th1.tsumwx2 *= f
+	h.th3.tsumwy *= f
+	h.th3.tsumwy2 *= f
+	h.th3.tsumwxy *= f
+	h.th3.tsumwz *= f
+	h.th3.tsumwz2 *= f
+	h.th3.tsumwxz *= f
+	h.th3.tsumwyz *= f
+}
+
+// Integral returns the sum of the bins proper, leaving out the under- and
+// overflow.
+func (h *H3D) Integral() float64 {
+	var sum float64
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+			}
+		}
+	}
+	return sum
+}
+
+// ProjectionZ sums the histogram over x and y, as TH3::ProjectionZ does.
+func (h *H3D) ProjectionZ(name string) *H1D {
+	o := NewH1D(name, h.Title(), h.th1.zaxis.nbins, h.th1.zaxis.xmin, h.th1.zaxis.xmax)
+
+	for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+		var sum, err2 float64
+		for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+			for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+		}
+		o.SetBinContent(iz, sum)
+		o.SetBinError(iz, math.Sqrt(err2))
+	}
+
+	o.th1.entries = h.th1.entries
+	o.th1.tsumw = h.th3.th1.tsumw
+	o.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th1.tsumwx = h.th3.tsumwz
+	o.th1.tsumwx2 = h.th3.tsumwz2
+	return o
+}
+
+// ProjectionXY sums the histogram over z, as TH3::Project3D("xy") does.
+func (h *H3D) ProjectionXY(name string) *H2D {
+	o := NewH2D(name, h.Title(),
+		h.th1.xaxis.nbins, h.th1.xaxis.xmin, h.th1.xaxis.xmax,
+		h.th1.yaxis.nbins, h.th1.yaxis.xmin, h.th1.yaxis.xmax,
+	)
+
+	for ix := 1; ix <= h.th1.xaxis.nbins; ix++ {
+		for iy := 1; iy <= h.th1.yaxis.nbins; iy++ {
+			var sum, err2 float64
+			for iz := 1; iz <= h.th1.zaxis.nbins; iz++ {
+				sum += h.BinContent(ix, iy, iz)
+				e := h.BinError(ix, iy, iz)
+				err2 += e * e
+			}
+			o.SetBinContent(ix, iy, sum)
+			o.SetBinError(ix, iy, math.Sqrt(err2))
+		}
+	}
+
+	o.th2.th1.entries = h.th1.entries
+	o.th2.th1.tsumw = h.th3.th1.tsumw
+	o.th2.th1.tsumw2 = h.th3.th1.tsumw2
+	o.th2.th1.tsumwx = h.th3.th1.tsumwx
+	o.th2.th1.tsumwx2 = h.th3.th1.tsumwx2
+	o.th2.tsumwy = h.th3.tsumwy
+	o.th2.tsumwy2 = h.th3.tsumwy2
+	o.th2.tsumwxy = h.th3.tsumwxy
+	return o
+}
+
+// MeanX, MeanY and MeanZ return the means of the entries along each axis.
+func (h *H3D) MeanX() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.th1.tsumwx / h.th3.th1.tsumw
+}
+
+// MeanY returns the mean along y.
+func (h *H3D) MeanY() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwy / h.th3.th1.tsumw
+}
+
+// MeanZ returns the mean along z.
+func (h *H3D) MeanZ() float64 {
+	if h.th3.th1.tsumw == 0 {
+		return 0
+	}
+	return h.th3.tsumwz / h.th3.th1.tsumw
 }
 
 func (*H3D) RVersion() int16 {
