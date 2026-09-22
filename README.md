@@ -17,6 +17,8 @@ hep
 > [`upstream`](https://github.com/rob-c/hep/tree/upstream) branch is a plain
 > mirror of Codeberg's `main`, refreshed daily and never written to by hand, so
 > the two can always be compared. See [FORK.md](FORK.md).
+>
+> Coming from ROOT? See [ROOT-TO-GO-HEP.md](ROOT-TO-GO-HEP.md).
 
 What this fork adds
 -------------------
