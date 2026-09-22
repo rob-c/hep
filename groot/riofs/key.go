@@ -374,6 +374,41 @@ func (k *Key) Buffer() []byte { return k.buf }
 func (k *Key) SetFile(f *File)      { k.f = f }
 func (k *Key) SetBuffer(buf []byte) { k.buf = buf; k.objlen = int32(len(buf)) }
 
+// objectFromStreamer reads a class groot has no Go type for, using the
+// streamer the file carries for it.
+//
+// A ROOT file describes the classes it holds: that is what streamers are
+// for. So a class nobody wrote a Go type for is still readable, by building
+// a value from its streamer and reading into that. It is how a file written
+// by somebody else's code can be opened without their headers.
+func (k *Key) objectFromStreamer(buf []byte, sictx rbytes.StreamerInfoContext) (root.Object, error) {
+	si, err := sictx.StreamerInfo(k.class, -1)
+	if err != nil || si == nil {
+		return nil, fmt.Errorf(
+			"riofs: no Go type and no streamer for class %q (key=%q): %w",
+			k.class, k.Name(), err,
+		)
+	}
+
+	obj := rdict.ObjectFrom(si, sictx)
+	if obj == nil {
+		return nil, fmt.Errorf(
+			"riofs: could not build a value for class %q from its streamer (key=%q)",
+			k.class, k.Name(),
+		)
+	}
+
+	err = obj.UnmarshalROOT(rbytes.NewRBuffer(buf, nil, uint32(k.keylen), sictx))
+	if err != nil {
+		return nil, fmt.Errorf(
+			"riofs: could not read class %q through its streamer (key=%q): %w",
+			k.class, k.Name(), err,
+		)
+	}
+
+	return obj, nil
+}
+
 // ObjectType returns the Key's payload type.
 //
 // ObjectType returns nil if the Key's payload type is not known
@@ -409,9 +444,22 @@ func (k *Key) Object() (root.Object, error) {
 		return nil, fmt.Errorf("riofs: could not load key payload: %w", err)
 	}
 
+	// use autogen context to automatically generate missing streamer infos when reading "old" files.
+	sictx := autogenCtx{k.f}
+
 	fct := rtypes.Factory.Get(k.class)
 	if fct == nil {
-		return nil, fmt.Errorf("riofs: no registered factory for class %q (key=%q)", k.class, k.Name())
+		// A class groot has no Go type for. The file carries its streamer,
+		// which says what its members are and in what order, and that is
+		// enough to read it into a value built to match. What comes back is
+		// an rdict.Object rather than a type with methods, but the data is
+		// all there and nothing about the file is lost.
+		obj, err := k.objectFromStreamer(buf, sictx)
+		if err != nil {
+			return nil, err
+		}
+		k.obj = obj
+		return obj, nil
 	}
 
 	v := fct()
@@ -425,8 +473,6 @@ func (k *Key) Object() (root.Object, error) {
 		return nil, fmt.Errorf("riofs: class %q does not implement rbytes.Unmarshaler (key=%q)", k.class, k.Name())
 	}
 
-	// use autogen context to automatically generate missing streamer infos when reading "old" files.
-	sictx := autogenCtx{k.f}
 	err = vv.UnmarshalROOT(rbytes.NewRBuffer(buf, nil, uint32(k.keylen), sictx))
 	if err != nil {
 		return nil, fmt.Errorf("riofs: could not unmarshal key payload: %w", err)
