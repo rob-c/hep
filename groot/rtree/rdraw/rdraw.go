@@ -23,12 +23,25 @@
 // Without Bins the range is found first and the histogram filled second,
 // which reads the tree twice. Giving the binning reads it once.
 //
-// # What it does not do
+// # Arrays and collections
 //
-// A branch holding an array or a slice is refused rather than guessed at.
-// ROOT's Draw loops over those implicitly, and which of several possible
-// loops it means depends on the shapes involved; getting that wrong would
-// silently fill the wrong histogram.
+// A branch holding an array or a slice is looped over, as ROOT's Draw does:
+// the histogram takes one fill per element rather than one per entry.
+//
+//	rdraw.H1D(t, "pt")                  every element of every entry
+//	rdraw.H1D(t, "pt[0]")               the leading element of each entry
+//	rdraw.H1D(t, "pt", rdraw.Cut("pt > 20"))  the elements over 20
+//	rdraw.H1D(t, "Sum$(pt)")            one fill per entry
+//
+// The cut is applied element by element too, so "pt > 20" keeps the elements
+// that pass rather than the entries. Cutting on the entry as a whole is what
+// the reducers are for: "Sum$(pt) > 100" or "Length$(pt) >= 2".
+//
+// Every collection an axis, the cut and the weight iterate over has to have
+// the same number of elements for a given entry, since they are read element
+// by element. ROOT will instead pair up collections of different lengths in
+// ways that are rarely what was meant; this reports the mismatch. Where two
+// different lengths are meant, Alt$ pads the shorter one.
 package rdraw // import "go-hep.org/x/hep/groot/rtree/rdraw"
 
 import (
@@ -285,15 +298,16 @@ type evaluator struct {
 	weight *rexpr.Expr
 
 	rvars []rtree.ReadVar
-	vals  map[string]float64
+	ctx   rexpr.Ctx
 
-	// readers pulls each branch's value out as a float64.
-	readers []func() float64
+	// readers pulls each branch's value out, as one number or as a
+	// collection of them.
+	readers []func() rexpr.Value
 	names   []string
 }
 
 func newEvaluator(t rtree.Tree, axes []string, cfg *config) (*evaluator, error) {
-	ev := &evaluator{vals: make(map[string]float64)}
+	ev := &evaluator{ctx: rexpr.Ctx{Vals: make(map[string]rexpr.Value)}}
 
 	var idents []string
 	add := func(src string) (*rexpr.Expr, error) {
@@ -372,8 +386,10 @@ func (ev *evaluator) bind(t rtree.Tree, idents []string) error {
 	return nil
 }
 
-// readerOf returns a function pulling a float64 out of a branch's value.
-func readerOf(ptr any) (func() float64, error) {
+// readerOf returns a function pulling a branch's value out, as one number
+// or, for an array or a slice branch, as the collection of them the
+// expression is evaluated over element by element.
+func readerOf(ptr any) (func() rexpr.Value, error) {
 	rv := reflect.ValueOf(ptr)
 	if rv.Kind() != reflect.Pointer {
 		return nil, fmt.Errorf("expected a pointer, got %T", ptr)
@@ -381,32 +397,52 @@ func readerOf(ptr any) (func() float64, error) {
 
 	v := rv.Elem()
 	switch v.Kind() {
+	case reflect.Slice, reflect.Array:
+		elem, err := numberOf(v.Type().Elem())
+		if err != nil {
+			return nil, fmt.Errorf("holds %s: %w", v.Type(), err)
+		}
+		var buf []float64
+		return func() rexpr.Value {
+			n := v.Len()
+			buf = buf[:0]
+			for i := range n {
+				buf = append(buf, elem(v.Index(i)))
+			}
+			return rexpr.Slice(buf)
+		}, nil
+	}
+
+	num, err := numberOf(v.Type())
+	if err != nil {
+		return nil, err
+	}
+	return func() rexpr.Value { return rexpr.Num(num(v)) }, nil
+}
+
+// numberOf returns a function turning a value of the given type into the
+// float64 an expression works in.
+func numberOf(typ reflect.Type) (func(reflect.Value) float64, error) {
+	switch typ.Kind() {
 	case reflect.Float32, reflect.Float64:
-		return func() float64 { return v.Float() }, nil
+		return reflect.Value.Float, nil
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return func() float64 { return float64(v.Int()) }, nil
+		return func(v reflect.Value) float64 { return float64(v.Int()) }, nil
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return func() float64 { return float64(v.Uint()) }, nil
+		return func(v reflect.Value) float64 { return float64(v.Uint()) }, nil
 
 	case reflect.Bool:
-		return func() float64 {
+		return func(v reflect.Value) float64 {
 			if v.Bool() {
 				return 1
 			}
 			return 0
 		}, nil
-
-	case reflect.Slice, reflect.Array:
-		return nil, fmt.Errorf(
-			"holds %s, which this package does not loop over: "+
-				"read it with rtree.Reader and fill the histogram yourself",
-			v.Type(),
-		)
 	}
 
-	return nil, fmt.Errorf("holds %s, which is not a number", v.Type())
+	return nil, fmt.Errorf("holds %s, which is not a number", typ)
 }
 
 // run reads the tree, handing each entry's axis values and weight to fill.
@@ -420,39 +456,51 @@ func (ev *evaluator) run(t rtree.Tree, cfg *config, fill func(vs []float64, w fl
 	defer r.Close()
 
 	vs := make([]float64, len(ev.axes))
+	ev.ctx.Entries = t.Entries()
 
 	err = r.Read(func(rctx rtree.RCtx) error {
 		for i, read := range ev.readers {
-			ev.vals[ev.names[i]] = read()
+			ev.ctx.Vals[ev.names[i]] = read()
+		}
+		ev.ctx.Entry = rctx.Entry
+
+		// an entry yields one set of values per element of whatever
+		// collections the expressions iterate over, and just one when
+		// none of them do.
+		n, err := ev.n()
+		if err != nil {
+			return fmt.Errorf("entry %d: %w", rctx.Entry, err)
 		}
 
-		if ev.cut != nil {
-			keep, err := ev.cut.Eval(ev.vals)
-			if err != nil {
-				return err
+		for iter := range n {
+			if ev.cut != nil {
+				keep, err := ev.cut.At(&ev.ctx, iter)
+				if err != nil {
+					return fmt.Errorf("entry %d: bad cut: %w", rctx.Entry, err)
+				}
+				if keep == 0 {
+					continue
+				}
 			}
-			if keep == 0 {
-				return nil
-			}
-		}
 
-		w := 1.0
-		if ev.weight != nil {
-			w, err = ev.weight.Eval(ev.vals)
-			if err != nil {
-				return err
+			w := 1.0
+			if ev.weight != nil {
+				w, err = ev.weight.At(&ev.ctx, iter)
+				if err != nil {
+					return fmt.Errorf("entry %d: bad weight: %w", rctx.Entry, err)
+				}
 			}
-		}
 
-		for i, e := range ev.axes {
-			v, err := e.Eval(ev.vals)
-			if err != nil {
-				return err
+			for i, e := range ev.axes {
+				v, err := e.At(&ev.ctx, iter)
+				if err != nil {
+					return fmt.Errorf("entry %d: %w", rctx.Entry, err)
+				}
+				vs[i] = v
 			}
-			vs[i] = v
-		}
 
-		fill(vs, w)
+			fill(vs, w)
+		}
 		return nil
 	})
 	if err != nil {
@@ -460,6 +508,50 @@ func (ev *evaluator) run(t rtree.Tree, cfg *config, fill func(vs []float64, w fl
 	}
 
 	return nil
+}
+
+// n returns how many values the entry now loaded yields.
+//
+// The axes, the cut and the weight are read together, so they share one
+// loop: each either yields a single value, which goes with every element,
+// or one per element, and the ones that do have to agree.
+func (ev *evaluator) n() (int, error) {
+	var (
+		out  = 1
+		over = false // whether anything so far loops over a collection
+	)
+	for _, e := range ev.all() {
+		k, coll, err := e.Span(&ev.ctx)
+		if err != nil {
+			return 0, err
+		}
+		switch {
+		case !coll:
+			// a single value goes with however many elements the rest
+			// of the draw has.
+		case !over:
+			out, over = k, true
+		case out != k:
+			return 0, fmt.Errorf(
+				"rdraw: %q yields %d value(s) where another part of the draw yields %d",
+				e, k, out,
+			)
+		}
+	}
+	return out, nil
+}
+
+// all returns every expression the draw evaluates.
+func (ev *evaluator) all() []*rexpr.Expr {
+	out := make([]*rexpr.Expr, 0, len(ev.axes)+2)
+	out = append(out, ev.axes...)
+	if ev.cut != nil {
+		out = append(out, ev.cut)
+	}
+	if ev.weight != nil {
+		out = append(out, ev.weight)
+	}
+	return out
 }
 
 func rangeEnd(cfg *config, t rtree.Tree) int64 {

@@ -40,6 +40,22 @@ Trees
 | `t->Draw("pt>>h(100,0,200)")` | `rdraw.H1D(t, "pt", rdraw.Bins(100, 0, 200))` |
 | `t->Draw("y:x")` | `rdraw.H2D(t, "y:x")` |
 | `t->Draw("z:y:x")` | `rdraw.H3D(t, "z:y:x")` |
+| `t->Draw("jet_pt")` (an array branch) | `rdraw.H1D(t, "jet_pt")` |
+| `t->Draw("jet_pt[0]")` | `rdraw.H1D(t, "jet_pt[0]")` |
+| `t->Draw("jet_pt", "jet_pt>30")` | `rdraw.H1D(t, "jet_pt", rdraw.Cut("jet_pt>30"))` |
+| `t->Draw("Sum$(jet_pt)")` | `rdraw.H1D(t, "Sum$(jet_pt)")` |
+| `t->Draw("Length$(jet_pt)")` | `rdraw.H1D(t, "Length$(jet_pt)")` |
+
+A branch holding an array or a vector is looped over, as ROOT does it: one
+fill per element rather than one per entry, with the cut and the weight
+applied element by element too. ROOT's `Length$`, `Sum$`, `Min$`, `Max$`,
+`MinIf$`, `MaxIf$`, `Alt$`, `Entry$`, `Entries$` and `Iteration$` all work and
+mean what they mean in ROOT, so `Sum$(jet_pt) > 200` cuts on the entry while
+`jet_pt > 30` cuts on the jets.
+
+Collections an expression loops over must line up. `jet_pt:jet_eta` is fine;
+`jet_pt:muon_pt` is reported rather than paired off in an order nobody asked
+for, which is the one place this is deliberately stricter than ROOT.
 | `t->Scan()` | `root-dump f.root` |
 | `TChain` | `rtree.Chain(t1, t2, ...)` |
 | `chain->Add("*.root")` | `rtree.ChainOf("tree", files...)` |
@@ -334,9 +350,9 @@ Stated plainly, so nobody finds out the hard way:
 - **ROOT-streamed objects inside an RNTuple.** A field holding a user class
   written through the ROOT streamer, rather than split into columns, is
   refused rather than guessed at.
-- **Arrays in Draw expressions.** ROOT loops over an array branch implicitly;
-  `rdraw` and `rdf` refuse one instead of guessing which loop was meant. Read
-  it with `rtree.Reader` and fill by hand.
+- **Pairing up collections of different lengths.** ROOT will loop over two
+  unrelated arrays together; `rdraw` and `rdf` report the mismatch instead,
+  since it is rarely what was meant. Where it is, `Alt$` pads the shorter one.
 - **Arbitrary C++ classes.** Types groot knows are read; a user class needs
   its streamer info to be turned into a Go type.
 - **chebyshev** formula shapes, which need a range the string does not carry.

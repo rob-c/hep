@@ -31,6 +31,23 @@
 // entries each one kept — the cut flow that every analysis ends up printing.
 //
 // The expressions are the same ones rdraw takes.
+//
+// # Arrays and collections
+//
+// A branch holding an array or a slice is looped over, as it is in rdraw and
+// in ROOT: an action over one runs per element rather than per entry.
+//
+//	df.Histo1D("pt")          one fill per element
+//	df.Sum("pt")              the sum over every element of every entry
+//	df.Count()                still one per entry
+//	df.Sum("Sum$(pt)")        the same sum, reduced per entry instead
+//
+// Define may compute a collection, which then behaves like a branch holding
+// one. A Filter may not: it decides whether a whole entry goes on, so it has
+// to answer once for the entry, and an expression over a collection is
+// refused with a pointer at the reducers that turn one into a number:
+//
+//	df.Filter("Length$(pt) >= 2 && Max$(pt) > 20")
 package rdf // import "go-hep.org/x/hep/groot/rtree/rdf"
 
 import (
@@ -141,9 +158,11 @@ func (df *Frame) fail(err error) {
 type action struct {
 	steps []step
 
-	// fill is given the values of the columns for an entry that got this
-	// far, and folds it into whatever the action is accumulating.
-	fill func(vals map[string]float64) error
+	// fill is given the columns of an entry that got this far, and the
+	// element of them to look at, and folds that into whatever the action
+	// is accumulating. An action over collections is filled once per
+	// element; one over single values, once per entry.
+	fill func(ctx *rexpr.Ctx, iter int) error
 
 	// exprs are the expressions this action evaluates, beyond the steps.
 	exprs []*rexpr.Expr
@@ -178,7 +197,7 @@ func (r *Result[T]) Value() T {
 func (df *Frame) Count() *Result[int64] {
 	res := &Result[int64]{df: df}
 	df.add(&action{
-		fill: func(map[string]float64) error {
+		fill: func(*rexpr.Ctx, int) error {
 			res.val++
 			return nil
 		},
@@ -196,8 +215,8 @@ func (df *Frame) Sum(expr string) *Result[float64] {
 	}
 	df.add(&action{
 		exprs: []*rexpr.Expr{e},
-		fill: func(vals map[string]float64) error {
-			v, err := e.Eval(vals)
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			v, err := e.At(ctx, iter)
 			if err != nil {
 				return err
 			}
@@ -223,8 +242,8 @@ func (df *Frame) Mean(expr string) *Result[float64] {
 	)
 	df.add(&action{
 		exprs: []*rexpr.Expr{e},
-		fill: func(vals map[string]float64) error {
-			v, err := e.Eval(vals)
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			v, err := e.At(ctx, iter)
 			if err != nil {
 				return err
 			}
@@ -255,8 +274,8 @@ func (df *Frame) MinMax(expr string) *Result[[2]float64] {
 	lo, hi := math.Inf(+1), math.Inf(-1)
 	df.add(&action{
 		exprs: []*rexpr.Expr{e},
-		fill: func(vals map[string]float64) error {
-			v, err := e.Eval(vals)
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			v, err := e.At(ctx, iter)
 			if err != nil {
 				return err
 			}
@@ -343,12 +362,12 @@ func (df *Frame) Histo1D(expr string, opts ...HOption) *Result[*hbook.H1D] {
 
 	df.add(&action{
 		exprs: nonNil(e, w),
-		fill: func(vals map[string]float64) error {
-			x, err := e.Eval(vals)
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			x, err := e.At(ctx, iter)
 			if err != nil {
 				return err
 			}
-			wgt, err := weightOf(w, vals)
+			wgt, err := weightOf(w, ctx, iter)
 			if err != nil {
 				return err
 			}
@@ -382,16 +401,16 @@ func (df *Frame) Histo2D(expr string, opts ...HOption) *Result[*hbook.H2D] {
 
 	df.add(&action{
 		exprs: append(axes, nonNil(w)...),
-		fill: func(vals map[string]float64) error {
-			x, err := axes[0].Eval(vals)
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			x, err := axes[0].At(ctx, iter)
 			if err != nil {
 				return err
 			}
-			y, err := axes[1].Eval(vals)
+			y, err := axes[1].At(ctx, iter)
 			if err != nil {
 				return err
 			}
-			wgt, err := weightOf(w, vals)
+			wgt, err := weightOf(w, ctx, iter)
 			if err != nil {
 				return err
 			}
@@ -426,20 +445,20 @@ func (df *Frame) Histo3D(expr string, opts ...HOption) *Result[*hbook.H3D] {
 
 	df.add(&action{
 		exprs: append(axes, nonNil(w)...),
-		fill: func(vals map[string]float64) error {
-			x, err := axes[0].Eval(vals)
+		fill: func(ctx *rexpr.Ctx, iter int) error {
+			x, err := axes[0].At(ctx, iter)
 			if err != nil {
 				return err
 			}
-			y, err := axes[1].Eval(vals)
+			y, err := axes[1].At(ctx, iter)
 			if err != nil {
 				return err
 			}
-			z, err := axes[2].Eval(vals)
+			z, err := axes[2].At(ctx, iter)
 			if err != nil {
 				return err
 			}
-			wgt, err := weightOf(w, vals)
+			wgt, err := weightOf(w, ctx, iter)
 			if err != nil {
 				return err
 			}
@@ -531,11 +550,11 @@ func splitAxes(expr string) []string {
 	return append(o, strings.TrimSpace(expr[last:]))
 }
 
-func weightOf(w *rexpr.Expr, vals map[string]float64) (float64, error) {
+func weightOf(w *rexpr.Expr, ctx *rexpr.Ctx, iter int) (float64, error) {
 	if w == nil {
 		return 1, nil
 	}
-	return w.Eval(vals)
+	return w.At(ctx, iter)
 }
 
 func nonNil(es ...*rexpr.Expr) []*rexpr.Expr {
@@ -583,7 +602,7 @@ func (df *Frame) Report() *Result[[]CutInfo] {
 	df.add(&action{
 		// the counting is done by run, which is the only place that knows
 		// which filter an entry stopped at.
-		fill: func(map[string]float64) error { return nil },
+		fill: func(*rexpr.Ctx, int) error { return nil },
 		done: func() error {
 			res.val = info
 			return nil
