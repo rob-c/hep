@@ -59,12 +59,20 @@ func TestGraph2DRoundTrip(t *testing.T) {
 		gerr.SetXYZError(i, 0.1, 0.2, 0.3)
 	}
 
+	gasym := NewGraph2DAsymmErrors(3)
+	gasym.SetName("g2da")
+	for i := range 3 {
+		gasym.SetXYZ(i, float64(i), float64(2*i), float64(3*i))
+		gasym.SetXYZError(i, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+	}
+
 	for _, tc := range []struct {
 		name string
 		want rtests.ROOTer
 	}{
 		{name: "TGraph2D", want: g2d},
 		{name: "TGraph2DErrors", want: gerr},
+		{name: "TGraph2DAsymmErrors", want: gasym},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, want := tc.want.Class(), tc.name; got != want {
@@ -109,6 +117,13 @@ func TestGraph2DRoundTrip(t *testing.T) {
 			case *Graph2DErrors:
 				if lo, hi := got.ZError(1); lo != 0.3 || hi != 0.3 {
 					t.Fatalf("z-error: got=(%v,%v), want=(0.3,0.3)", lo, hi)
+				}
+			case *Graph2DAsymmErrors:
+				if lo, hi := got.XError(1); lo != 0.1 || hi != 0.2 {
+					t.Fatalf("x-error: got=(%v,%v), want=(0.1,0.2)", lo, hi)
+				}
+				if lo, hi := got.ZError(2); lo != 0.5 || hi != 0.6 {
+					t.Fatalf("z-error: got=(%v,%v), want=(0.5,0.6)", lo, hi)
 				}
 			}
 		})

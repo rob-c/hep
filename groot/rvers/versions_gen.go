@@ -80,6 +80,7 @@ const (
 	GraphMultiErrors         = 1  // ROOT version for TGraphMultiErrors
 	Graph2D                  = 1  // ROOT version for TGraph2D
 	Graph2DErrors            = 1  // ROOT version for TGraph2DErrors
+	Graph2DAsymmErrors       = 1  // ROOT version for TGraph2DAsymmErrors
 	H1                       = 8  // ROOT version for TH1
 	H1C                      = 3  // ROOT version for TH1C
 	H1D                      = 3  // ROOT version for TH1D

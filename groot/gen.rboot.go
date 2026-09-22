@@ -80,7 +80,7 @@ var (
 		"TF2", "TF3",
 		"TFormula",
 		"TGraph", "TGraphErrors", "TGraphAsymmErrors", "TGraphMultiErrors",
-		"TGraph2D", "TGraph2DErrors",
+		"TGraph2D", "TGraph2DErrors", "TGraph2DAsymmErrors",
 		"TH1", "TH1C", "TH1D", "TH1F", "TH1I", "TH1S",
 		"TH2", "TH2C", "TH2D", "TH2F", "TH2I", "TH2Poly", "TH2PolyBin", "TH2S",
 		"TH3", "TH3C", "TH3D", "TH3F", "TH3I", "TH3S",

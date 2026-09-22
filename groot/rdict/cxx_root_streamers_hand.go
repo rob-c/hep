@@ -244,3 +244,24 @@ func init() {
 		cxxArrayD("fBinSumw2", "Array of sum of squares of weights per bin"),
 	}))
 }
+
+func init() {
+	// TGraph2DAsymmErrors : public TGraph2D, with an uncertainty either side
+	// of each of the three coordinates.
+	elems := []rbytes.StreamerElement{
+		cxxBase("TGraph2D", "Set of n x[n],y[n],z[n] points with 3-d graphics including Delaunay triangulation", rvers.Graph2D),
+	}
+	for _, tc := range []struct{ name, title string }{
+		{"fEXlow", "[fNpoints] array of X low errors"},
+		{"fEXhigh", "[fNpoints] array of X high errors"},
+		{"fEYlow", "[fNpoints] array of Y low errors"},
+		{"fEYhigh", "[fNpoints] array of Y high errors"},
+		{"fEZlow", "[fNpoints] array of Z low errors"},
+		{"fEZhigh", "[fNpoints] array of Z high errors"},
+	} {
+		elems = append(elems, cxxArrF64(
+			tc.name, tc.title, "fNpoints", "TGraph2DAsymmErrors", rvers.Graph2DAsymmErrors,
+		))
+	}
+	StreamerInfos.Add(cxxSI("TGraph2DAsymmErrors", rvers.Graph2DAsymmErrors, elems))
+}

@@ -346,3 +346,111 @@ var (
 	_ rbytes.Marshaler   = (*Graph2DErrors)(nil)
 	_ rbytes.Unmarshaler = (*Graph2DErrors)(nil)
 )
+
+// Graph2DAsymmErrors implements ROOT TGraph2DAsymmErrors: a TGraph2D whose
+// uncertainties may differ either side of each of its three coordinates.
+type Graph2DAsymmErrors struct {
+	Graph2D
+	xlo, xhi []float64 // [fNpoints] arrays of X low and high errors
+	ylo, yhi []float64 // [fNpoints] arrays of Y low and high errors
+	zlo, zhi []float64 // [fNpoints] arrays of Z low and high errors
+}
+
+func newGraph2DAsymmErrors(n int) *Graph2DAsymmErrors {
+	return &Graph2DAsymmErrors{
+		Graph2D: *newGraph2D(n),
+		xlo:     make([]float64, n),
+		xhi:     make([]float64, n),
+		ylo:     make([]float64, n),
+		yhi:     make([]float64, n),
+		zlo:     make([]float64, n),
+		zhi:     make([]float64, n),
+	}
+}
+
+// NewGraph2DAsymmErrors creates a TGraph2DAsymmErrors holding n points.
+func NewGraph2DAsymmErrors(n int) *Graph2DAsymmErrors {
+	return newGraph2DAsymmErrors(n)
+}
+
+func (*Graph2DAsymmErrors) RVersion() int16 {
+	return rvers.Graph2DAsymmErrors
+}
+
+func (*Graph2DAsymmErrors) Class() string {
+	return "TGraph2DAsymmErrors"
+}
+
+// XError returns the low and high uncertainties on x of the i-th point.
+func (g *Graph2DAsymmErrors) XError(i int) (float64, float64) {
+	return g.xlo[i], g.xhi[i]
+}
+
+// YError returns the low and high uncertainties on y of the i-th point.
+func (g *Graph2DAsymmErrors) YError(i int) (float64, float64) {
+	return g.ylo[i], g.yhi[i]
+}
+
+// ZError returns the low and high uncertainties on z of the i-th point.
+func (g *Graph2DAsymmErrors) ZError(i int) (float64, float64) {
+	return g.zlo[i], g.zhi[i]
+}
+
+// SetXYZError sets the low and high uncertainties on the i-th point.
+func (g *Graph2DAsymmErrors) SetXYZError(i int, xlo, xhi, ylo, yhi, zlo, zhi float64) {
+	g.xlo[i], g.xhi[i] = xlo, xhi
+	g.ylo[i], g.yhi[i] = ylo, yhi
+	g.zlo[i], g.zhi[i] = zlo, zhi
+}
+
+func (g *Graph2DAsymmErrors) MarshalROOT(w *rbytes.WBuffer) (int, error) {
+	if w.Err() != nil {
+		return 0, w.Err()
+	}
+
+	hdr := w.WriteHeader(g.Class(), g.RVersion())
+
+	w.WriteObject(&g.Graph2D)
+	for _, vs := range [][]float64{g.xlo, g.xhi, g.ylo, g.yhi, g.zlo, g.zhi} {
+		w.WriteI8(1)
+		w.WriteArrayF64(vs)
+	}
+
+	return w.SetHeader(hdr)
+}
+
+func (g *Graph2DAsymmErrors) UnmarshalROOT(r *rbytes.RBuffer) error {
+	if r.Err() != nil {
+		return r.Err()
+	}
+
+	hdr := r.ReadHeader(g.Class(), g.RVersion())
+
+	r.ReadObject(&g.Graph2D)
+
+	n := int(g.npoints)
+	for _, vs := range []*[]float64{&g.xlo, &g.xhi, &g.ylo, &g.yhi, &g.zlo, &g.zhi} {
+		*vs = rbytes.ResizeF64(*vs, n)
+		_ = r.ReadI8()
+		r.ReadArrayF64(*vs)
+	}
+
+	r.CheckHeader(hdr)
+	return r.Err()
+}
+
+func init() {
+	f := func() reflect.Value {
+		o := newGraph2DAsymmErrors(0)
+		return reflect.ValueOf(o)
+	}
+	rtypes.Factory.Add("TGraph2DAsymmErrors", f)
+}
+
+var (
+	_ root.Object        = (*Graph2DAsymmErrors)(nil)
+	_ root.Named         = (*Graph2DAsymmErrors)(nil)
+	_ Graph              = (*Graph2DAsymmErrors)(nil)
+	_ rbytes.Marshaler   = (*Graph2DAsymmErrors)(nil)
+	_ rbytes.Unmarshaler = (*Graph2DAsymmErrors)(nil)
+)
