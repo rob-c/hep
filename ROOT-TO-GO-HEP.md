@@ -219,6 +219,18 @@ Stated plainly, so nobody finds out the hard way:
   translated, and this page is the dictionary.
 - **RooFit, TMVA, GUI.** No equivalent.
 
+From Python
+-----------
+
+`python/gohep` reads a ROOT tree into pyarrow or pandas, by running
+`root2arrow` and handing the Arrow stream over. No ROOT, and nothing
+reimplemented in Python:
+
+```python
+import gohep
+df = gohep.read_dataframe("data.root", "tree")
+```
+
 Things this does that ROOT does not
 -----------------------------------
 

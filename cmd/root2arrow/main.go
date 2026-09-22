@@ -95,7 +95,9 @@ func process(oname, fname, tname string, stream bool) error {
 	var o *os.File
 
 	switch oname {
-	case "":
+	case "", "-":
+		// "-" is the usual way of asking for standard output, and is what
+		// anything piping this into another process will reach for.
 		o = os.Stdout
 	default:
 		o, err = os.Create(oname)
