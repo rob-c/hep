@@ -8,6 +8,7 @@ import (
 	"compress/flate"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
@@ -155,26 +156,125 @@ func testCreateRunHeader(t *testing.T, compLevel int, fname string) {
 		return
 	}
 
-	chk, err := os.ReadFile(fname)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	ref, err := os.ReadFile(strings.Replace(fname, ".slcio", "_golden.slcio", -1))
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if !reflect.DeepEqual(ref, chk) {
-		t.Errorf("%s: --- ref ---\n%s\n", fname, hex.Dump(ref))
-		t.Errorf("%s: --- chk ---\n%s\n", fname, hex.Dump(chk))
-		t.Errorf("%s: differ with golden", fname)
+	if !sameAsGolden(t, fname, compLevel) {
 		return
 	}
 
 	os.Remove(fname)
+}
+
+// sameAsGolden checks a written file against the one kept beside it.
+//
+// An uncompressed file is compared byte for byte: every one of them is this
+// package's to decide, so any difference is a change in the format it writes.
+//
+// A compressed one cannot be. The bytes a deflate compressor produces are
+// not part of Go's compatibility promise and do change between releases of
+// it, while what they uncompress to does not. So the two files are read back
+// instead and what they hold is compared, which is the part this package is
+// answerable for.
+func sameAsGolden(t *testing.T, fname string, compLevel int) bool {
+	t.Helper()
+
+	golden := strings.Replace(fname, ".slcio", "_golden.slcio", -1)
+
+	if compLevel == flate.NoCompression {
+		chk, err := os.ReadFile(fname)
+		if err != nil {
+			t.Error(err)
+			return false
+		}
+		ref, err := os.ReadFile(golden)
+		if err != nil {
+			t.Error(err)
+			return false
+		}
+		if !reflect.DeepEqual(ref, chk) {
+			t.Errorf("%s: --- ref ---\n%s\n", fname, hex.Dump(ref))
+			t.Errorf("%s: --- chk ---\n%s\n", fname, hex.Dump(chk))
+			t.Errorf("%s: differ with golden", fname)
+			return false
+		}
+		return true
+	}
+
+	chk, err := readAll(fname)
+	if err != nil {
+		t.Errorf("could not read back %s: %+v", fname, err)
+		return false
+	}
+	ref, err := readAll(golden)
+	if err != nil {
+		t.Errorf("could not read %s: %+v", golden, err)
+		return false
+	}
+
+	if len(chk) != len(ref) {
+		t.Errorf("%s holds %d record(s), %s holds %d", fname, len(chk), golden, len(ref))
+		return false
+	}
+	for i := range ref {
+		if got, want := chk[i].hdr, ref[i].hdr; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: record %d: run headers differ:\ngot= %#v\nwant=%#v", fname, i, got, want)
+			return false
+		}
+		var (
+			got  = chk[i].evt
+			want = ref[i].evt
+		)
+		for _, tc := range []struct {
+			what      string
+			got, want any
+		}{
+			{"run number", got.RunNumber, want.RunNumber},
+			{"event number", got.EventNumber, want.EventNumber},
+			{"time stamp", got.TimeStamp, want.TimeStamp},
+			{"detector", got.Detector, want.Detector},
+			{"parameters", got.Params, want.Params},
+		} {
+			if !reflect.DeepEqual(tc.got, tc.want) {
+				t.Errorf("%s: record %d: %s differs: got=%v, want=%v",
+					fname, i, tc.what, tc.got, tc.want)
+				return false
+			}
+		}
+		if g, w := got.Names(), want.Names(); !reflect.DeepEqual(g, w) {
+			t.Errorf("%s: record %d: collections differ: got=%q, want=%q", fname, i, g, w)
+			return false
+		}
+		for _, name := range want.Names() {
+			if g, w := got.Get(name), want.Get(name); !reflect.DeepEqual(g, w) {
+				t.Errorf("%s: record %d: collection %q differs:\ngot= %v\nwant=%v",
+					fname, i, name, g, w)
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// record is one run header and event of a file, as they read back.
+type record struct {
+	hdr lcio.RunHeader
+	evt lcio.Event
+}
+
+// readAll reads every record of a file.
+func readAll(fname string) ([]record, error) {
+	r, err := lcio.Open(fname)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	var out []record
+	for r.Next() {
+		out = append(out, record{hdr: r.RunHeader(), evt: r.Event()})
+	}
+	if err := r.Err(); err != nil && err != io.EOF {
+		return nil, err
+	}
+	return out, nil
 }
 
 func testCreateEvent(t *testing.T, compLevel int, fname string) {
@@ -345,20 +445,8 @@ func testCreateEvent(t *testing.T, compLevel int, fname string) {
 		t.Fatalf("%s: evts differ.\ngot:\n%v\nwant:\n%v\n", fname, &got, &want)
 	}
 
-	chk, err := os.ReadFile(fname)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ref, err := os.ReadFile(strings.Replace(fname, ".slcio", "_golden.slcio", -1))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !reflect.DeepEqual(ref, chk) {
-		t.Errorf("%s: --- ref ---\n%s\n", fname, hex.Dump(ref))
-		t.Errorf("%s: --- chk ---\n%s\n", fname, hex.Dump(chk))
-		t.Fatalf("%s: differ with golden", fname)
+	if !sameAsGolden(t, fname, compLevel) {
+		return
 	}
 
 	os.Remove(fname)

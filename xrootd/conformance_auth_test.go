@@ -173,11 +173,48 @@ func TestConformance_AFailedNegotiationNamesEveryProtocolItTried(t *testing.T) {
 	if err == nil {
 		t.Fatal("negotiation succeeded with no usable protocol")
 	}
-	for _, want := range []string{"krb5", "gsi", "unix", "no credentials cache", "no gsi credential was found"} {
-		if !strings.Contains(err.Error(), want) {
+
+	// Every protocol the server offered has to appear, with a reason of its
+	// own after it. The reasons themselves are not pinned here: krb5's and
+	// unix's are this test's to give, but gsi is served by the real
+	// provider, whose complaint names the proxy file it looked for and so
+	// differs from one machine to the next. What has to hold everywhere is
+	// that the protocol is named and that something is said about it.
+	msg := err.Error()
+	for _, name := range []string{"krb5", "gsi", "unix"} {
+		reason, ok := reasonFor(msg, name)
+		if !ok {
+			t.Fatalf("the failure does not say what happened to %q: %v", name, err)
+		}
+		if reason == "" {
+			t.Fatalf("the failure names %q but gives no reason: %v", name, err)
+		}
+	}
+
+	// the reasons this test does control should be the ones that come back.
+	for _, want := range []string{"no credentials cache", "credentials refused"} {
+		if !strings.Contains(msg, want) {
 			t.Fatalf("the failure does not mention %q: %v", want, err)
 		}
 	}
+}
+
+// reasonFor returns what a failed negotiation said about one protocol: the
+// text between "using <name>:" and whatever comes next.
+func reasonFor(msg, name string) (string, bool) {
+	const lead = "could not authorize using "
+
+	i := strings.Index(msg, lead+name+":")
+	if i < 0 {
+		return "", false
+	}
+	rest := msg[i+len(lead)+len(name)+1:]
+
+	// a reason runs until the next protocol's, or until the end.
+	if j := strings.Index(rest, lead); j >= 0 {
+		rest = rest[:j]
+	}
+	return strings.TrimSpace(strings.TrimRight(rest, "]")), true
 }
 
 func TestConformance_AProviderIsHandedTheParametersTheServerSent(t *testing.T) {

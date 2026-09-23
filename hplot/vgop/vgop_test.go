@@ -6,10 +6,14 @@ package vgop_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
+	"image/png"
 	"math"
 	"os"
 	"runtime"
@@ -80,9 +84,12 @@ func TestJSON(t *testing.T) {
 		t.Fatalf("could not close output JSON file: %+v", err)
 	}
 
-	err = diff.Files("testdata/simple.json", "testdata/simple_golden.json")
-	if err != nil {
-		t.Fatalf("JSON files differ:\n%s", err)
+	// The canvas holds an image, and an image is written out as a PNG.
+	// The bytes a PNG encoder produces are not part of Go's compatibility
+	// promise and do change between releases of it, while the picture they
+	// hold does not — so the comparison is over the picture.
+	if got, want := canonical(t, "testdata/simple.json"), canonical(t, "testdata/simple_golden.json"); got != want {
+		t.Fatalf("JSON files differ:\n%s", diff.Format(got, want))
 	}
 
 	c = vgop.NewJSON()
@@ -139,4 +146,97 @@ func TestSaveJSON(t *testing.T) {
 	}
 
 	defer os.Remove("testdata/plot.json")
+}
+
+// canonical reads a canvas written as JSON and returns it with every
+// embedded image replaced by what the image holds.
+//
+// Everything else is compared as it was written: the operations, their
+// order and their arguments are all this package's to decide. An image is
+// not, beyond the pixels going in and coming out.
+func canonical(t *testing.T, fname string) string {
+	t.Helper()
+
+	raw, err := os.ReadFile(fname)
+	if err != nil {
+		t.Fatalf("could not read %s: %+v", fname, err)
+	}
+
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("could not read %s as JSON: %+v", fname, err)
+	}
+
+	out, err := json.MarshalIndent(canonValue(t, v), "", "  ")
+	if err != nil {
+		t.Fatalf("could not write %s back as JSON: %+v", fname, err)
+	}
+	return string(out)
+}
+
+// canonValue walks a decoded JSON value, replacing any string that turns out
+// to be an image with a description of it.
+func canonValue(t *testing.T, v any) any {
+	t.Helper()
+
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, sub := range v {
+			out[k] = canonValue(t, sub)
+		}
+		return out
+
+	case []any:
+		out := make([]any, len(v))
+		for i, sub := range v {
+			out[i] = canonValue(t, sub)
+		}
+		return out
+
+	case string:
+		if img, ok := decodeImage(v); ok {
+			return describeImage(img)
+		}
+		return v
+	}
+	return v
+}
+
+// decodeImage says whether a string holds a PNG, and what it holds if it
+// does.
+//
+// The canvas encodes an image as base64 and keeps it in a []byte, which the
+// JSON encoder then encodes again, so what arrives here is base64 twice
+// over. Rather than rely on that staying true, the layers are peeled off
+// until a PNG turns up or the string stops being base64.
+func decodeImage(s string) (image.Image, bool) {
+	raw := []byte(s)
+	for range 3 {
+		if img, err := png.Decode(bytes.NewReader(raw)); err == nil {
+			return img, true
+		}
+		next, err := base64.StdEncoding.DecodeString(string(raw))
+		if err != nil {
+			return nil, false
+		}
+		raw = next
+	}
+	return nil, false
+}
+
+// describeImage returns what an image holds, in a form two encoders of the
+// same picture agree on: its bounds and a digest of its pixels.
+func describeImage(img image.Image) string {
+	var (
+		b = img.Bounds()
+		h = sha256.New()
+	)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, a := img.At(x, y).RGBA()
+			fmt.Fprintf(h, "%d %d %d %d;", r, g, bl, a)
+		}
+	}
+	return fmt.Sprintf("image %v sha256:%x", b, h.Sum(nil))
 }
