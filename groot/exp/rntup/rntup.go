@@ -74,13 +74,14 @@
 // "rntup" tags. Pages are compressed one at a time.
 //
 // What is written is written at version 1.0.0.0 of the format, with the
-// plain column encodings rather than the split ones. Both are in the
-// specification and a reader has to take either; splitting rearranges the
-// bytes of a page so that it compresses better, and is not done here yet.
+// split column encodings, as ROOT writes: splitting rearranges a page so
+// that the bytes of its elements sit beside the bytes that resemble them,
+// which costs nothing and roughly halves what is left after compression.
+// PlainEncoding turns that off, for comparing the two.
 //
 // # What is not here
 //
-// Objects written with the ROOT streamer, and the split column encodings.
+// Objects written with the ROOT streamer.
 package rntup // import "go-hep.org/x/hep/groot/exp/rntup"
 
 import (

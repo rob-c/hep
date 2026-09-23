@@ -594,3 +594,119 @@ func TestAnchorStreamerMatchesROOT(t *testing.T) {
 		}
 	}
 }
+
+// TestSplitEncodingIsSmallerAndReadsTheSame checks the encoding a writer
+// uses by default against the plain one: both have to give back what went
+// in, and the split one has to earn its place by being smaller.
+func TestSplitEncodingIsSmallerAndReadsTheSame(t *testing.T) {
+	const n = 20000
+
+	sizes := make(map[string]int64, 2)
+	for _, tc := range []struct {
+		name string
+		opts []rntup.WriteOption
+	}{
+		{"plain", []rntup.WriteOption{rntup.PlainEncoding()}},
+		{"split", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "out.root")
+
+			var (
+				i32 int32
+				f64 float64
+				vs  []float64
+			)
+			w, err := rntup.Create(path, "ntuple", []rntup.WriteVar{
+				{Name: "i32", Value: &i32},
+				{Name: "f64", Value: &f64},
+				{Name: "vs", Value: &vs},
+			}, tc.opts...)
+			if err != nil {
+				t.Fatalf("could not create: %+v", err)
+			}
+			for k := range n {
+				i32 = int32(k)
+				f64 = math.Sin(float64(k) / 1000)
+				vs = vs[:0]
+				for j := range k % 4 {
+					vs = append(vs, float64(j))
+				}
+				if err := w.Write(); err != nil {
+					t.Fatalf("could not write: %+v", err)
+				}
+			}
+			if err := w.Close(); err != nil {
+				t.Fatalf("could not close: %+v", err)
+			}
+
+			fi, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sizes[tc.name] = fi.Size()
+
+			r, err := rntup.Open(path, "ntuple")
+			if err != nil {
+				t.Fatalf("could not open: %+v", err)
+			}
+			defer r.Close()
+
+			// the columns should carry the encoding that was asked
+			// for. The column of characters a string is kept in is
+			// left out: a single byte has no split form, there
+			// being nothing in it to rearrange.
+			for _, c := range r.Schema().Columns {
+				if c.Type == rntup.ColChar {
+					continue
+				}
+				var (
+					got  = strings.HasPrefix(c.Type.String(), "Split")
+					want = tc.name == "split"
+				)
+				if got != want {
+					t.Fatalf("column %d is a %v, which is not what %q asks for", c.ID, c.Type, tc.name)
+				}
+			}
+
+			var (
+				gi  int32
+				gf  float64
+				gvs []float64
+			)
+			err = r.Read([]rntup.ReadVar{
+				{Name: "i32", Value: &gi},
+				{Name: "f64", Value: &gf},
+				{Name: "vs", Value: &gvs},
+			}, func(e uint64) error {
+				k := int(e)
+				if gi != int32(k) {
+					return fmt.Errorf("entry %d: i32 got=%v, want=%v", e, gi, k)
+				}
+				if want := math.Sin(float64(k) / 1000); gf != want {
+					return fmt.Errorf("entry %d: f64 got=%v, want=%v", e, gf, want)
+				}
+				if len(gvs) != k%4 {
+					return fmt.Errorf("entry %d: vs has %d elements, want %d", e, len(gvs), k%4)
+				}
+				for j := range gvs {
+					if gvs[j] != float64(j) {
+						return fmt.Errorf("entry %d: vs[%d] got=%v, want=%v", e, j, gvs[j], j)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("could not read: %+v", err)
+			}
+		})
+	}
+
+	if sizes["split"] >= sizes["plain"] {
+		t.Errorf("splitting should have made it smaller: %d bytes against %d",
+			sizes["split"], sizes["plain"])
+	}
+	t.Logf("plain %d bytes, split %d bytes: %.0f%% smaller",
+		sizes["plain"], sizes["split"],
+		100*float64(sizes["plain"]-sizes["split"])/float64(sizes["plain"]))
+}

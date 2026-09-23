@@ -233,8 +233,9 @@ one at a time.
 Files written this way are read by [uproot], which is an implementation of the
 format that owes nothing to this one; a test checks that, and skips where
 uproot is not installed. What goes out is version 1.0.0.0 of the format with
-the plain column encodings; the split ones, which rearrange a page's bytes so
-it compresses better, are not written yet.
+the split column encodings, as ROOT writes: splitting puts the bytes of a
+page's elements beside the bytes that resemble them, which costs nothing and
+roughly halves what is left after compression.
 
 [uproot]: https://github.com/scikit-hep/uproot5
 

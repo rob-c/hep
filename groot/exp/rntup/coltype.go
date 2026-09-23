@@ -312,3 +312,107 @@ func readBits(p []byte, off, n int) uint64 {
 	}
 	return v
 }
+
+// split rearranges the bytes of a page the way a split column wants them:
+// all of the elements' first bytes, then all of their second bytes, and so
+// on. It is what unsplit undoes.
+//
+// Nothing is lost and nothing is gained by itself. What it buys is that the
+// bytes of a column now sit next to the bytes that resemble them — the high
+// bytes of a run of similar numbers are mostly the same, the low bytes are
+// mostly noise — which is a great deal easier to compress.
+func split(dst, src []byte, width, n int) {
+	for b := range width {
+		var (
+			off = b * n
+			p   = dst[off : off+n]
+		)
+		for i := range n {
+			p[i] = src[i*width+b]
+		}
+	}
+}
+
+// delta replaces each element with its difference from the one before,
+// leaving the first alone. It is what undelta undoes.
+func delta(p []byte, width, n int) {
+	switch width {
+	case 4:
+		var prev uint32
+		for i := range n {
+			v := binary.LittleEndian.Uint32(p[i*4:])
+			binary.LittleEndian.PutUint32(p[i*4:], v-prev)
+			prev = v
+		}
+	case 8:
+		var prev uint64
+		for i := range n {
+			v := binary.LittleEndian.Uint64(p[i*8:])
+			binary.LittleEndian.PutUint64(p[i*8:], v-prev)
+			prev = v
+		}
+	}
+}
+
+// zigzag maps signed values onto unsigned ones so that small negative
+// numbers stay small. It is what unzigzag undoes.
+func zigzag(p []byte, width, n int) {
+	switch width {
+	case 2:
+		for i := range n {
+			v := int16(binary.LittleEndian.Uint16(p[i*2:]))
+			binary.LittleEndian.PutUint16(p[i*2:], uint16(v<<1^v>>15))
+		}
+	case 4:
+		for i := range n {
+			v := int32(binary.LittleEndian.Uint32(p[i*4:]))
+			binary.LittleEndian.PutUint32(p[i*4:], uint32(v<<1^v>>31))
+		}
+	case 8:
+		for i := range n {
+			v := int64(binary.LittleEndian.Uint64(p[i*8:]))
+			binary.LittleEndian.PutUint64(p[i*8:], uint64(v<<1^v>>63))
+		}
+	}
+}
+
+// encodePage turns a column's elements, laid out one after another in their
+// natural width, into the bytes its encoding calls for.
+//
+// It is decodePage backwards, and in the other order: a reader puts the
+// bytes back together before undoing the delta or the zigzag, so a writer
+// has to apply those first and rearrange the bytes last.
+func encodePage(c *Column, data []byte, n int) ([]byte, error) {
+	if !c.Type.split() {
+		return data, nil
+	}
+
+	bits, ok := c.Type.bits()
+	if !ok {
+		return nil, fmt.Errorf("rntup: cannot encode a %v column", c.Type)
+	}
+	width := bits / 8
+
+	if len(data) < width*n {
+		return nil, fmt.Errorf(
+			"rntup: %v column holds %d bytes, want %d for %d elements",
+			c.Type, len(data), width*n, n,
+		)
+	}
+
+	// the transforms work in place, so on a copy: what was handed over
+	// belongs to the caller.
+	buf := make([]byte, width*n)
+	copy(buf, data)
+
+	switch {
+	case c.Type.delta():
+		delta(buf, width, n)
+	case c.Type.zigzag():
+		zigzag(buf, width, n)
+	}
+
+	out := make([]byte, width*n)
+	split(out, buf, width, n)
+	return out, nil
+}

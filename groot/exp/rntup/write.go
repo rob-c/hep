@@ -28,6 +28,7 @@ type writeConfig struct {
 	entries uint64 // how many entries to gather before starting a new cluster
 	descr   string
 	compr   int32 // ROOT's encoding: the algorithm times a hundred, plus the level
+	plain   bool  // write the plain column encodings rather than the split ones
 }
 
 func newWriteConfig(opts []WriteOption) *writeConfig {
@@ -67,6 +68,18 @@ func ClusterSize(entries uint64) WriteOption {
 // Description sets the description the RNTuple carries.
 func Description(s string) WriteOption {
 	return func(cfg *writeConfig) { cfg.descr = s }
+}
+
+// PlainEncoding writes the plain column encodings rather than the split
+// ones.
+//
+// The split encodings are what is written otherwise, and what ROOT writes:
+// they rearrange a page so that the bytes of its elements sit beside the
+// bytes that resemble them, which costs nothing and compresses a great deal
+// better. Both are in the specification and a reader has to take either, so
+// this is here for comparing the two rather than because anything needs it.
+func PlainEncoding() WriteOption {
+	return func(cfg *writeConfig) { cfg.plain = true }
 }
 
 // Writer writes an RNTuple into a ROOT file.
@@ -233,7 +246,7 @@ func (w *Writer) addField(name string, typ reflect.Type, parent int) (fieldWrite
 	case reflect.Bool, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
-		ct, bits, err := colTypeOf(typ)
+		ct, bits, err := colTypeOf(typ, w.cfg.plain)
 		if err != nil {
 			return nil, fmt.Errorf("rntup: field %q: %w", name, err)
 		}
@@ -242,13 +255,13 @@ func (w *Writer) addField(name string, typ reflect.Type, parent int) (fieldWrite
 	case reflect.String:
 		self.Role = RoleLeaf
 		return &stringWriter{
-			index: w.addColumn(ColIndex64, 64, id),
+			index: w.addColumn(w.indexType(), 64, id),
 			chars: w.addColumn(ColChar, 8, id),
 		}, nil
 
 	case reflect.Slice:
 		self.Role = RoleCollection
-		index := w.addColumn(ColIndex64, 64, id)
+		index := w.addColumn(w.indexType(), 64, id)
 		elem, err := w.addField("_0", typ.Elem(), id)
 		if err != nil {
 			return nil, err
@@ -292,13 +305,20 @@ func (w *Writer) addField(name string, typ reflect.Type, parent int) (fieldWrite
 	return nil, fmt.Errorf("rntup: field %q: nothing is known about how to write a %s", name, typ)
 }
 
+// indexType returns the column collection offsets are kept in.
+func (w *Writer) indexType() ColType {
+	if w.cfg.plain {
+		return ColIndex64
+	}
+	return ColSplitIndex64
+}
+
 // colTypeOf returns the column a Go type's values are kept in.
 //
-// The plain encodings are used rather than the split ones. Both are in the
-// specification and a reader has to take either; splitting rearranges the
-// bytes of a page to help it compress, which is worth doing and is not done
-// here yet.
-func colTypeOf(typ reflect.Type) (ColType, uint16, error) {
+// The split encodings are used unless the plain ones were asked for. A type
+// that takes a single byte has no split form, there being nothing to
+// rearrange.
+func colTypeOf(typ reflect.Type, plain bool) (ColType, uint16, error) {
 	switch typ.Kind() {
 	case reflect.Bool:
 		return ColBit, 1, nil
@@ -306,24 +326,35 @@ func colTypeOf(typ reflect.Type) (ColType, uint16, error) {
 		return ColInt8, 8, nil
 	case reflect.Uint8:
 		return ColUInt8, 8, nil
-	case reflect.Int16:
-		return ColInt16, 16, nil
-	case reflect.Uint16:
-		return ColUInt16, 16, nil
-	case reflect.Int32:
-		return ColInt32, 32, nil
-	case reflect.Uint32:
-		return ColUInt32, 32, nil
-	case reflect.Int64:
-		return ColInt64, 64, nil
-	case reflect.Uint64:
-		return ColUInt64, 64, nil
-	case reflect.Float32:
-		return ColReal32, 32, nil
-	case reflect.Float64:
-		return ColReal64, 64, nil
 	}
-	return 0, 0, fmt.Errorf("nothing is known about how to store a %s", typ)
+
+	var split, flat ColType
+	var bits uint16
+	switch typ.Kind() {
+	case reflect.Int16:
+		split, flat, bits = ColSplitInt16, ColInt16, 16
+	case reflect.Uint16:
+		split, flat, bits = ColSplitUInt16, ColUInt16, 16
+	case reflect.Int32:
+		split, flat, bits = ColSplitInt32, ColInt32, 32
+	case reflect.Uint32:
+		split, flat, bits = ColSplitUInt32, ColUInt32, 32
+	case reflect.Int64:
+		split, flat, bits = ColSplitInt64, ColInt64, 64
+	case reflect.Uint64:
+		split, flat, bits = ColSplitUInt64, ColUInt64, 64
+	case reflect.Float32:
+		split, flat, bits = ColSplitReal32, ColReal32, 32
+	case reflect.Float64:
+		split, flat, bits = ColSplitReal64, ColReal64, 64
+	default:
+		return 0, 0, fmt.Errorf("nothing is known about how to store a %s", typ)
+	}
+
+	if plain {
+		return flat, bits, nil
+	}
+	return split, bits, nil
 }
 
 // cppName returns the C++ type a Go type stands for, which is what the
@@ -613,6 +644,11 @@ func (w *Writer) writePages(cb *colBuf) ([]Page, error) {
 	data := cb.data
 	if cb.col.Type == ColBit {
 		data = packBits(cb.bits)
+	}
+
+	data, err := encodePage(cb.col, data, int(cb.n))
+	if err != nil {
+		return nil, err
 	}
 
 	off, nbytes, err := w.writeBlock(data)
