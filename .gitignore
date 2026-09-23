@@ -1,0 +1,32 @@
+# What the tests write.
+#
+# A good many tests here write their output next to the golden file they
+# compare it against, and leave it behind. None of it is a fixture: each
+# file is made by the test that reads it and is of no use afterwards.
+#
+# Listing them keeps them from being committed by a stray "git add -A",
+# which is how three of them ended up tracked in lcio, so that every test
+# run dirtied the working tree and whatever the last run produced got
+# committed with the next change.
+csvutil/testdata/append-test.csv
+csvutil/testdata/out-args-slice.csv
+csvutil/testdata/out-args.csv
+csvutil/testdata/out-struct.csv
+csvutil/testdata/out-types.csv
+
+groot/rjson/testdata/graph.json
+groot/rjson/testdata/h1d.json
+groot/rjson/testdata/h2d.json
+groot/rjson/testdata/tgae.json
+groot/rjson/testdata/tge.json
+groot/rjson/testdata/tgme.json
+
+groot/testdata/groot-event-ntuple-fullsplit.root
+groot/testdata/groot-event-ntuple-nosplit.root
+groot/testdata/groot-flat-ntuple-with-lzma.root
+groot/testdata/groot-flat-ntuple-with-struct.root
+groot/testdata/groot-flat-ntuple.root
+
+hbook/testdata/rand_h1d.png
+hplot/vgop/testdata/plot.json
+hplot/vgop/testdata/simple.json
