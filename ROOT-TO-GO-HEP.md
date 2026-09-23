@@ -239,6 +239,34 @@ roughly halves what is left after compression.
 
 [uproot]: https://github.com/scikit-hep/uproot5
 
+Peaks and backgrounds
+---------------------
+
+`hbook/spectrum` is ROOT's TSpectrum: the continuum under a spectrum, and the
+peaks standing on it.
+
+```go
+bkg := spectrum.Background(ys, spectrum.Iterations(40))
+peaks, err := spectrum.Search(h, spectrum.Sigma(5), spectrum.Threshold(0.2))
+```
+
+| ROOT | go-hep |
+|---|---|
+| `TSpectrum s; s.Background(ys, n, ...)` | `spectrum.Background(ys, ...)` |
+| `s.Search(h, sigma, "", threshold)` | `spectrum.Search(h, spectrum.Sigma(sigma), spectrum.Threshold(t))` |
+| `s.SmoothMarkov(ys, n, w)` | `spectrum.Smooth(ys, w)` |
+
+`Search` gives back each peak's position, how far it stands above the
+background, and an estimate of its full width at half its height, tallest
+first. The position is refined by a parabola through the peak channel and its
+two neighbours, so it is located to better than a bin.
+
+Two things to know. The background estimate sits a percent or two below the
+continuum, since clipping only ever lowers a channel. And the threshold is
+what separates a peak from a fluctuation: counts that wobble by their own
+square root leave bumps a few percent tall, which the default of a twentieth
+— ROOT's default too — will report as peaks. Raise it for a noisy spectrum.
+
 Fitting
 -------
 
