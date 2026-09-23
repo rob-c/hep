@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,7 +20,13 @@ import (
 )
 
 func ExampleWriter() {
-	w, err := lcio.Create("out.slcio")
+	dir, err := os.MkdirTemp("", "lcio-example-")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	w, err := lcio.Create(filepath.Join(dir, "out.slcio"))
 	if err != nil {
 		log.Fatal(err)
 	}

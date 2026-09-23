@@ -6,6 +6,7 @@ package lcio_test
 
 import (
 	"compress/flate"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -17,10 +18,13 @@ func TestRWCalo(t *testing.T) {
 		fname   string
 		complvl int
 	}{
-		{"testdata/calohit.slcio", flate.NoCompression},
-		{"testdata/calohit-compressed.slcio", flate.BestCompression},
+		{"calohit.slcio", flate.NoCompression},
+		{"calohit-compressed.slcio", flate.BestCompression},
 	} {
-		testRWCalo(t, test.complvl, test.fname)
+		// a test writes where it is allowed to, which is not the
+		// source tree: these files are made fresh every run and used
+		// only by the run that made them.
+		testRWCalo(t, test.complvl, filepath.Join(t.TempDir(), test.fname))
 	}
 }
 

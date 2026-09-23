@@ -6,6 +6,7 @@ package lcio_test
 
 import (
 	"compress/flate"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -17,10 +18,13 @@ func TestRWCluster(t *testing.T) {
 		fname   string
 		complvl int
 	}{
-		{"testdata/cluster.slcio", flate.NoCompression},
-		{"testdata/cluster-compressed.slcio", flate.BestCompression},
+		{"cluster.slcio", flate.NoCompression},
+		{"cluster-compressed.slcio", flate.BestCompression},
 	} {
-		testRWCluster(t, test.complvl, test.fname)
+		// a test writes where it is allowed to, which is not the
+		// source tree: these files are made fresh every run and used
+		// only by the run that made them.
+		testRWCluster(t, test.complvl, filepath.Join(t.TempDir(), test.fname))
 	}
 }
 
