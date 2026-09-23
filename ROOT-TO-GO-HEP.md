@@ -207,6 +207,37 @@ where you would expect: `std::string` on `string`, `std::vector<T>` on `[]T`,
 and `std::variant` on an `any`. You may bind a struct of your own instead, so
 long as its members line up.
 
+Writing one works the same way round:
+
+```go
+var (
+        n  int32
+        xs []float64
+)
+w, err := rntup.Create("out.root", "ntuple", []rntup.WriteVar{
+        {Name: "n", Value: &n},
+        {Name: "xs", Value: &xs},
+})
+defer w.Close()
+
+for i := range 1000 {
+        n, xs = int32(i), []float64{float64(i)}
+        err = w.Write()
+}
+```
+
+The schema comes from the Go types, and the C++ type each one stands for is
+recorded so another reader knows what it is looking at. Pages are compressed
+one at a time.
+
+Files written this way are read by [uproot], which is an implementation of the
+format that owes nothing to this one; a test checks that, and skips where
+uproot is not installed. What goes out is version 1.0.0.0 of the format with
+the plain column encodings; the split ones, which rearrange a page's bytes so
+it compresses better, are not written yet.
+
+[uproot]: https://github.com/scikit-hep/uproot5
+
 Fitting
 -------
 
@@ -352,7 +383,6 @@ Things ROOT does that this does not
 
 Stated plainly, so nobody finds out the hard way:
 
-- **Writing RNTuple.** Reading one works (see below); writing does not.
 - **ROOT-streamed objects inside an RNTuple.** A field holding a user class
   written through the ROOT streamer, rather than split into columns, is
   refused rather than guessed at.

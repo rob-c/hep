@@ -47,9 +47,40 @@
 //
 // Objects written with the ROOT streamer are not supported yet.
 //
+// # Writing
+//
+// Create makes an RNTuple, binding each field to a Go value that Write reads
+// one entry from:
+//
+//	var (
+//		n  int32
+//		xs []float64
+//	)
+//	w, err := rntup.Create("out.root", "ntuple", []rntup.WriteVar{
+//		{Name: "n", Value: &n},
+//		{Name: "xs", Value: &xs},
+//	})
+//	defer w.Close()
+//
+//	for i := range 1000 {
+//		n, xs = int32(i), []float64{float64(i)}
+//		err = w.Write()
+//	}
+//
+// The schema is worked out from the Go types, and the C++ type each one
+// stands for is recorded so that another reader knows what it is looking at:
+// an int32 is a std::int32_t, a string is a std::string, a slice is a
+// std::vector and a struct is a record whose members are named by their
+// "rntup" tags. Pages are compressed one at a time.
+//
+// What is written is written at version 1.0.0.0 of the format, with the
+// plain column encodings rather than the split ones. Both are in the
+// specification and a reader has to take either; splitting rearranges the
+// bytes of a page so that it compresses better, and is not done here yet.
+//
 // # What is not here
 //
-// This package reads RNTuples; it does not write them.
+// Objects written with the ROOT streamer, and the split column encodings.
 package rntup // import "go-hep.org/x/hep/groot/exp/rntup"
 
 import (
